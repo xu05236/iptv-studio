@@ -24,6 +24,7 @@ import {
   type RuleRow,
 } from '../db.js';
 import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
+import { inferResolution } from '@iptv/core';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
 import { loadCatalog, loadIndex } from '../lib/catalog.js';
@@ -245,6 +246,7 @@ adminRoutes.get('/catalog', async (c) => {
 
 interface ProbeLine {
   key: string;
+  name?: string;
   channelId: string;
   channelName: string;
   group: string;
@@ -270,8 +272,7 @@ adminRoutes.get('/lines', async (c) => {
   if (data) {
     sourceItems = data.items;
     generatedAt = data.generatedAt;
-  } else {
-    // Fallback: the catalog is enough to show resolution/speed before the next
+  } else {    // Fallback: the catalog is enough to show resolution/speed before the next
     // publish writes state/probe.json.
     const catalog = await loadCatalog(c.env);
     if (!catalog) return ok({ ready: false, items: [], summary: null });
@@ -279,6 +280,7 @@ adminRoutes.get('/lines', async (c) => {
     sourceItems = catalog.items.flatMap((item) =>
       item.lines.map((line) => ({
         key: line.key,
+        name: line.name,
         channelId: item.channel.id,
         channelName: item.channel.name,
         group: item.channel.group,
@@ -302,7 +304,13 @@ adminRoutes.get('/lines', async (c) => {
   const minSpeed = Number(c.req.query('minSpeed') ?? '0') || 0;
   const limit = Math.min(Number(c.req.query('limit') ?? 200) || 200, 500);
 
-  let rows = sourceItems;
+  const normalized = sourceItems.map((row) => ({
+    ...row,
+    // Prefer measured dimensions; otherwise parse 720p/1080p/480p from the
+    // channel name, the line label or the URL path.
+    resolution: row.resolution || inferResolution(`${row.name ?? ''} ${row.channelName} ${row.url}`) || null,
+  }));
+  let rows = normalized;
   const summary = {
     generatedAt,
     total: rows.length,

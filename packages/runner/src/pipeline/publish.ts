@@ -209,6 +209,7 @@ export async function publish(
   const probeItems = output.shards.flatMap((shard) =>
     shard.data.lines.map((line) => ({
       key: line.key,
+      name: line.name,
       channelId: shard.data.channel.id,
       channelName: shard.data.channel.name,
       group: shard.data.channel.group,
