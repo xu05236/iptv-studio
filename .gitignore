@@ -18,3 +18,5 @@ packages/worker/.wrangler/
 *.out
 ch.json
 
+lines.json
+
