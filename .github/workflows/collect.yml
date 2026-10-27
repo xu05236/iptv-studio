@@ -36,6 +36,14 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Ensure ffmpeg/ffprobe
+        run: |
+          if ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffprobe -version | head -1
+
       - name: Run pipeline
         env:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
@@ -46,6 +54,7 @@ jobs:
           PROBE_BUDGET: ${{ github.event.inputs.budget || vars.PROBE_BUDGET || '6000' }}
           PROBE_CONCURRENCY: ${{ vars.PROBE_CONCURRENCY || '32' }}
           PUBLISH_COOLDOWN_MS: '60000'
+          FFPROBE_LIMIT: ${{ vars.FFPROBE_LIMIT || '150' }}
           TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}
         run: |
           if [ "${{ github.event.inputs.command || 'collect' }}" = "export" ]; then

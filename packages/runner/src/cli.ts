@@ -27,6 +27,7 @@ import { buildArtifacts, publish, type ExportCatalog } from './pipeline/publish.
 import { collectEpg } from './pipeline/epg.js';
 import { publishSubscriptions } from './pipeline/subscriptions.js';
 import { captureScreenshots } from './pipeline/screenshots.js';
+import { enrichResolutions } from './pipeline/ffprobe.js';
 
 const EMPTY_EPG: EpgData = { channels: [], programmes: [] };
 
@@ -234,6 +235,9 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       report.bytes = summary.bytes;
       report.probed = summary.probed;
       logger.info('测速完成', { probed: summary.probed, alive: summary.alive, dead: summary.dead, suspect: summary.suspect, mb: Math.round(summary.bytes / 1024 / 1024) });
+
+      const ffprobeLimit = Number(process.env.FFPROBE_LIMIT ?? '150') || 0;
+      if (ffprobeLimit > 0) await enrichResolutions(lines, ffprobeLimit, logger);
 
       // Mass probing can get the runner IP briefly rate-limited by Cloudflare
       // edges. Cool down before the upload burst so publishing starts clean.
