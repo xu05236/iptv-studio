@@ -1,0 +1,13 @@
+# Cloudflare Worker secrets (copy to .dev.vars for `wrangler dev`)
+# Use `wrangler secret put NAME` for production.
+
+ADMIN_TOKEN=change-me-please
+SESSION_SECRET=change-me-too
+
+PUBLIC_BASE_URL=http://127.0.0.1:8787
+
+# Optional: trigger the GitHub Actions collector from the admin UI
+GITHUB_REPO=your-name/iptv-studio
+GITHUB_TOKEN=
+GITHUB_WORKFLOW=collect.yml
+GITHUB_REF=main

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.deploy-secrets.txt
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+coverage/
+.DS_Store
+Thumbs.db
+.tmp/
+apps/web/dist/
+packages/worker/.wrangler/

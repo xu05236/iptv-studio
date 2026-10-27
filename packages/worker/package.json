@@ -1,0 +1,23 @@
+{
+  "name": "@iptv/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply iptv-studio --local",
+    "db:migrate": "wrangler d1 migrations apply iptv-studio --remote",
+    "db:studio": "wrangler d1 execute iptv-studio --local --command \"select name from sqlite_master where type='table'\""
+  },
+  "dependencies": {
+    "@iptv/core": "*",
+    "hono": "^4.13.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261027.1",
+    "typescript": "5.9.3",
+    "wrangler": "^4.153.0"
+  }
+}

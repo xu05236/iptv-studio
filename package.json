@@ -1,0 +1,36 @@
+{
+  "name": "iptv-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare-native IPTV aggregation, probing and subscription platform",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -n worker,web -c cyan,magenta \"npm:dev:worker\" \"npm:dev:web\"",
+    "dev:worker": "npm run dev -w @iptv/worker",
+    "dev:web": "npm run dev -w @iptv/web",
+    "build": "npm run build -w @iptv/web",
+    "check": "npm run typecheck && npm test",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "deploy": "npm run build && npm run deploy -w @iptv/worker",
+    "db:migrate:local": "npm run db:migrate:local -w @iptv/worker",
+    "db:migrate": "npm run db:migrate -w @iptv/worker",
+    "collect": "npm run collect -w @iptv/runner",
+    "export": "npm run export -w @iptv/runner",
+    "shots": "npm run shots -w @iptv/runner"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "concurrently": "^9.2.1",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}

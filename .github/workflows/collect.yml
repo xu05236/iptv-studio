@@ -1,0 +1,69 @@
+name: Collect & Probe
+
+on:
+  schedule:
+    # 16:00 UTC = 00:00 Asia/Shanghai, once a day
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'collect = 抓取+测速+发布，export = 只按最新状态重建导出'
+        type: choice
+        options: [collect, export]
+        default: collect
+
+concurrency:
+  group: iptv-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run pipeline
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PROBE_BUDGET: ${{ vars.PROBE_BUDGET }}
+          PROBE_CONCURRENCY: ${{ vars.PROBE_CONCURRENCY }}
+          TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}
+        run: |
+          if [ "${{ github.event.inputs.command || 'collect' }}" = "export" ]; then
+            npm run export -w @iptv/runner
+          else
+            npm run collect -w @iptv/runner
+          fi
+
+      - name: Capture screenshots (optional)
+        if: github.event.inputs.command != 'export'
+        continue-on-error: true
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          SHOT_LIMIT: ${{ vars.SHOT_LIMIT || '60' }}
+        run: npm run shots -w @iptv/runner
+
+      - name: Upload runner log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runner-log
+          path: |
+            .tmp/*.log
+          if-no-files-found: ignore

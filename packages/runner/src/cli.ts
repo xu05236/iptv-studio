@@ -1,0 +1,432 @@
+import {
+  BUILTIN_CHANNELS,
+  ChannelRegistry,
+  diffCatalogs,
+  entryKey,
+  formatDiff,
+  guessProtocol,
+  hashId,
+  mapPool,
+  nextReputation,
+  normalizeUrlForDedupe,
+  splitUrlHeaders,
+  tierFor,
+  type AppSettings,
+  type EpgData,
+  type LineEntry,
+  type RawEntry,
+  type RunReport,
+} from '@iptv/core';
+import { loadConfig } from './config.js';
+import { RunLogger } from './logger.js';
+import { notifyTelegram } from './notify.js';
+import { ApiClient, ArtifactStore, loadRemoteConfig, type ChannelRecord, type RemoteConfig, type SourceRecord } from './store.js';
+import { collectSource, type CollectedSource } from './pipeline/collect.js';
+import { planProbes, runProbes } from './pipeline/probe.js';
+import { buildArtifacts, publish, type ExportCatalog } from './pipeline/publish.js';
+import { collectEpg } from './pipeline/epg.js';
+import { publishSubscriptions } from './pipeline/subscriptions.js';
+import { captureScreenshots } from './pipeline/screenshots.js';
+
+const EMPTY_EPG: EpgData = { channels: [], programmes: [] };
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function mean(values: number[]): number {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function buildRegistry(config: RemoteConfig): ChannelRegistry {
+  const registry = new ChannelRegistry(BUILTIN_CHANNELS);
+  for (const row of config.channels as ChannelRecord[]) {
+    registry.addChannel({
+      id: row.id,
+      name: row.name,
+      group: row.group_title ?? '其他',
+      tvgId: row.tvg_id ?? undefined,
+      logo: row.logo ?? undefined,
+      // aliases come from the dedicated /meta/aliases map below; the channel
+      // list endpoint returns only an alias *count*
+      aliases: [],
+    });
+  }
+  for (const [alias, channelId] of Object.entries(config.aliases)) registry.addAlias(alias, channelId);
+  return registry;
+}
+
+function safeJson<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalize(
+  collected: CollectedSource[],
+  registry: ChannelRegistry,
+  previousLines: LineEntry[],
+  sources: Map<string, SourceRecord>,
+  timestamp: string,
+): { lines: LineEntry[]; authoritative: Set<string> } {
+  const previousByKey = new Map(previousLines.map((line) => [`${line.sourceId}|${line.urlKey}`, line]));
+  const authoritative = new Set<string>();
+  const merged = new Map<string, LineEntry>();
+
+  for (const item of collected) {
+    if (!item.parsed) continue;
+    authoritative.add(item.source.id);
+
+    for (const raw of item.entries as RawEntry[]) {
+      const { url } = splitUrlHeaders(raw.url);
+      const urlKey = normalizeUrlForDedupe(url);
+      if (!urlKey) continue;
+
+      const source = sources.get(item.source.id);
+      const resolved = registry.resolve(raw.name, { tvgId: raw.tvgId, group: raw.group });
+      const key = entryKey(item.source.id, urlKey);
+      const old = previousByKey.get(`${item.source.id}|${urlKey}`);
+
+      const line: LineEntry = {
+        key,
+        sourceId: item.source.id,
+        channelId: resolved.id,
+        name: raw.name,
+        url,
+        urlKey,
+        protocol: guessProtocol(url),
+        headers: raw.headers,
+        group: raw.group,
+        logo: raw.logo,
+        status: old?.status ?? 'unknown',
+        failCount: old?.failCount ?? 0,
+        resolution: old?.resolution,
+        width: old?.width,
+        height: old?.height,
+        frameRate: old?.frameRate,
+        bandwidthKbps: old?.bandwidthKbps,
+        speedKbps: old?.speedKbps,
+        latencyMs: old?.latencyMs,
+        score: old?.score ?? 0,
+        firstSeenAt: old?.firstSeenAt ?? timestamp,
+        lastSeenAt: timestamp,
+        lastProbeAt: old?.lastProbeAt,
+        reviveAt: old?.reviveAt,
+        region: source?.region ?? old?.region,
+        operator: source?.operator ?? old?.operator,
+        tags: old?.tags ?? [],
+        loop: old?.loop,
+        catchup: raw.catchup,
+        catchupSource: raw.catchupSource,
+        catchupDays: raw.catchupDays,
+        error: old?.error,
+      };
+      merged.set(`${line.sourceId}|${line.urlKey}`, line);
+    }
+  }
+
+  // Sources that returned 304 / failed keep their previous lines instead of
+  // being wiped — a bad upstream day must not destroy the catalog.
+  for (const old of previousLines) {
+    if (authoritative.has(old.sourceId)) continue;
+    if (!sources.has(old.sourceId)) continue;
+    const key = `${old.sourceId}|${old.urlKey}`;
+    if (!merged.has(key)) merged.set(key, old);
+  }
+
+  return { lines: [...merged.values()], authoritative };
+}
+
+async function collectAll(
+  sources: SourceRecord[],
+  store: ArtifactStore,
+  logger: RunLogger,
+): Promise<CollectedSource[]> {
+  return mapPool(sources, 4, async (source) => {
+    try {
+      return await collectSource(source, store, logger);
+    } catch (error) {
+      logger.warn('抓取异常', { source: source.name, error: error instanceof Error ? error.message : String(error) });
+      return {
+        source,
+        entries: [],
+        fetched: false,
+        notModified: false,
+        bytes: 0,
+        error: error instanceof Error ? error.message : String(error),
+      } satisfies CollectedSource;
+    }
+  });
+}
+
+async function writeLog(store: ArtifactStore, runId: string, logger: RunLogger): Promise<string> {
+  const day = new Date().toISOString().slice(0, 10);
+  const key = `logs/${day}/${runId}.jsonl`;
+  await store.put(key, logger.toJSONL(), 'application/x-ndjson; charset=utf-8');
+  return key;
+}
+
+async function finishRun(
+  api: ApiClient,
+  report: RunReport,
+): Promise<void> {
+  await api.post('/api/admin/runs', report).catch((error) => {
+    console.error('上报运行结果失败', error);
+  });
+}
+
+async function runCollect(command: 'collect' | 'export'): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+
+  let report: RunReport = {
+    id: runId,
+    trigger: (process.env.TRIGGER as RunReport['trigger']) ?? 'schedule',
+    status: 'running',
+    startedAt,
+    sources: 0,
+    channels: 0,
+    lines: 0,
+    alive: 0,
+    dead: 0,
+    probed: 0,
+    bytes: 0,
+    durationMs: 0,
+    warnings: [],
+  };
+
+  try {
+    const remote = await loadRemoteConfig(api);
+    const settings: AppSettings = remote.settings;
+    report.sources = remote.sources.length;
+    logger.info('配置加载完成', { sources: remote.sources.length, channels: remote.channels.length, rules: remote.rules.length });
+
+    const registry = buildRegistry(remote);
+    const sources = new Map(remote.sources.map((source) => [source.id, source]));
+    const previousState = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+
+    let lines: LineEntry[];
+    let probed = 0;
+    let bytes = 0;
+
+    if (command === 'collect') {
+      const collected = await collectAll(remote.sources, store, logger);
+      const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso());
+      lines = normalized.lines;
+      logger.info('线路归一完成', { lines: lines.length });
+
+      const budget = config.probeBudget || settings.probeBudget;
+      const planned = planProbes(lines, sources, settings, budget);
+      logger.info('测速计划', { due: planned.length, budget });
+
+      const summary = await runProbes(planned, settings, config.concurrency || settings.concurrency, logger);
+      probed = summary.probed;
+      bytes = summary.bytes;
+      report.bytes = summary.bytes;
+      report.probed = summary.probed;
+      logger.info('测速完成', { probed: summary.probed, alive: summary.alive, dead: summary.dead, suspect: summary.suspect, mb: Math.round(summary.bytes / 1024 / 1024) });
+
+      const epg = settings.epgUrls.length
+        ? await collectEpg(settings.epgUrls, registry, logger)
+        : { data: EMPTY_EPG, sources: 0, programmes: 0, xml: '' };
+
+      const output = buildArtifacts({
+        runId,
+        generatedAt: nowIso(),
+        registry,
+        lines,
+        settings,
+        rules: remote.rules,
+        epg: epg.data,
+        disabledChannelIds: new Set(remote.channels.filter((row) => row.enabled === false || row.enabled === 0).map((row) => row.id)),
+      });
+
+      const logKey = await writeLog(store, runId, logger);
+      await publish(store, output, {
+        lines,
+        epgXml: epg.xml || undefined,
+        log: logger.toJSONL(),
+        runId,
+        generatedAt: output.catalog.generatedAt,
+      }, logger);
+      await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, logger);
+
+      // Channel discovery + alias sync
+      await api.post('/api/admin/sync/channels', {
+        channels: output.channels.map((channel) => ({ ...channel, aliases: [] })),
+      });
+
+      // Per-source reputation using this run's measurements
+      const stats = remote.sources.map((source) => {
+        const sourceLines = lines.filter((line) => line.sourceId === source.id);
+        const aliveLines = sourceLines.filter((line) => line.status === 'alive');
+        const item = collected.find((entry) => entry.source.id === source.id);
+        const reputation = nextReputation({
+          previous: source.reputation,
+          alive: aliveLines.length,
+          total: sourceLines.length,
+          avgScore: mean(aliveLines.map((line) => line.score)),
+          fetchOk: Boolean(item?.fetched && !item.error),
+          consecutiveFailures: item?.error ? 1 : 0,
+        });
+        return {
+          sourceId: source.id,
+          fetched: Boolean(item?.fetched),
+          parsed: sourceLines.length,
+          alive: aliveLines.length,
+          dead: sourceLines.filter((line) => line.status === 'dead').length,
+          avgSpeedKbps: mean(aliveLines.map((line) => line.speedKbps ?? 0)),
+          avgLatencyMs: mean(aliveLines.map((line) => line.latencyMs ?? 0)),
+          etag: item?.etag ?? source.etag,
+          lastModified: item?.lastModified ?? source.last_modified,
+          error: item?.error,
+          reputation,
+          tier: tierFor(reputation),
+        };
+      });
+      await api.post('/api/admin/sync/sources', { stats });
+
+      // Diff + notification
+      const previousCatalog = await store.getJson<ExportCatalog>('state/prev.json');
+      const currentSnapshot = {
+        generatedAt: output.catalog.generatedAt,
+        channels: output.catalog.items.map((item) => ({
+          channel: { id: item.channel.id, name: item.channel.name, group: item.channel.group },
+          lines: item.lines,
+        })),
+      };
+      const diff = diffCatalogs(
+        previousCatalog
+          ? {
+              generatedAt: previousCatalog.generatedAt,
+              channels: previousCatalog.items.map((item) => ({
+                channel: { id: item.channel.id, name: item.channel.name, group: item.channel.group },
+                lines: item.lines,
+              })),
+            }
+          : null,
+        currentSnapshot,
+      );
+      logger.info('差异统计', {
+        channels: `${diff.channelsBefore}->${diff.channelsAfter}`,
+        alive: `${diff.aliveBefore}->${diff.aliveAfter}`,
+        added: diff.addedChannels.length,
+        removed: diff.removedChannels.length,
+      });
+
+      if (settings.notifyTelegram && config.telegram) {
+        const sent = await notifyTelegram(config.telegram.botToken, config.telegram.chatId, `<b>IPTV 日报</b>\n${formatDiff(diff)}`);
+        logger.info('Telegram 通知', { sent });
+      }
+
+      await store.put('state/prev.json', JSON.stringify(output.catalog), 'application/json; charset=utf-8');
+
+      report = {
+        ...report,
+        status: collected.some((item) => item.error) ? 'partial' : 'success',
+        finishedAt: nowIso(),
+        channels: output.index.totalChannels,
+        lines: output.index.totalLines,
+        alive: output.index.aliveLines,
+        dead: Math.max(0, output.index.totalLines - output.index.aliveLines),
+        durationMs: Date.now() - startedMs,
+        warnings: summary.errors.slice(0, 10).map((item) => `${item.url}: ${item.error}`),
+        logKey,
+      };
+      await finishRun(api, report);
+      logger.info('运行完成', { runId, channels: report.channels, lines: report.lines, alive: report.alive });
+      return;
+    }
+
+    // ---- export only: rebuild artifacts from persisted state (no probing) ----
+    lines = previousState?.lines ?? [];
+    logger.info('仅导出模式', { lines: lines.length });
+    const output = buildArtifacts({
+      runId,
+      generatedAt: nowIso(),
+      registry,
+      lines,
+      settings,
+      rules: remote.rules,
+      epg: EMPTY_EPG,
+      disabledChannelIds: new Set(remote.channels.filter((row) => row.enabled === false || row.enabled === 0).map((row) => row.id)),
+    });
+    const logKey = await writeLog(store, runId, logger);
+    await publish(store, output, { lines, log: logger.toJSONL(), runId, generatedAt: output.catalog.generatedAt }, logger);
+    await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, logger);
+    await api.post('/api/admin/sync/channels', { channels: output.channels.map((channel) => ({ ...channel, aliases: [] })) });
+    report = {
+      ...report,
+      status: 'success',
+      finishedAt: nowIso(),
+      channels: output.index.totalChannels,
+      lines: output.index.totalLines,
+      alive: output.index.aliveLines,
+      dead: output.index.totalLines - output.index.aliveLines,
+      durationMs: Date.now() - startedMs,
+      logKey,
+      trigger: 'manual',
+    };
+    await finishRun(api, report);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('运行失败', { error: message });
+    report = { ...report, status: 'failed', finishedAt: nowIso(), error: message, durationMs: Date.now() - startedMs };
+    try {
+      report.logKey = await writeLog(store, runId, logger);
+    } catch {
+      /* ignore */
+    }
+    await finishRun(api, report);
+    throw error;
+  }
+}
+
+async function main(): Promise<void> {
+  const command = process.argv[2] ?? 'collect';
+  if (command === 'collect' || command === 'export') {
+    await runCollect(command);
+    return;
+  }
+  if (command === 'epg') {
+    const config = loadConfig();
+    const logger = new RunLogger();
+    const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+    const store = new ArtifactStore(api);
+    const remote = await loadRemoteConfig(api);
+    const registry = buildRegistry(remote);
+    await collectEpg(remote.settings.epgUrls, registry, logger);
+    logger.info('EPG 命令完成（产物随下次 collect 发布）', { runId: hashId(String(Date.now()), 6) });
+    return;
+  }
+  if (command === 'shots') {
+    const config = loadConfig();
+    const logger = new RunLogger();
+    const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+    const store = new ArtifactStore(api);
+    const remote = await loadRemoteConfig(api);
+    if (!remote.settings.screenshots) {
+      logger.info('截图已关闭（设置 → EPG 与通知）');
+      return;
+    }
+    const limit = Number(process.env.SHOT_LIMIT ?? '60') || 60;
+    await captureScreenshots(store, limit, logger);
+    return;
+  }
+  console.error(`未知命令: ${command}（可用: collect | export | epg | shots）`);
+  process.exitCode = 1;
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

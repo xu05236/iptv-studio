@@ -1,0 +1,21 @@
+{
+  "name": "@iptv/runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "collect": "tsx src/cli.ts collect",
+    "export": "tsx src/cli.ts export",
+    "epg": "tsx src/cli.ts epg",
+    "shots": "tsx src/cli.ts shots",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@iptv/core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.23.15",
+    "typescript": "5.9.3"
+  }
+}
