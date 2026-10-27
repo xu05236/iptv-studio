@@ -266,15 +266,16 @@ interface ProbeLine {
 
 adminRoutes.get('/lines', async (c) => {
   const data = await getJson<{ generatedAt: string; items: ProbeLine[] }>(c.env, 'state/probe.json');
+  const catalog = await loadCatalog(c.env);
   let sourceItems: ProbeLine[];
   let generatedAt: string;
 
   if (data) {
     sourceItems = data.items;
     generatedAt = data.generatedAt;
-  } else {    // Fallback: the catalog is enough to show resolution/speed before the next
+  } else {
+    // Fallback: the catalog is enough to show resolution/speed before the next
     // publish writes state/probe.json.
-    const catalog = await loadCatalog(c.env);
     if (!catalog) return ok({ ready: false, items: [], summary: null });
     generatedAt = catalog.generatedAt;
     sourceItems = catalog.items.flatMap((item) =>
@@ -304,11 +305,13 @@ adminRoutes.get('/lines', async (c) => {
   const minSpeed = Number(c.req.query('minSpeed') ?? '0') || 0;
   const limit = Math.min(Number(c.req.query('limit') ?? 200) || 200, 500);
 
+  const nameByKey = new Map(catalog?.items.flatMap((item) => item.lines.map((line) => [line.key, line.name])) ?? []);
   const normalized = sourceItems.map((row) => ({
     ...row,
+    name: row.name ?? nameByKey.get(row.key),
     // Prefer measured dimensions; otherwise parse 720p/1080p/480p from the
     // channel name, the line label or the URL path.
-    resolution: row.resolution || inferResolution(`${row.name ?? ''} ${row.channelName} ${row.url}`) || null,
+    resolution: row.resolution || inferResolution(`${row.name ?? nameByKey.get(row.key) ?? ''} ${row.channelName} ${row.url}`) || null,
   }));
   let rows = normalized;
   const summary = {
