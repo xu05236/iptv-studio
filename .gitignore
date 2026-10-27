@@ -15,3 +15,6 @@ Thumbs.db
 apps/web/dist/
 packages/worker/.wrangler/
 .tools/
+*.out
+ch.json
+
