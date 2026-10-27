@@ -22,6 +22,8 @@ interface ProbeLine {
   score: number;
   lastProbeAt: string | null;
   url: string;
+  sourceName?: string;
+  sourceSite?: string;
 }
 
 interface LinesResponse {
@@ -166,7 +168,7 @@ export function Probe() {
                   <tr key={row.key}>
                     <td>
                       <div style={{ fontWeight: 600 }}>{row.channelName}</div>
-                      <div className="caption">{row.group} · {row.sourceId}</div>
+                      <div className="caption">{row.group} · {row.sourceName ?? row.sourceId}{row.sourceSite ? ` · ${row.sourceSite}` : ''}</div>
                     </td>
                     <td><Badge tone={row.resolution ? 'blue' : 'default'}>{formatResolution(row.resolution)}</Badge></td>
                     <td>{formatSpeed(row.speedKbps)}</td>

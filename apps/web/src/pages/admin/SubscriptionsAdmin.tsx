@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link2, Plus, RefreshCw, Trash2, Wand2 } from 'lucide-react';
+import { Link2, Plus, RefreshCw, Trash2, Wand2, X } from 'lucide-react';
 import { api } from '../../lib/api';
-import type { SubscriptionItem } from '../../lib/types';
+import type { AdminChannel, SubscriptionItem } from '../../lib/types';
 import { Badge, Button, Card, CopyField, EmptyState, Field, Sheet, Switch, useToast } from '../../components/ui';
 
 const FORMATS = ['m3u', 'txt', 'json', 'diyp'];
@@ -40,6 +40,8 @@ export function SubscriptionsAdmin() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SubscriptionItem | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [channelIds, setChannelIds] = useState<string[]>([]);
+  const [channelSearch, setChannelSearch] = useState('');
   const [preview, setPreview] = useState<{ name: string; body: string; format: string } | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -47,12 +49,27 @@ export function SubscriptionsAdmin() {
     queryFn: () => api.get<{ items: SubscriptionItem[] }>('/api/admin/subscriptions'),
   });
 
+  const channelList = useQuery({
+    queryKey: ['admin', 'channels', 'picker'],
+    queryFn: () => api.get<{ items: AdminChannel[] }>('/api/admin/channels'),
+    enabled: open,
+  });
+
+  const filteredChannels = (channelList.data?.items ?? [])
+    .filter((channel) => {
+      const keyword = channelSearch.trim().toLowerCase();
+      if (!keyword) return true;
+      return channel.name.toLowerCase().includes(keyword) || channel.id.includes(keyword) || channel.group.toLowerCase().includes(keyword);
+    })
+    .slice(0, 40);
+
   const save = useMutation({
     mutationFn: async () => {
       const payload = {
         name: form.name,
         groups: split(form.groups),
         excludeGroups: split(form.excludeGroups),
+        channelIds,
         minResolution: form.minResolution,
         minSpeedKbps: Number(form.minSpeedKbps || 0),
         maxLinesPerChannel: Number(form.maxLines || 6),
@@ -97,6 +114,8 @@ export function SubscriptionsAdmin() {
 
   function openEdit(item?: SubscriptionItem): void {
     setEditing(item ?? null);
+    setChannelIds(item?.channelIds ?? []);
+    setChannelSearch('');
     setForm(
       item
         ? {
@@ -195,6 +214,40 @@ export function SubscriptionsAdmin() {
           <Field label="排除分组">
             <input className="input" value={form.excludeGroups} onChange={(event) => setForm({ ...form, excludeGroups: event.target.value })} placeholder="付费, 地方" />
           </Field>
+          <Field label="指定频道（可选）" hint="不选 = 按分组导出；选了 = 只导出这些频道，和分组过滤同时生效">
+            <input className="input" value={channelSearch} onChange={(event) => setChannelSearch(event.target.value)} placeholder="搜索频道名，勾选加入订阅" />
+          </Field>
+          {channelIds.length ? (
+            <div className="row row--wrap">
+              {channelIds.map((id) => {
+                const found = channelList.data?.items.find((channel) => channel.id === id);
+                return (
+                  <button key={id} className="chip chip--active" onClick={() => setChannelIds(channelIds.filter((item) => item !== id))}>
+                    {found?.name ?? id} <X size={12} />
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          {channelSearch.trim() ? (
+            <div className="list" style={{ maxHeight: 220, overflowY: 'auto' }}>
+              {filteredChannels.map((channel) => {
+                const selected = channelIds.includes(channel.id);
+                return (
+                  <button
+                    key={channel.id}
+                    className="list__row"
+                    onClick={() => setChannelIds(selected ? channelIds.filter((item) => item !== channel.id) : [...channelIds, channel.id])}
+                  >
+                    <span className="grow">{channel.name}</span>
+                    <Badge>{channel.group}</Badge>
+                    <span className="caption">{selected ? '已选' : '添加'}</span>
+                  </button>
+                );
+              })}
+              {!filteredChannels.length ? <div className="caption" style={{ padding: 12 }}>没有匹配的频道</div> : null}
+            </div>
+          ) : null}
           <div className="row">
             <div className="grow">
               <Field label="最低分辨率">

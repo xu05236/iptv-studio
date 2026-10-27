@@ -27,6 +27,7 @@ import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
 import { loadCatalog, loadIndex } from '../lib/catalog.js';
+import { sourceMetaMap } from '../lib/source.js';
 
 export const adminRoutes = new Hono<AppEnv>();
 
@@ -257,6 +258,8 @@ interface ProbeLine {
   score: number;
   lastProbeAt: string | null;
   url: string;
+  sourceName?: string;
+  sourceSite?: string;
 }
 
 adminRoutes.get('/lines', async (c) => {
@@ -329,7 +332,14 @@ adminRoutes.get('/lines', async (c) => {
     return rank(a.status) - rank(b.status) || b.speedKbps - a.speedKbps;
   });
 
-  return ok({ ready: true, summary, total: rows.length, items: rows.slice(0, limit) });
+  const meta = sourceMetaMap(await listSources(c.env));
+  const items = rows.slice(0, limit).map((row) => ({
+    ...row,
+    sourceName: meta.get(row.sourceId)?.name ?? row.sourceId,
+    sourceSite: meta.get(row.sourceId)?.site ?? '未知来源',
+  }));
+
+  return ok({ ready: true, summary, total: rows.length, items });
 });
 
 adminRoutes.get('/channel/:id', async (c) => {

@@ -3,7 +3,8 @@ import { cors } from 'hono/cors';
 import type { AppEnv } from '../env.js';
 import { fail, hashIp, intParam, ok, randomId, readJson } from '../lib/http.js';
 import { loadChannelShard, loadGuide, loadIndex } from '../lib/catalog.js';
-import { countOpenFeedback, getChannel, insertFeedback, listRuns, loadSettings } from '../db.js';
+import { countOpenFeedback, getChannel, insertFeedback, listRuns, listSources, loadSettings } from '../db.js';
+import { sourceMetaMap } from '../lib/source.js';
 
 export const publicRoutes = new Hono<AppEnv>();
 
@@ -88,7 +89,13 @@ publicRoutes.get('/channels/:id', async (c) => {
   if (shard) {
     // Never expose the real line URL or request headers to the public browser:
     // preview goes through /relay/line/<key>, admin APIs keep the full record.
-    const safeLines = shard.lines.map(({ url: _url, headers: _headers, ...rest }) => rest);
+    const sources = await listSources(c.env);
+    const meta = sourceMetaMap(sources);
+    const safeLines = shard.lines.map(({ url: _url, headers: _headers, ...rest }) => ({
+      ...rest,
+      sourceName: meta.get(rest.sourceId)?.name ?? rest.sourceId,
+      sourceSite: meta.get(rest.sourceId)?.site ?? '未知来源',
+    }));
     return ok(
       {
         channel: shard.channel,

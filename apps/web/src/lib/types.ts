@@ -1,7 +1,7 @@
 import type { AppSettings, ChannelSummary, LineEntry, Rule } from '@iptv/core';
 
 /** Public channel lines never carry the real stream URL or request headers. */
-export type PublicLine = Omit<LineEntry, 'url' | 'headers'> & { url?: string };
+export type PublicLine = Omit<LineEntry, 'url' | 'headers'> & { url?: string; sourceName?: string; sourceSite?: string };
 
 export interface Overview {
   ready: boolean;

@@ -6,6 +6,7 @@ import {
   deleteChannel,
   getChannel,
   listChannels,
+  listSources,
   mergeChannels,
   removeAlias,
   updateChannel,
@@ -13,6 +14,7 @@ import {
 } from '../db.js';
 import { fail, ok, readJson } from '../lib/http.js';
 import { loadChannelShard, loadIndex } from '../lib/catalog.js';
+import { sourceMetaMap } from '../lib/source.js';
 
 export const channelRoutes = new Hono<AppEnv>();
 
@@ -59,11 +61,20 @@ channelRoutes.get('/:id', async (c) => {
   const id = c.req.param('id');
   const channel = await getChannel(c.env, id);
   if (!channel) return fail('频道不存在', 404);
-  const [aliases, shard] = await Promise.all([channelAliases(c.env, id), loadChannelShard(c.env, id)]);
+  const [aliases, shard, sources] = await Promise.all([
+    channelAliases(c.env, id),
+    loadChannelShard(c.env, id),
+    listSources(c.env),
+  ]);
+  const meta = sourceMetaMap(sources);
   return ok({
     channel,
     aliases,
-    lines: shard?.lines ?? [],
+    lines: (shard?.lines ?? []).map((line) => ({
+      ...line,
+      sourceName: meta.get(line.sourceId)?.name ?? line.sourceId,
+      sourceSite: meta.get(line.sourceId)?.site ?? '未知来源',
+    })),
     epg: shard?.epg ?? null,
   });
 });

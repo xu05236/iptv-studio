@@ -114,8 +114,9 @@ export function ChannelDetail() {
                     {line.loop ? <Badge tone="orange">循环流</Badge> : null}
                   </div>
                   <div className="list__sub truncate" style={{ marginTop: 4 }}>
-                    {line.region || line.operator ? `${line.region ?? ''}${line.operator ?? ''} · ` : ''}
-                    {line.protocol.toUpperCase()} · 来源 {line.sourceId}
+                    {line.sourceName ?? line.sourceId}
+                    {line.sourceSite ? ` · ${line.sourceSite}` : ''}
+                    {' · '}{line.protocol.toUpperCase()}
                   </div>
                   <div className="row" style={{ marginTop: 8, gap: 6 }}>
                     <Button
