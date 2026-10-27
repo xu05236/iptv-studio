@@ -178,3 +178,18 @@ export function levenshtein(a: string, b: string): number {
 export function truncate(input: string, max: number): string {
   return input.length <= max ? input : `${input.slice(0, Math.max(0, max - 1))}…`;
 }
+
+/**
+ * Infer a resolution from a channel/line label (`Hunan TV (2160p)`,
+ * `/live/1080p/index.m3u8`). Used only when probing did not provide real
+ * dimensions; ffprobe remains the source of truth.
+ */
+export function inferResolution(input: string): string | undefined {
+  const text = input.toLowerCase();
+  if (/(?:^|[^0-9])(2160p|4k|uhd)(?:[^0-9]|$)/.test(text)) return '2160p';
+  if (/(?:^|[^0-9])(1440p|2k)(?:[^0-9]|$)/.test(text)) return '1440p';
+  if (/(?:^|[^0-9])(1080p|fhd)(?:[^0-9]|$)/.test(text)) return '1080p';
+  if (/(?:^|[^0-9])(720p)(?:[^0-9]|$)/.test(text)) return '720p';
+  if (/(?:^|[^0-9])(480p)(?:[^0-9]|$)/.test(text)) return '480p';
+  return undefined;
+}
