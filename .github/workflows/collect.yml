@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: 'collect = 抓取+测速+发布，export = 只按最新状态重建导出'
+        description: 'collect = 抓取+测速+发布，export = 只重建导出，epg = 只更新节目单'
         type: choice
-        options: [collect, export]
+        options: [collect, export, epg]
         default: collect
       budget:
         description: '本次测速条数（首轮建议 1200，稳定后再调大）'
@@ -50,12 +50,14 @@ jobs:
         run: |
           if [ "${{ github.event.inputs.command || 'collect' }}" = "export" ]; then
             npm run export -w @iptv/runner
+          elif [ "${{ github.event.inputs.command || 'collect' }}" = "epg" ]; then
+            npm run epg -w @iptv/runner
           else
             npm run collect -w @iptv/runner
           fi
 
       - name: Capture screenshots (optional)
-        if: github.event.inputs.command != 'export'
+        if: github.event.inputs.command == 'collect' || github.event_name == 'schedule'
         continue-on-error: true
         env:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}

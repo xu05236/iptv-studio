@@ -243,9 +243,7 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
         await new Promise((resolve) => setTimeout(resolve, cooldown));
       }
 
-      const epg = settings.epgUrls.length
-        ? await collectEpg(settings.epgUrls, registry, logger)
-        : { data: EMPTY_EPG, sources: 0, programmes: 0, xml: '' };
+      const epg = await collectEpg(settings.epgUrls, registry, logger);
 
       const output = buildArtifacts({
         runId,
@@ -412,8 +410,18 @@ async function main(): Promise<void> {
     const store = new ArtifactStore(api);
     const remote = await loadRemoteConfig(api);
     const registry = buildRegistry(remote);
-    await collectEpg(remote.settings.epgUrls, registry, logger);
-    logger.info('EPG 命令完成（产物随下次 collect 发布）', { runId: hashId(String(Date.now()), 6) });
+    const epg = await collectEpg(remote.settings.epgUrls, registry, logger);
+    if (epg.xml) {
+      const bytes = new TextEncoder().encode(epg.xml).byteLength;
+      if (bytes > 24 * 1024 * 1024) {
+        logger.warn('EPG 超过 KV 单值限制，未发布', { mb: Math.round(bytes / 1024 / 1024) });
+      } else {
+        await store.put('out/epg.xml', epg.xml, 'application/xml; charset=utf-8');
+        logger.info('EPG 已发布', { mb: Math.round(bytes / 1024 / 1024), programmes: epg.programmes });
+      }
+    } else {
+      logger.warn('没有生成任何节目单内容');
+    }
     return;
   }
   if (command === 'shots') {
