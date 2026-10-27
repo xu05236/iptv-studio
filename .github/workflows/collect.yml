@@ -11,6 +11,9 @@ on:
         type: choice
         options: [collect, export]
         default: collect
+      budget:
+        description: '本次测速条数（首轮建议 1200，稳定后再调大）'
+        default: '1200'
 
 concurrency:
   group: iptv-collect
@@ -40,7 +43,7 @@ jobs:
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          PROBE_BUDGET: ${{ vars.PROBE_BUDGET }}
+          PROBE_BUDGET: ${{ github.event.inputs.budget || vars.PROBE_BUDGET || '6000' }}
           PROBE_CONCURRENCY: ${{ vars.PROBE_CONCURRENCY }}
           TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}
         run: |
