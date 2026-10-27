@@ -4,7 +4,7 @@ import { getSubscriptionByToken } from '../db.js';
 import { fail } from '../lib/http.js';
 import { extensionFor, contentTypeFor, hashId, type PlaylistFormat } from '@iptv/core';
 import { renderSubscription, subscriptionFromRow } from '../lib/playlist.js';
-import { serveArtifact, serveArtifactOr404 } from '../lib/store.js';
+import { serveArtifact, serveArtifactOr404, cacheResponse, putArtifact } from '../lib/store.js';
 
 export const artifactRoutes = new Hono<AppEnv>();
 
@@ -63,7 +63,13 @@ artifactRoutes.get('/sub/:file', async (c) => {
     return new Response(null, { status: 304, headers: { etag: finalEtag, 'cache-control': 'public, max-age=60' } });
   }
 
-  return new Response(rendered.body, {
+  // Self-heal: persist the rendered playlist so the next request is a static
+  // KV read instead of a full catalog parse.
+  c.executionCtx.waitUntil(
+    putArtifact(c.env, prebuilt, rendered.body, contentTypeFor(config.format)).catch(() => undefined),
+  );
+
+  const response = new Response(rendered.body, {
     status: 200,
     headers: {
       'content-type': contentTypeFor(config.format),
@@ -75,6 +81,7 @@ artifactRoutes.get('/sub/:file', async (c) => {
       'access-control-allow-origin': '*',
     },
   });
+  return cacheResponse(c, response, 300);
 });
 
 artifactRoutes.get('/shots/:file', async (c) => {
