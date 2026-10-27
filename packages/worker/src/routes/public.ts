@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import type { AppEnv } from '../env.js';
 import { fail, hashIp, intParam, ok, randomId, readJson } from '../lib/http.js';
 import { loadChannelShard, loadGuide, loadIndex } from '../lib/catalog.js';
-import { countOpenFeedback, getChannel, insertFeedback, listRuns } from '../db.js';
+import { countOpenFeedback, getChannel, insertFeedback, listRuns, loadSettings } from '../db.js';
 
 export const publicRoutes = new Hono<AppEnv>();
 
@@ -12,10 +12,11 @@ publicRoutes.use('*', cors());
 const CACHE_30 = { 'cache-control': 'public, max-age=30, s-maxage=60' } as const;
 
 publicRoutes.get('/overview', async (c) => {
-  const [index, runs, openFeedback] = await Promise.all([
+  const [index, runs, openFeedback, settings] = await Promise.all([
     loadIndex(c.env),
     listRuns(c.env, 3),
     countOpenFeedback(c.env),
+    loadSettings(c.env),
   ]);
 
   if (!index) {
@@ -45,6 +46,7 @@ publicRoutes.get('/overview', async (c) => {
       groups: index.groups,
       lastRun: runs[0] ?? null,
       openFeedback,
+      features: { relay: settings.relayEnabled },
     },
     200,
     CACHE_30,
@@ -81,9 +83,19 @@ publicRoutes.get('/channels', async (c) => {
 
 publicRoutes.get('/channels/:id', async (c) => {
   const id = c.req.param('id');
+  const settings = await loadSettings(c.env);
   const shard = await loadChannelShard(c.env, id);
   if (shard) {
-    return ok({ channel: shard.channel, lines: shard.lines, epg: shard.epg ?? null }, 200, CACHE_30);
+    return ok(
+      {
+        channel: shard.channel,
+        lines: shard.lines,
+        epg: shard.epg ?? null,
+        features: { relay: settings.relayEnabled },
+      },
+      200,
+      CACHE_30,
+    );
   }
   const channel = await getChannel(c.env, id);
   if (!channel) return fail('频道不存在', 404);
@@ -92,6 +104,7 @@ publicRoutes.get('/channels/:id', async (c) => {
       channel: { id: channel.id, name: channel.name, group: channel.group_title ?? '其他', tvgId: channel.tvg_id ?? undefined, logo: channel.logo ?? undefined },
       lines: [],
       epg: null,
+      features: { relay: settings.relayEnabled },
     },
     200,
     CACHE_30,

@@ -6,6 +6,17 @@ import type { SourceItem } from '../../lib/types';
 import { timeAgo } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Field, Segmented, Sheet, Switch, useToast } from '../../components/ui';
 
+function sourceSite(source: SourceItem): string {
+  if (source.url) {
+    try {
+      return new URL(source.url).hostname;
+    } catch {
+      return '远程源';
+    }
+  }
+  return source.origin === 'upload' ? '本地上传' : '手动粘贴';
+}
+
 interface ProbeSummary {
   summary?: {
     kind: string;
@@ -86,18 +97,26 @@ export function Sources() {
   });
 
   const items = useMemo(() => data?.items ?? [], [data]);
+  const sites = useMemo(() => [...new Set(items.map(sourceSite))], [items]);
 
   return (
     <div className="stack">
       <div className="row row--between row--wrap">
         <div>
-          <h1 className="large-title">直播源</h1>
-          <p className="subhead" style={{ marginTop: 4 }}>远程订阅、粘贴文本与文件上传，统一进入同一条采集链路。</p>
+          <h1 className="large-title">采集站</h1>
+          <p className="subhead" style={{ marginTop: 4 }}>这里列出所有采集来源（GitHub 项目 / 自建站点 / 上传文件），可启停、检查、抽样测速或删除。</p>
         </div>
         <Button variant="primary" onClick={() => setOpen(true)}>
-          <Plus size={16} /> 添加直播源
+          <Plus size={16} /> 添加采集站
         </Button>
       </div>
+
+      {sites.length ? (
+        <div className="row row--wrap">
+          <span className="caption">当前采集站：</span>
+          {sites.map((site) => <Badge key={site} tone="blue">{site}</Badge>)}
+        </div>
+      ) : null}
 
       {isLoading ? <Card><div className="caption">加载中…</div></Card> : null}
 
@@ -117,7 +136,8 @@ export function Sources() {
               <div className="grow" style={{ minWidth: 0 }}>
                 <div className="row row--wrap" style={{ gap: 6 }}>
                   <span className="title-3 truncate">{source.name}</span>
-                  <Badge tone="blue">{source.kind.toUpperCase()}</Badge>
+                  <Badge tone="blue">{sourceSite(source)}</Badge>
+                  <Badge>{source.kind.toUpperCase()}</Badge>
                   {source.origin !== 'remote' ? <Badge>{source.origin === 'upload' ? '文件' : '粘贴'}</Badge> : null}
                   {source.status === 'degraded' ? <Badge tone="red">抓取异常</Badge> : null}
                 </div>
@@ -125,6 +145,7 @@ export function Sources() {
                   {source.entry_count} 条 · {source.alive_count} 可用 · 信誉 {Math.round(source.reputation)} · 更新 {timeAgo(source.last_ok_at)}
                   {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
                 </div>
+                {source.url ? <div className="caption mono truncate" style={{ marginTop: 2 }}>{source.url}</div> : null}
                 {source.last_error ? <div className="caption" style={{ color: 'var(--red)', marginTop: 4 }}>{source.last_error}</div> : null}
               </div>
               <Switch checked={source.enabled} onChange={() => toggle.mutate(source.id)} />

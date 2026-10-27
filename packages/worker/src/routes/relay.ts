@@ -1,16 +1,126 @@
 import { Hono } from 'hono';
-import { DEFAULT_UA, isPrivateHost } from '@iptv/core';
-import type { AppEnv } from '../env.js';
+import type { Context } from 'hono';
+import { DEFAULT_UA, isPrivateHost, type LineEntry, type RequestHeaders } from '@iptv/core';
+import type { AppEnv, Env } from '../env.js';
 import { getSubscriptionByToken, loadSettings } from '../db.js';
 import { fail } from '../lib/http.js';
+import { loadCatalog } from '../lib/catalog.js';
 
 export const relayRoutes = new Hono<AppEnv>();
 
+type Ctx = Context<AppEnv>;
+
+const encoder = new TextEncoder();
+const TTL_SECONDS = 600;
+
+function base64Url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function hmac(secret: string, data: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
+  return base64Url(new Uint8Array(signature));
+}
+
+function secretOf(env: Env): string {
+  return env.SESSION_SECRET || env.ADMIN_TOKEN || 'iptv-studio-relay';
+}
+
+async function verifySignature(env: Env, key: string, target: string, expires: number, signature: string): Promise<boolean> {
+  if (!Number.isFinite(expires) || expires < Math.floor(Date.now() / 1000)) return false;
+  return (await hmac(secretOf(env), `${key}|${target}|${expires}`)) === signature;
+}
+
+function isPlaylist(response: Response, target: URL): boolean {
+  return /mpegurl/i.test(response.headers.get('content-type') ?? '') || /\.m3u8?(\?|$)/i.test(target.pathname);
+}
+
+async function fetchUpstream(c: Ctx, target: URL, headersIn: RequestHeaders): Promise<Response> {
+  const headers = new Headers({ 'User-Agent': headersIn.userAgent || DEFAULT_UA, Accept: '*/*' });
+  if (headersIn.referer) headers.set('Referer', headersIn.referer);
+  const range = c.req.header('range');
+  if (range) headers.set('Range', range);
+  return fetch(target.toString(), { headers, redirect: 'follow' });
+}
+
+function playlistResponse(body: string, status: number): Response {
+  return new Response(body, {
+    status,
+    headers: {
+      'content-type': 'application/vnd.apple.mpegurl; charset=utf-8',
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*',
+    },
+  });
+}
+
+function streamResponse(upstream: Response): Response {
+  const headers = new Headers();
+  for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag']) {
+    const value = upstream.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  headers.set('access-control-allow-origin', '*');
+  headers.set('cache-control', 'no-store');
+  return new Response(upstream.body, { status: upstream.status, headers });
+}
+
+async function rewritePlaylist(text: string, base: string, proxy: (absolute: string) => Promise<string>): Promise<string> {
+  const resolve = (value: string): string => {
+    try {
+      return new URL(value, base).toString();
+    } catch {
+      return value;
+    }
+  };
+
+  const out: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      out.push(line);
+      continue;
+    }
+    if (trimmed.startsWith('#')) {
+      if (/^#EXT-X-(KEY|MAP|MEDIA)/i.test(trimmed) && /URI="/i.test(trimmed)) {
+        const match = /URI="([^"]+)"/i.exec(trimmed);
+        if (match?.[1]) {
+          out.push(trimmed.replace(/URI="[^"]+"/i, `URI="${await proxy(resolve(match[1]))}"`));
+          continue;
+        }
+      }
+      out.push(line);
+      continue;
+    }
+    out.push(await proxy(resolve(trimmed)));
+  }
+  return out.join('\n');
+}
+
+function lineUrl(c: Ctx, key: string, absolute: string): Promise<string> {
+  const expires = Math.floor(Date.now() / 1000) + TTL_SECONDS;
+  return hmac(secretOf(c.env), `${key}|${absolute}|${expires}`).then((signature) => {
+    const url = new URL(`${new URL(c.req.url).origin}/relay/line/${encodeURIComponent(key)}`);
+    url.searchParams.set('u', absolute);
+    url.searchParams.set('exp', String(expires));
+    url.searchParams.set('sig', signature);
+    return url.toString();
+  });
+}
+
+function subscriptionUrl(c: Ctx, token: string, absolute: string): string {
+  const url = new URL(`${new URL(c.req.url).origin}/relay`);
+  url.searchParams.set('u', absolute);
+  url.searchParams.set('token', token);
+  return url.toString();
+}
+
 /**
- * Optional HLS relay: rewrites playlists so segments also travel through the
- * Worker. Many IPTV origins send no CORS headers, which makes browser preview
- * impossible without it. Disabled by default — proxying video through Workers
- * is a Cloudflare ToS grey area, enable it knowingly (see docs/DEPLOY.md).
+ * Legacy subscription-scoped relay: accepts an arbitrary upstream URL, but only
+ * with a valid subscription token.
  */
 relayRoutes.get('/', async (c) => {
   const settings = await loadSettings(c.env);
@@ -30,76 +140,57 @@ relayRoutes.get('/', async (c) => {
   }
   if (!/^https?:$/.test(target.protocol) || isPrivateHost(target.hostname)) return fail('地址不合法');
 
-  const ua = (c.req.query('ua') ?? DEFAULT_UA).slice(0, 300);
-  const ref = c.req.query('ref');
-  const headers = new Headers({ 'User-Agent': ua, Accept: '*/*' });
-  if (ref) headers.set('Referer', ref.slice(0, 500));
-  const range = c.req.header('range');
-  if (range) headers.set('Range', range);
-
-  let upstream: Response;
-  try {
-    upstream = await fetch(target.toString(), { headers, redirect: 'follow' });
-  } catch (error) {
-    return fail(`上游请求失败: ${error instanceof Error ? error.message : String(error)}`, 502);
-  }
-
-  const contentType = upstream.headers.get('content-type') ?? '';
-  if (/mpegurl/i.test(contentType) || /\.m3u8?(\?|$)/i.test(target.pathname)) {
+  const upstream = await fetchUpstream(c, target, { userAgent: DEFAULT_UA });
+  if (isPlaylist(upstream, target)) {
     const text = await upstream.text();
     const base = upstream.url || target.toString();
-    const body = rewritePlaylist(text, base, c.req.url, token, ua, ref);
-    return new Response(body, {
-      status: upstream.status,
-      headers: {
-        'content-type': 'application/vnd.apple.mpegurl; charset=utf-8',
-        'cache-control': 'no-store',
-        'access-control-allow-origin': '*',
-      },
-    });
+    return playlistResponse(await rewritePlaylist(text, base, async (url) => subscriptionUrl(c, token, url)), upstream.status);
   }
-
-  const out = new Headers();
-  for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag']) {
-    const value = upstream.headers.get(name);
-    if (value) out.set(name, value);
-  }
-  out.set('access-control-allow-origin', '*');
-  out.set('cache-control', 'no-store');
-  return new Response(upstream.body, { status: upstream.status, headers: out });
+  return streamResponse(upstream);
 });
 
-function rewritePlaylist(text: string, base: string, requestUrl: string, token: string, ua: string, ref?: string): string {
-  const origin = new URL(requestUrl).origin;
-  const proxy = (absolute: string): string => {
-    const url = new URL(`${origin}/relay`);
-    url.searchParams.set('u', absolute);
-    url.searchParams.set('token', token);
-    if (ua) url.searchParams.set('ua', ua);
-    if (ref) url.searchParams.set('ref', ref);
-    return url.toString();
-  };
+/**
+ * Line-scoped relay used by the public player. The key must exist in the
+ * published catalog, so it cannot become an open proxy; segment URLs are
+ * short-lived HMAC signatures bound to that key.
+ */
+relayRoutes.get('/line/:key', async (c) => {
+  const settings = await loadSettings(c.env);
+  if (!settings.relayEnabled) return fail('中继功能未开启（设置 → 高级）', 403);
 
-  const resolve = (value: string): string => {
-    try {
-      return new URL(value, base).toString();
-    } catch {
-      return value;
-    }
-  };
+  const key = c.req.param('key');
+  const catalog = await loadCatalog(c.env);
+  if (!catalog) return fail('频道数据尚未生成', 404);
 
-  return text
-    .split(/\r?\n/)
-    .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return line;
-      if (trimmed.startsWith('#')) {
-        if (/^#EXT-X-(KEY|MAP|MEDIA)/i.test(trimmed) && /URI="/i.test(trimmed)) {
-          return trimmed.replace(/URI="([^"]+)"/i, (_match, uri: string) => `URI="${proxy(resolve(uri))}"`);
-        }
-        return line;
-      }
-      return proxy(resolve(trimmed));
-    })
-    .join('\n');
-}
+  let line: LineEntry | undefined;
+  for (const item of catalog.items) {
+    line = item.lines.find((candidate) => candidate.key === key);
+    if (line) break;
+  }
+  if (!line) return fail('线路不存在', 404);
+
+  let target = line.url;
+  const signed = c.req.query('u');
+  if (signed) {
+    const expires = Number(c.req.query('exp') ?? '0');
+    const signature = c.req.query('sig') ?? '';
+    if (!(await verifySignature(c.env, key, signed, expires, signature))) return fail('中继签名无效或已过期', 403);
+    target = signed;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(target);
+  } catch {
+    return fail('地址不合法');
+  }
+  if (!/^https?:$/.test(parsed.protocol) || isPrivateHost(parsed.hostname)) return fail('地址不合法');
+
+  const upstream = await fetchUpstream(c, parsed, line.headers ?? { userAgent: DEFAULT_UA });
+  if (isPlaylist(upstream, parsed)) {
+    const text = await upstream.text();
+    const base = upstream.url || parsed.toString();
+    return playlistResponse(await rewritePlaylist(text, base, (url) => lineUrl(c, key, url)), upstream.status);
+  }
+  return streamResponse(upstream);
+});

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ClipboardCopy, Play, Radio, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, Play, Radio, TriangleAlert } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ChannelDetailResponse } from '../lib/types';
 import { formatClock, formatLatency, formatResolution, formatSpeed, statusLabel, statusTone } from '../lib/format';
-import { Badge, Button, Card, CopyField, EmptyState, Segmented, Sheet, Skeleton, useToast } from '../components/ui';
+import { Badge, Button, Card, EmptyState, Segmented, Sheet, Skeleton, useToast } from '../components/ui';
 import { ChannelLogo } from '../components/ChannelLogo';
 import { Player } from '../components/Player';
 
@@ -14,7 +14,7 @@ export function ChannelDetail() {
   const navigate = useNavigate();
   const { show } = useToast();
   const [tab, setTab] = useState<'lines' | 'epg'>('lines');
-  const [playing, setPlaying] = useState<string | null>(null);
+  const [playing, setPlaying] = useState<ChannelDetailResponse['lines'][number] | null>(null);
   const [shotOk, setShotOk] = useState(true);
 
   const query = useQuery({
@@ -121,12 +121,9 @@ export function ChannelDetail() {
                     <Button
                       size="sm"
                       variant={line.status === 'alive' ? 'primary' : 'default'}
-                      onClick={() => setPlaying(line.url)}
+                      onClick={() => setPlaying(line)}
                     >
                       <Play size={13} /> 试播
-                    </Button>
-                    <Button size="sm" onClick={() => navigator.clipboard.writeText(line.url)}>
-                      <ClipboardCopy size={13} /> 复制
                     </Button>
                     <Button
                       size="sm"
@@ -177,32 +174,38 @@ export function ChannelDetail() {
         open={Boolean(playing)}
         onClose={() => setPlaying(null)}
         title={channel.name}
-        subtitle="在线试播仅供调试"
+        subtitle="在线试播仅供调试，页面不展示真实线路地址"
         footer={
           playing ? (
-            <>
-              <Button className="grow" onClick={() => navigator.clipboard.writeText(playing)}>
-                复制地址
-              </Button>
-              <Button
-                className="grow"
-                variant="danger"
-                onClick={() => {
-                  feedback.mutate({ entryKey: playing });
-                  setPlaying(null);
-                }}
-              >
-                报告失效
-              </Button>
-            </>
+            <Button
+              className="grow"
+              variant="danger"
+              onClick={() => {
+                feedback.mutate({ entryKey: playing.key, sourceId: playing.sourceId });
+                setPlaying(null);
+              }}
+            >
+              报告失效
+            </Button>
           ) : null
         }
       >
         {playing ? (
           <div className="stack">
-            <Player url={playing} autoPlay />
-            <CopyField value={playing} />
-            <p className="caption">浏览器试播依赖源站 CORS；失败时可复制地址到 VLC / PotPlayer 验证。</p>
+            <Player
+              url={playing.url}
+              protocol={playing.protocol}
+              lineKey={playing.key}
+              relayAvailable={query.data?.features?.relay ?? false}
+              autoPlay
+            />
+            <div className="row row--wrap">
+              <Badge tone={statusTone(playing.status)}>{statusLabel(playing.status)}</Badge>
+              <Badge>{formatResolution(playing.resolution)}</Badge>
+              <Badge tone="blue">{formatSpeed(playing.speedKbps)}</Badge>
+              <span className="caption">{playing.protocol.toUpperCase()}</span>
+            </div>
+            <p className="caption">试播依赖浏览器与源站策略；失败不代表线路失效，订阅地址在播放器中仍可正常使用。</p>
           </div>
         ) : null}
       </Sheet>

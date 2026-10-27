@@ -16,7 +16,7 @@ import { ThemeToggle } from '../components/ThemeToggle';
 
 const LINKS = [
   { to: '/admin', label: '概览', icon: Gauge, end: true },
-  { to: '/admin/sources', label: '直播源', icon: RadioTower },
+  { to: '/admin/sources', label: '采集站', icon: RadioTower },
   { to: '/admin/channels', label: '频道', icon: Tv },
   { to: '/admin/probe', label: '检测中心', icon: SlidersHorizontal },
   { to: '/admin/subscriptions', label: '订阅与导出', icon: Users },

@@ -25,7 +25,7 @@ import {
 } from '../db.js';
 import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
-import { getText, listArtifacts, putArtifact } from '../lib/store.js';
+import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
 import { loadCatalog, loadIndex } from '../lib/catalog.js';
 
 export const adminRoutes = new Hono<AppEnv>();
@@ -240,6 +240,66 @@ adminRoutes.get('/catalog', async (c) => {
     channels: catalog.items.length,
     lines: catalog.items.reduce((sum, item) => sum + item.lines.length, 0),
   });
+});
+
+interface ProbeLine {
+  key: string;
+  channelId: string;
+  channelName: string;
+  group: string;
+  sourceId: string;
+  status: string;
+  resolution: string | null;
+  speedKbps: number;
+  latencyMs: number;
+  protocol: string;
+  failCount: number;
+  score: number;
+  lastProbeAt: string | null;
+  url: string;
+}
+
+adminRoutes.get('/lines', async (c) => {
+  const data = await getJson<{ generatedAt: string; items: ProbeLine[] }>(c.env, 'state/probe.json');
+  if (!data) return ok({ ready: false, items: [], summary: null });
+
+  const q = (c.req.query('q') ?? '').trim().toLowerCase();
+  const status = c.req.query('status') ?? '';
+  const resolution = c.req.query('resolution') ?? '';
+  const minSpeed = Number(c.req.query('minSpeed') ?? '0') || 0;
+  const limit = Math.min(Number(c.req.query('limit') ?? 200) || 200, 500);
+
+  let rows = data.items;
+  const summary = {
+    generatedAt: data.generatedAt,
+    total: rows.length,
+    alive: rows.filter((row) => row.status === 'alive').length,
+    suspect: rows.filter((row) => row.status === 'suspect').length,
+    dead: rows.filter((row) => row.status === 'dead').length,
+    unknown: rows.filter((row) => row.status === 'unknown').length,
+    avgSpeedKbps: rows.length ? Math.round(rows.reduce((sum, row) => sum + (row.speedKbps || 0), 0) / rows.length) : 0,
+    resolutions: rows.reduce<Record<string, number>>((acc, row) => {
+      const key = row.resolution ?? '未知';
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {}),
+    protocols: rows.reduce<Record<string, number>>((acc, row) => {
+      acc[row.protocol] = (acc[row.protocol] ?? 0) + 1;
+      return acc;
+    }, {}),
+  };
+
+  if (q) rows = rows.filter((row) => row.channelName.toLowerCase().includes(q) || row.sourceId.includes(q) || row.url.toLowerCase().includes(q));
+  if (status) rows = rows.filter((row) => row.status === status);
+  if (resolution) rows = rows.filter((row) => (row.resolution ?? '未知') === resolution);
+  if (minSpeed > 0) rows = rows.filter((row) => row.speedKbps >= minSpeed);
+
+  rows = [...rows].sort((a, b) => {
+    const rank = (value: string): number => (value === 'alive' ? 0 : value === 'suspect' ? 1 : value === 'unknown' ? 2 : 3);
+    return rank(a.status) - rank(b.status) || b.speedKbps - a.speedKbps;
+  });
+
+  return ok({ ready: true, summary, total: rows.length, items: rows.slice(0, limit) });
 });
 
 adminRoutes.get('/channel/:id', async (c) => {

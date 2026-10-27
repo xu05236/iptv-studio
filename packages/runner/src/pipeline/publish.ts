@@ -206,7 +206,26 @@ export async function publish(
   }
   await store.put('state/guide.json', JSON.stringify(output.guide), json);
   await store.put('state/now.json', JSON.stringify({ generatedAt: options.generatedAt, channels: output.now }), json);
-  objects += 5;
+  const probeItems = output.shards.flatMap((shard) =>
+    shard.data.lines.map((line) => ({
+      key: line.key,
+      channelId: shard.data.channel.id,
+      channelName: shard.data.channel.name,
+      group: shard.data.channel.group,
+      sourceId: line.sourceId,
+      status: line.status,
+      resolution: line.resolution ?? null,
+      speedKbps: line.speedKbps ?? 0,
+      latencyMs: line.latencyMs ?? 0,
+      protocol: line.protocol,
+      failCount: line.failCount,
+      score: line.score,
+      lastProbeAt: line.lastProbeAt ?? null,
+      url: line.url,
+    })),
+  );
+  await store.put('state/probe.json', JSON.stringify({ generatedAt: options.generatedAt, items: probeItems }), json);
+  objects += 6;
 
   if (options.epgXml) {
     const bytes = new TextEncoder().encode(options.epgXml).byteLength;
