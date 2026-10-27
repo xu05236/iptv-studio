@@ -91,8 +91,8 @@ export function SettingsPage() {
       <Card>
         <div className="title-3">EPG 与通知</div>
         <div className="stack" style={{ marginTop: 12 }}>
-          <Field label="XMLTV 地址（每行一个）" hint="支持多源合并；建议一个当天源 + 一个 7 天源">
-            <textarea className="textarea" value={epgText} onChange={(event) => setEpgText(event.target.value)} placeholder="https://example.com/epg.xml" />
+          <Field label="XMLTV 地址（每行一个）" hint="留空则不生成节目单；默认已内置 fanmingming 与 epg.pw 两个源，可自行替换/追加">
+            <textarea className="textarea" value={epgText} onChange={(event) => setEpgText(event.target.value)} placeholder="https://raw.githubusercontent.com/fanmingming/live/main/e.xml" />
           </Field>
           <div className="list">
             <div className="list__row"><span className="grow">Telegram 日报（需在 Actions 配置 Secret）</span><Switch checked={form.notifyTelegram} onChange={(value) => set('notifyTelegram', value)} /></div>

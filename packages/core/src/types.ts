@@ -275,6 +275,13 @@ export interface AppSettings {
   relayEnabled: boolean;
 }
 
+export const DEFAULT_EPG_URLS = [
+  // GitHub raw mirror: stable ids (CCTV1 / 湖南卫视), 7 day window.
+  'https://raw.githubusercontent.com/fanmingming/live/main/e.xml',
+  // epg.pw: numeric ids but reliable display names; merged as a second source.
+  'https://epg.pw/xmltv/epg_CN.xml',
+];
+
 export const DEFAULT_SETTINGS: AppSettings = {
   logoBaseUrl: 'https://live.fanmingming.com/tv/',
   maxLinesPerChannel: 6,
@@ -287,7 +294,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   probeTimeoutMs: 9_000,
   warmupBytes: 512 * 1024,
   sampleMs: 1_500,
-  epgUrls: [],
+  epgUrls: DEFAULT_EPG_URLS,
   regionSuffix: true,
   notifyTelegram: false,
   retentionDays: 7,
