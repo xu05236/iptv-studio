@@ -1,15 +1,10 @@
 name: Deploy Worker
 
 on:
+  # Manual by default: the first deployment is done from the local machine via
+  # `wrangler login`. Add CLOUDFLARE_API_TOKEN/ACCOUNT_ID secrets and re-enable
+  # the push trigger if you want CI deployments later.
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'packages/**'
-      - 'apps/web/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/deploy.yml'
 
 concurrency:
   group: iptv-deploy
