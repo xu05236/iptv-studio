@@ -4,7 +4,7 @@ import { Play, RotateCcw, ShieldAlert, TriangleAlert } from 'lucide-react';
 import { Button } from './ui';
 
 interface PlayerProps {
-  url: string;
+  url?: string;
   protocol?: string;
   lineKey?: string;
   relayAvailable?: boolean;
@@ -25,13 +25,13 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, autoPla
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [mode, setMode] = useState<'direct' | 'relay'>('direct');
-  const [started, setStarted] = useState(autoPlay);
+  const [started, setStarted] = useState(autoPlay && Boolean(url));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const unsupported = /^(rtsp|rtmp|rtmps|udp|rtp):/i.test(url);
-  const mixed = url.startsWith('http://') && window.location.protocol === 'https:';
-  const isHls = protocol === 'hls' || /\.m3u8(\?|$)/i.test(url) || mode === 'relay';
+  const unsupported = protocol ? /^(rtsp|rtmp|rtmps|udp|rtp)$/i.test(protocol) : /^(rtsp|rtmp|udp|rtp):/i.test(url ?? '');
+  const mixed = Boolean(url?.startsWith('http://')) && window.location.protocol === 'https:';
+  const isHls = protocol === 'hls' || /\.m3u8(\?|$)/i.test(url ?? '') || mode === 'relay';
 
   const play = useCallback(() => {
     const video = videoRef.current;
@@ -40,7 +40,12 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, autoPla
     setLoading(true);
     setStarted(true);
 
-    const source = mode === 'relay' && lineKey ? `/relay/line/${encodeURIComponent(lineKey)}` : url;
+    const source = mode === 'relay' && lineKey ? `/relay/line/${encodeURIComponent(lineKey)}` : (url ?? '');
+    if (!source) {
+      setLoading(false);
+      setError('出于安全考虑，页面不展示真实线路地址；请使用中继试播或订阅地址。');
+      return;
+    }
 
     if (isHls && Hls.isSupported()) {
       const hls = new Hls({ enableWorker: true, lowLatencyMode: false, maxBufferLength: 20 });
@@ -79,7 +84,6 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, autoPla
     video.addEventListener('loadeddata', onReady, { once: true });
     video.addEventListener('error', onError, { once: true });
   }, [url, mode, lineKey, isHls, mixed, relayAvailable]);
-
   useEffect(() => {
     if (!started) return;
     play();
@@ -136,7 +140,7 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, autoPla
                 <Play size={18} /> 中继试播
               </Button>
             ) : null}
-            {!mixed ? (
+            {!mixed && url ? (
               <Button
                 variant="glass"
                 size="lg"
@@ -150,6 +154,7 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, autoPla
             ) : null}
           </div>
           {!relayAvailable && mixed ? <span style={{ fontSize: 12, opacity: 0.8 }}>管理员可在「设置 → 高级」开启中继</span> : null}
+          {!url && !relayAvailable ? <span style={{ fontSize: 12, opacity: 0.8 }}>真实地址已隐藏；请在播放器中使用订阅地址</span> : null}
         </div>
       ) : null}
       {started && loading ? (

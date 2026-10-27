@@ -86,10 +86,13 @@ publicRoutes.get('/channels/:id', async (c) => {
   const settings = await loadSettings(c.env);
   const shard = await loadChannelShard(c.env, id);
   if (shard) {
+    // Never expose the real line URL or request headers to the public browser:
+    // preview goes through /relay/line/<key>, admin APIs keep the full record.
+    const safeLines = shard.lines.map(({ url: _url, headers: _headers, ...rest }) => rest);
     return ok(
       {
         channel: shard.channel,
-        lines: shard.lines,
+        lines: safeLines,
         epg: shard.epg ?? null,
         features: { relay: settings.relayEnabled },
       },

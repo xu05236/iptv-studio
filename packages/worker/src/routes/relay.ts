@@ -43,7 +43,7 @@ async function fetchUpstream(c: Ctx, target: URL, headersIn: RequestHeaders): Pr
   if (headersIn.referer) headers.set('Referer', headersIn.referer);
   const range = c.req.header('range');
   if (range) headers.set('Range', range);
-  return fetch(target.toString(), { headers, redirect: 'follow' });
+  return fetch(target.toString(), { headers, redirect: 'follow', signal: AbortSignal.timeout(15_000) });
 }
 
 function playlistResponse(body: string, status: number): Response {
@@ -140,7 +140,8 @@ relayRoutes.get('/', async (c) => {
   }
   if (!/^https?:$/.test(target.protocol) || isPrivateHost(target.hostname)) return fail('地址不合法');
 
-  const upstream = await fetchUpstream(c, target, { userAgent: DEFAULT_UA });
+  const upstream = await fetchUpstream(c, target, { userAgent: DEFAULT_UA }).catch(() => null);
+  if (!upstream) return fail('上游线路超时或不可达', 504);
   if (isPlaylist(upstream, target)) {
     const text = await upstream.text();
     const base = upstream.url || target.toString();
@@ -186,7 +187,8 @@ relayRoutes.get('/line/:key', async (c) => {
   }
   if (!/^https?:$/.test(parsed.protocol) || isPrivateHost(parsed.hostname)) return fail('地址不合法');
 
-  const upstream = await fetchUpstream(c, parsed, line.headers ?? { userAgent: DEFAULT_UA });
+  const upstream = await fetchUpstream(c, parsed, line.headers ?? { userAgent: DEFAULT_UA }).catch(() => null);
+  if (!upstream) return fail('上游线路超时或不可达', 504);
   if (isPlaylist(upstream, parsed)) {
     const text = await upstream.text();
     const base = upstream.url || parsed.toString();

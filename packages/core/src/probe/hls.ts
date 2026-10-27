@@ -212,7 +212,22 @@ export async function probeHls(url: string, options: HlsProbeOptions): Promise<P
     }
 
     const loop = selected.endList && selected.totalDuration > 0 && selected.totalDuration <= 300 && selected.segments.length >= 3;
-    const resolution = variant?.width && variant.height ? `${variant.width}x${variant.height}` : undefined;
+    let resolution = variant?.width && variant.height ? `${variant.width}x${variant.height}` : undefined;
+    let height = variant?.height;
+
+    // Many providers publish a bare media playlist without a master, but put
+    // the quality in the path (`/720p/index.m3u8`). Use it as a fallback.
+    if (!resolution) {
+      try {
+        const match = /(?:^|[/_.-])(\d{3,4})p(?:[/_.-]|$)/i.exec(new URL(url).pathname);
+        if (match?.[1]) {
+          height = Number(match[1]);
+          resolution = `${height}p`;
+        }
+      } catch {
+        /* ignore malformed URLs */
+      }
+    }
 
     return {
       ok: true,
@@ -223,9 +238,9 @@ export async function probeHls(url: string, options: HlsProbeOptions): Promise<P
       speedKbps: measured.speedKbps,
       bytes: measured.bytes,
       resolution,
-      quality: qualityFromHeight(variant?.height),
+      quality: qualityFromHeight(height),
       width: variant?.width,
-      height: variant?.height,
+      height,
       frameRate: variant?.frameRate,
       bandwidthKbps: variant?.bandwidthKbps,
       loop,

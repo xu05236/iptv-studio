@@ -1,5 +1,8 @@
 import type { AppSettings, ChannelSummary, LineEntry, Rule } from '@iptv/core';
 
+/** Public channel lines never carry the real stream URL or request headers. */
+export type PublicLine = Omit<LineEntry, 'url' | 'headers'> & { url?: string };
+
 export interface Overview {
   ready: boolean;
   message?: string;
@@ -28,7 +31,7 @@ export interface ChannelDetailResponse {
     tvgId?: string;
     logo?: string;
   };
-  lines: LineEntry[];
+  lines: PublicLine[];
   epg?: {
     now?: { title: string; start: number; stop?: number };
     next?: Array<{ title: string; start: number; stop?: number }>;

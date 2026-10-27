@@ -123,9 +123,9 @@ export function Sources() {
       {!isLoading && !items.length ? (
         <EmptyState
           icon={<RadioTower size={24} />}
-          title="还没有直播源"
+          title="还没有采集站"
           description="添加一个 M3U / TXT / JSON 订阅，或上传本地列表。格式会自动识别。"
-          action={<Button variant="primary" onClick={() => setOpen(true)}>添加第一个源</Button>}
+          action={<Button variant="primary" onClick={() => setOpen(true)}>添加第一个采集站</Button>}
         />
       ) : null}
 
@@ -176,7 +176,7 @@ export function Sources() {
       <Sheet
         open={open}
         onClose={() => setOpen(false)}
-        title="添加直播源"
+        title="添加采集站"
         subtitle="支持 M3U / TXT / JSON / TVBox lives / 华为 JSP，自动识别"
         footer={
           <Button block variant="primary" loading={create.isPending} onClick={() => create.mutate()}>

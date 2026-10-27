@@ -261,7 +261,37 @@ interface ProbeLine {
 
 adminRoutes.get('/lines', async (c) => {
   const data = await getJson<{ generatedAt: string; items: ProbeLine[] }>(c.env, 'state/probe.json');
-  if (!data) return ok({ ready: false, items: [], summary: null });
+  let sourceItems: ProbeLine[];
+  let generatedAt: string;
+
+  if (data) {
+    sourceItems = data.items;
+    generatedAt = data.generatedAt;
+  } else {
+    // Fallback: the catalog is enough to show resolution/speed before the next
+    // publish writes state/probe.json.
+    const catalog = await loadCatalog(c.env);
+    if (!catalog) return ok({ ready: false, items: [], summary: null });
+    generatedAt = catalog.generatedAt;
+    sourceItems = catalog.items.flatMap((item) =>
+      item.lines.map((line) => ({
+        key: line.key,
+        channelId: item.channel.id,
+        channelName: item.channel.name,
+        group: item.channel.group,
+        sourceId: line.sourceId,
+        status: line.status,
+        resolution: line.resolution ?? null,
+        speedKbps: line.speedKbps ?? 0,
+        latencyMs: line.latencyMs ?? 0,
+        protocol: line.protocol,
+        failCount: line.failCount,
+        score: line.score,
+        lastProbeAt: line.lastProbeAt ?? null,
+        url: line.url,
+      })),
+    );
+  }
 
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
   const status = c.req.query('status') ?? '';
@@ -269,9 +299,9 @@ adminRoutes.get('/lines', async (c) => {
   const minSpeed = Number(c.req.query('minSpeed') ?? '0') || 0;
   const limit = Math.min(Number(c.req.query('limit') ?? 200) || 200, 500);
 
-  let rows = data.items;
+  let rows = sourceItems;
   const summary = {
-    generatedAt: data.generatedAt,
+    generatedAt,
     total: rows.length,
     alive: rows.filter((row) => row.status === 'alive').length,
     suspect: rows.filter((row) => row.status === 'suspect').length,
