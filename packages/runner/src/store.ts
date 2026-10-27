@@ -14,15 +14,16 @@ export class ApiClient {
     };
   }
 
-  /** Retry transient connect/TLS failures (common on cross-border links). */
-  private async retry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
+  /** Retry transient connect/TLS failures (common after mass probing). */
+  private async retry<T>(operation: () => Promise<T>, attempts = 6): Promise<T> {
+    const delays = [2_000, 5_000, 10_000, 20_000, 30_000];
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         return await operation();
       } catch (error) {
         lastError = error;
-        if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+        if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, delays[attempt - 1] ?? 30_000));
       }
     }
     throw lastError;
@@ -58,25 +59,33 @@ export class ApiClient {
   }
 
   async putArtifact(key: string, body: string | Uint8Array, contentType: string): Promise<void> {
-    await this.retry(async () => {
-      const response = await fetch(this.artifactUrl(key, contentType), {
-        method: 'PUT',
-        headers: this.headers({ 'content-type': 'application/octet-stream' }),
-        body: body as unknown as BodyInit,
+    try {
+      await this.retry(async () => {
+        const response = await fetch(this.artifactUrl(key, contentType), {
+          method: 'PUT',
+          headers: this.headers({ 'content-type': 'application/octet-stream' }),
+          body: body as unknown as BodyInit,
+        });
+        if (!response.ok) {
+          throw new Error(`PUT ${key} -> ${response.status}: ${(await response.text()).slice(0, 300)}`);
+        }
       });
-      if (!response.ok) {
-        throw new Error(`PUT ${key} -> ${response.status}: ${(await response.text()).slice(0, 300)}`);
-      }
-    });
+    } catch (error) {
+      throw new Error(`上传 ${key} 失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async getArtifact(key: string): Promise<string | null> {
-    return this.retry(async () => {
-      const response = await fetch(this.artifactUrl(key), { headers: this.headers() });
-      if (response.status === 404) return null;
-      if (!response.ok) throw new Error(`GET ${key} -> ${response.status}`);
-      return response.text();
-    });
+    try {
+      return await this.retry(async () => {
+        const response = await fetch(this.artifactUrl(key), { headers: this.headers() });
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error(`GET ${key} -> ${response.status}`);
+        return response.text();
+      });
+    } catch (error) {
+      throw new Error(`读取 ${key} 失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
 

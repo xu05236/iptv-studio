@@ -235,6 +235,14 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       report.probed = summary.probed;
       logger.info('测速完成', { probed: summary.probed, alive: summary.alive, dead: summary.dead, suspect: summary.suspect, mb: Math.round(summary.bytes / 1024 / 1024) });
 
+      // Mass probing can get the runner IP briefly rate-limited by Cloudflare
+      // edges. Cool down before the upload burst so publishing starts clean.
+      const cooldown = Number(process.env.PUBLISH_COOLDOWN_MS ?? '60000') || 0;
+      if (cooldown > 0) {
+        logger.info('发布前冷却', { seconds: Math.round(cooldown / 1000) });
+        await new Promise((resolve) => setTimeout(resolve, cooldown));
+      }
+
       const epg = settings.epgUrls.length
         ? await collectEpg(settings.epgUrls, registry, logger)
         : { data: EMPTY_EPG, sources: 0, programmes: 0, xml: '' };
