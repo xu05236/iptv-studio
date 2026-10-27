@@ -1,6 +1,7 @@
 import {
   BUILTIN_CHANNELS,
   ChannelRegistry,
+  classifyGroup,
   diffCatalogs,
   entryKey,
   formatDiff,
@@ -44,10 +45,15 @@ function mean(values: number[]): number {
 function buildRegistry(config: RemoteConfig): ChannelRegistry {
   const registry = new ChannelRegistry(BUILTIN_CHANNELS);
   for (const row of config.channels as ChannelRecord[]) {
+    const builtin = registry.get(row.id);
+    const stored = row.group_title?.trim();
+    const group = stored && stored !== '其他'
+      ? stored
+      : builtin?.group ?? classifyGroup(row.name, stored ?? undefined);
     registry.addChannel({
       id: row.id,
       name: row.name,
-      group: row.group_title ?? '其他',
+      group,
       tvgId: row.tvg_id ?? undefined,
       logo: row.logo ?? undefined,
       // aliases come from the dedicated /meta/aliases map below; the channel

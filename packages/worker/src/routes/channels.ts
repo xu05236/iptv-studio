@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { classifyGroup } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   addAlias,
@@ -55,6 +56,24 @@ channelRoutes.get('/', async (c) => {
     total: channels.length,
     groups: index?.groups ?? [],
   });
+});
+
+channelRoutes.post('/reclassify', async (c) => {
+  const channels = await listChannels(c.env);
+  const targets = channels.filter((channel) => !channel.group_title || channel.group_title === '其他');
+  const statements: D1PreparedStatement[] = [];
+  for (const channel of targets) {
+    const group = classifyGroup(channel.name, channel.group_title);
+    if (group === '其他' || group === channel.group_title) continue;
+    statements.push(
+      c.env.DB.prepare("UPDATE channels SET group_title = ?, updated_at = datetime('now') WHERE id = ?").bind(group, channel.id),
+    );
+  }
+  for (let offset = 0; offset < statements.length; offset += 40) {
+    await c.env.DB.batch(statements.slice(offset, offset + 40));
+  }
+  await audit(c.env, c.get('actor'), 'channel.reclassify', 'all', { fixed: statements.length, scanned: targets.length });
+  return ok({ fixed: statements.length, scanned: targets.length });
 });
 
 channelRoutes.get('/:id', async (c) => {

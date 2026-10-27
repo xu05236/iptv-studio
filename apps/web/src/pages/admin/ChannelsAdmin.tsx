@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Search, Tag, Tv } from 'lucide-react';
+import { Pencil, Search, Tag, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminChannel } from '../../lib/types';
 import { formatResolution, formatSpeed } from '../../lib/format';
@@ -41,6 +41,15 @@ export function ChannelsAdmin() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'channels'] }),
   });
 
+  const reclassify = useMutation({
+    mutationFn: () => api.post<{ fixed: number; scanned: number }>('/api/admin/channels/reclassify'),
+    onSuccess: (result) => {
+      show(`已修复 ${result.fixed} 个频道分组（扫描 ${result.scanned} 个）`);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'channels'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const items = useMemo(() => {
     const list = data?.items ?? [];
     const keyword = search.trim().toLowerCase();
@@ -73,9 +82,14 @@ export function ChannelsAdmin() {
 
   return (
     <div className="stack">
-      <div>
-        <h1 className="large-title">频道</h1>
-        <p className="subhead" style={{ marginTop: 4 }}>频道身份由别名库驱动；改名、合并、禁用都会影响下一轮聚合。</p>
+      <div className="row row--between row--wrap">
+        <div>
+          <h1 className="large-title">频道</h1>
+          <p className="subhead" style={{ marginTop: 4 }}>频道身份由别名库驱动；改名、合并、禁用都会影响下一轮聚合。</p>
+        </div>
+        <Button loading={reclassify.isPending} onClick={() => reclassify.mutate()}>
+          <Wand2 size={15} /> 修复分类
+        </Button>
       </div>
 
       <div className="search">

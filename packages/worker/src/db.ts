@@ -224,6 +224,12 @@ export async function upsertChannelSeeds(
          ON CONFLICT(id) DO UPDATE SET
            tvg_id = COALESCE(channels.tvg_id, excluded.tvg_id),
            logo = COALESCE(channels.logo, excluded.logo),
+           group_title = CASE
+             WHEN (channels.group_title IS NULL OR channels.group_title = '' OR channels.group_title = '其他')
+               AND excluded.group_title IS NOT NULL AND excluded.group_title <> '其他'
+             THEN excluded.group_title
+             ELSE channels.group_title
+           END,
            updated_at = datetime('now')`,
       ).bind(seed.id, seed.name, seed.tvgId ?? null, seed.group, seed.logo ?? null, JSON.stringify(seed.aliases ?? [])),
     );
