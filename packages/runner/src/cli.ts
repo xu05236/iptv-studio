@@ -360,6 +360,8 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
     // ---- export only: rebuild artifacts from persisted state (no probing) ----
     lines = previousState?.lines ?? [];
     logger.info('仅导出模式', { lines: lines.length });
+    const exportFfprobeLimit = Number(process.env.FFPROBE_LIMIT ?? '150') || 0;
+    if (exportFfprobeLimit > 0) await enrichResolutions(lines, exportFfprobeLimit, logger);
     const output = buildArtifacts({
       runId,
       generatedAt: nowIso(),
