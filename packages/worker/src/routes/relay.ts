@@ -202,6 +202,11 @@ relayRoutes.get('/line/:key', async (c) => {
 
   const upstream = await fetchUpstream(c, parsed, sourceHeaders ?? { userAgent: DEFAULT_UA }).catch(() => null);
   if (!upstream) return fail('上游线路超时或不可达', 504);
+  if (upstream.status >= 400) {
+    const detail = await upstream.text().catch(() => '');
+    const cloudflareCode = /error\s*code[:\s]*(\d+)/i.exec(detail)?.[1];
+    return fail(`上游线路返回 HTTP ${upstream.status}${cloudflareCode ? `（Cloudflare ${cloudflareCode}）` : ''}`, 502);
+  }
   if (isPlaylist(upstream, parsed)) {
     const text = await upstream.text();
     const base = upstream.url || parsed.toString();

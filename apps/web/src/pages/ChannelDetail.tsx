@@ -9,6 +9,15 @@ import { Badge, Button, Card, EmptyState, Segmented, Sheet, Skeleton, useToast }
 import { ChannelLogo } from '../components/ChannelLogo';
 import { Player } from '../components/Player';
 
+function probeAge(value?: string | null): string {
+  if (!value) return '';
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60_000));
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes} 分钟前`;
+  if (minutes < 1440) return `${Math.round(minutes / 60)} 小时前`;
+  return `${Math.round(minutes / 1440)} 天前`;
+}
+
 export function ChannelDetail() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -102,6 +111,9 @@ export function ChannelDetail() {
       {tab === 'lines' ? (
         lines.length ? (
           <div className="list">
+            <p className="caption" style={{ padding: '0 4px 8px' }}>
+              状态来自 GitHub Actions 探测节点；试播经 Cloudflare 中继，源站限制出口 IP 时会返回 403/502。
+            </p>
             {lines.map((line, index) => (
               <div key={line.key} className="list__row" style={{ alignItems: 'flex-start' }}>
                 <div className="logo logo--fallback" style={{ fontSize: 12 }}>#{index + 1}</div>
@@ -117,6 +129,7 @@ export function ChannelDetail() {
                     {line.sourceName ?? line.sourceId}
                     {line.sourceSite ? ` · ${line.sourceSite}` : ''}
                     {' · '}{line.protocol.toUpperCase()}
+                    {line.lastProbeAt ? ` · 检测于 ${probeAge(line.lastProbeAt)}` : ''}
                   </div>
                   <div className="row" style={{ marginTop: 8, gap: 6 }}>
                     <Button

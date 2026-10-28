@@ -59,11 +59,16 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, autoPla
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
         setLoading(false);
+        const status = data.response?.code;
         setError(
           data.type === Hls.ErrorTypes.NETWORK_ERROR
-            ? mixed || !relayAvailable
-              ? '源站拒绝跨域，或 HTTP 线路被 HTTPS 页面拦截；可尝试中继试播'
-              : '网络错误：线路可能已失效'
+            ? status === 403 || status === 502
+              ? `网络错误：源站拒绝中继访问（HTTP ${status}，通常限制地区/IP）`
+              : status
+                ? `网络错误：线路返回 HTTP ${status}`
+                : mixed || !relayAvailable
+                  ? '源站拒绝跨域，或 HTTP 线路被 HTTPS 页面拦截；可尝试中继试播'
+                  : '网络错误：线路可能已失效'
             : '播放失败：编码格式不受浏览器支持',
         );
         hls.destroy();
