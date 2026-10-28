@@ -187,3 +187,15 @@ Actions 手动入口：
 - 临时测试域名 `pref-test` / `iptv2` 已删除
 - 回滚：恢复 `custom_domain` 配置并 deploy，删除 CNAME 与 route，重新创建自定义域名
 - 注意：CNAME 目标可用性依赖 `youxuan.cf.090227.xyz`；若该域名失效，主站会不可用
+## 2026-10-28 收尾
+
+- 清理空频道：删除 4325 个（保留 1125 个当前发布频道）
+- D1 `sync/channels`：改为只更新有变化的行；绑定参数批次降到 80，修复 500
+- 用量面板：GitHub Actions / KV / D1 已接入，另加近 7 天趋势
+- `usage` workflow：每 6 小时更新，权限 `actions: read`
+- KV 写入优化：相同内容不重复写；订阅文件头移除每次变化的时间戳
+- 源更新间隔：默认 24h，未到期复用线路
+- 精品线路：每频道前 6 条 72h 内不重复测；导出淘汰明显低分辨率/低速线路
+- 主域名：DNS-only CNAME `iptv` → `youxuan.cf.090227.xyz` + Worker Route
+- 临时 `run-collect` 分支已删除；`admin.ts` 重复 usage 路由已清理
+- 今日用量：KV 写 882/1000、D1 写 89015/100000、Actions 132/2000 分钟（含清理尖峰）
