@@ -6,6 +6,7 @@ name: Collect (forced)
 on:
   push:
     branches: [run-collect]
+  workflow_dispatch:
 
 concurrency:
   group: iptv-collect
