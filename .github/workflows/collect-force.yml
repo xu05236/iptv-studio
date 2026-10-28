@@ -1,0 +1,44 @@
+name: Collect (forced)
+
+# Emergency/manual trigger without a GitHub token:
+#   git push origin main:run-collect
+# The push starts a full forced probe (ignores TTL, budget 6000).
+on:
+  push:
+    branches: [run-collect]
+
+concurrency:
+  group: iptv-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Ensure ffmpeg/ffprobe
+        run: |
+          if ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+      - name: Forced collect
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          PROBE_BUDGET: '6000'
+          PROBE_CONCURRENCY: '48'
+          PROBE_FORCE: 'true'
+          PUBLISH_COOLDOWN_MS: '60000'
+          FFPROBE_LIMIT: '200'
+          TRIGGER: 'manual'
+        run: npm run collect -w @iptv/runner

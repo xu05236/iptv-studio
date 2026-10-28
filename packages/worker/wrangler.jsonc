@@ -37,6 +37,9 @@
   },
   "vars": {
     "ENVIRONMENT": "production",
-    "PUBLIC_BASE_URL": "https://iptv.xu05236.dpdns.org"
+    "PUBLIC_BASE_URL": "https://iptv.xu05236.dpdns.org",
+    "GITHUB_REPO": "xu05236/iptv-studio",
+    "GITHUB_WORKFLOW": "collect.yml",
+    "GITHUB_REF": "main"
   }
 }

@@ -109,7 +109,8 @@ adminRoutes.post('/runs/dispatch', async (c) => {
     source_id: body.sourceId ?? '',
   });
   await audit(c.env, c.get('actor'), 'run.dispatch', 'github', result);
-  return ok(result, result.ok ? 202 : 400);
+  if (!result.ok) return fail(result.message, 400, 'dispatch_failed');
+  return ok(result, 202);
 });
 
 /** Runner callbacks: persist the run summary (artifacts already live in R2). */
