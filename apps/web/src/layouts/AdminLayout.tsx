@@ -13,6 +13,7 @@ import {
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { UsageAlert } from '../components/UsageAlert';
 
 const LINKS = [
   { to: '/admin', label: '概览', icon: Gauge, end: true },
@@ -104,6 +105,7 @@ export function AdminLayout() {
         </nav>
 
         <div className="page page--admin">
+          <UsageAlert />
           <Outlet />
         </div>
       </div>
