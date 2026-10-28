@@ -99,6 +99,16 @@ describe('selectLines', () => {
     expect(diversified.map((item) => item.sourceId)).toEqual(['a', 'b']);
   });
 
+  it('drops clearly inferior resolutions and speeds', () => {
+    const lines = [
+      line({ key: '1', sourceId: 'a', urlKey: 'u1', speedKbps: 8000, resolution: '1080p', height: 1080, score: 90 }),
+      line({ key: '2', sourceId: 'b', urlKey: 'u2', speedKbps: 7000, resolution: '1080p', height: 1080, score: 85 }),
+      line({ key: '3', sourceId: 'c', urlKey: 'u3', speedKbps: 600, resolution: '480p', height: 480, score: 40 }),
+    ];
+    const picked = selectLines(lines, { ...base, maxLines: 6 });
+    expect(picked.every((item) => item.resolution === '1080p')).toBe(true);
+  });
+
   it('falls back to lower quality when filters would empty the channel', () => {
     const lines = [line({ key: '1', urlKey: 'u1', resolution: '720p', speedKbps: 200 })];
     const picked = selectLines(lines, { ...base, minQuality: '1080p', minSpeedKbps: 1000 });

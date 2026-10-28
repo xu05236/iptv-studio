@@ -25,6 +25,8 @@ export interface SelectOptions {
   protocols?: Protocol[];
   compensate: boolean;
   keepSuspect: boolean;
+  /** Drop lines far below the best quality/speed in the same channel. */
+  relativeFloor?: boolean;
 }
 
 /** Choose the lines that go into a playlist for one channel. */
@@ -43,6 +45,22 @@ export function selectLines(lines: LineEntry[], options: SelectOptions): LineEnt
   let picked = eligible.filter(passes);
   // Filters must never produce an empty channel when compensation is enabled.
   if (!picked.length && options.compensate) picked = eligible;
+
+  if (options.relativeFloor !== false && picked.length > 1) {
+    const alive = picked.filter((line) => line.status === 'alive');
+    const bestQuality = Math.max(-1, ...alive.map((line) => qualityRank(qualityOf(line))));
+    const bestSpeed = Math.max(0, ...alive.map((line) => line.speedKbps ?? 0));
+    if (alive.length > 1) {
+      const floored = picked.filter((line) => {
+        if (line.status !== 'alive') return true;
+        if (bestQuality >= 0 && qualityRank(qualityOf(line)) < Math.max(0, bestQuality - 2)) return false;
+        if (bestSpeed > 0 && (line.speedKbps ?? 0) < bestSpeed * 0.25) return false;
+        return true;
+      });
+      if (floored.length) picked = floored;
+    }
+  }
+
   return capPerSource(picked, options.maxPerSource).slice(0, Math.max(1, options.maxLines));
 }
 
