@@ -33,10 +33,22 @@ export function planProbes(
   budget: number,
   now = new Date(),
   force = false,
+  premiumKeys?: Set<string>,
 ): LineEntry[] {
   const candidates = lines.filter((line) => {
     if (UNPROBEABLE.test(line.url)) return false;
     if (line.status === 'dead' && line.failCount >= 5) return false;
+    // Top lines per channel are already validated; re-check them every 3 days
+    // instead of every daily run to save probe budget.
+    if (
+      !force &&
+      line.status === 'alive' &&
+      premiumKeys?.has(line.key) &&
+      line.lastProbeAt &&
+      now.getTime() - new Date(line.lastProbeAt).getTime() < 72 * 60 * 60 * 1000
+    ) {
+      return false;
+    }
     // Re-check working lines daily even when their tier TTL is longer, so the
     // scheduled run removes lines that died before spending budget on new ones.
     const aliveDue =

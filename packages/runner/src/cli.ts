@@ -2,6 +2,7 @@ import {
   BUILTIN_CHANNELS,
   ChannelRegistry,
   classifyGroup,
+  compareLines,
   diffCatalogs,
   entryKey,
   formatDiff,
@@ -241,8 +242,19 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       const budget = config.probeBudget || settings.probeBudget;
       const force = process.env.PROBE_FORCE === '1' || process.env.PROBE_FORCE === 'true';
       const probeCandidates = sourceId ? lines.filter((line) => line.sourceId === sourceId) : lines;
-      const planned = planProbes(probeCandidates, sources, settings, budget, new Date(), force);
-      logger.info('测速计划', { due: planned.length, budget, force, sourceId: sourceId || undefined });
+      const premium = new Set<string>();
+      const byChannel = new Map<string, LineEntry[]>();
+      for (const line of probeCandidates) {
+        if (line.status !== 'alive') continue;
+        const bucket = byChannel.get(line.channelId) ?? [];
+        bucket.push(line);
+        byChannel.set(line.channelId, bucket);
+      }
+      for (const bucket of byChannel.values()) {
+        bucket.sort(compareLines).slice(0, Math.max(1, settings.maxLinesPerChannel)).forEach((line) => premium.add(line.key));
+      }
+      const planned = planProbes(probeCandidates, sources, settings, budget, new Date(), force, premium);
+      logger.info('测速计划', { due: planned.length, budget, force, premium: premium.size, sourceId: sourceId || undefined });
       const aliveBefore = probeCandidates.filter((line) => line.status === 'alive').length;
 
       const summary = await runProbes(planned, settings, config.concurrency || settings.concurrency, logger);
