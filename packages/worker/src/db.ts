@@ -227,8 +227,30 @@ export async function upsertChannelSeeds(
   seeds: Array<{ id: string; name: string; group: string; tvgId?: string; logo?: string; aliases?: string[] }>,
 ): Promise<number> {
   if (!seeds.length) return 0;
+
+  // Compare against existing rows first. D1 counts every UPSERT as a written
+  // row, and syncing ~5000 unchanged channels on every run dominated the free
+  // daily write quota.
+  const existing = new Map<string, { group_title: string | null; tvg_id: string | null; logo: string | null }>();
+  const ids = seeds.map((seed) => seed.id);
+  for (let offset = 0; offset < ids.length; offset += 400) {
+    const chunk = ids.slice(offset, offset + 400);
+    const { results } = await env.DB.prepare(
+      `SELECT id, group_title, tvg_id, logo FROM channels WHERE id IN (${chunk.map(() => '?').join(', ')})`,
+    ).bind(...chunk).all<{ id: string; group_title: string | null; tvg_id: string | null; logo: string | null }>();
+    for (const row of results) existing.set(row.id, row);
+  }
+
   const statements: D1PreparedStatement[] = [];
+  let changed = 0;
   for (const seed of seeds) {
+    const row = existing.get(seed.id);
+    const needsUpdate = !row
+      || (!row.tvg_id && seed.tvgId)
+      || (!row.logo && seed.logo)
+      || ((!row.group_title || row.group_title === '其他') && seed.group && seed.group !== '其他');
+    if (!needsUpdate) continue;
+    changed++;
     statements.push(
       env.DB.prepare(
         `INSERT INTO channels (id, name, tvg_id, group_title, logo, aliases)
@@ -249,8 +271,9 @@ export async function upsertChannelSeeds(
       statements.push(env.DB.prepare('INSERT OR IGNORE INTO aliases (alias, channel_id) VALUES (?, ?)').bind(alias, seed.id));
     }
   }
+
   await runBatched(env, statements);
-  return seeds.length;
+  return changed;
 }
 
 /** D1 batches have a hard statement cap; keep chunks small and predictable. */
