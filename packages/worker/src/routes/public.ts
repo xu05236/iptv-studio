@@ -123,13 +123,26 @@ interface RelayCheck {
   ok: boolean;
   status: number;
   reason?: string;
+  direct: 'https' | 'http' | 'unsupported';
+}
+
+function directKind(url: string): RelayCheck['direct'] {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'https:') return 'https';
+    if (parsed.protocol === 'http:') return 'http';
+    return 'unsupported';
+  } catch {
+    return 'unsupported';
+  }
 }
 
 async function checkRelayLine(line: LineEntry): Promise<RelayCheck> {
+  const direct = directKind(line.url);
   try {
     const parsed = new URL(line.url);
     if (!/^https?:$/.test(parsed.protocol) || isPrivateHost(parsed.hostname)) {
-      return { key: line.key, ok: false, status: 0, reason: '地址不可中继' };
+      return { key: line.key, ok: false, status: 0, reason: '地址不可中继', direct };
     }
     const headers: Record<string, string> = { range: 'bytes=0-65535' };
     if (line.headers?.userAgent) headers['user-agent'] = line.headers.userAgent;
@@ -139,16 +152,16 @@ async function checkRelayLine(line: LineEntry): Promise<RelayCheck> {
     const response = await fetch(parsed.toString(), { headers, signal: controller.signal, redirect: 'follow' }).finally(() =>
       clearTimeout(timer),
     );
-    if (!response.ok) return { key: line.key, ok: false, status: response.status, reason: `HTTP ${response.status}` };
+    if (!response.ok) return { key: line.key, ok: false, status: response.status, reason: `HTTP ${response.status}`, direct };
     const type = response.headers.get('content-type') ?? '';
     if (/mpegurl/i.test(type) || /\.m3u8$/i.test(parsed.pathname)) {
       const text = await response.text();
       const valid = /^\s*#EXTM3U/i.test(text) && /#EXTINF|#EXT-X-STREAM-INF/i.test(text);
-      return { key: line.key, ok: valid, status: response.status, reason: valid ? undefined : '不是有效的 HLS 清单' };
+      return { key: line.key, ok: valid, status: response.status, reason: valid ? undefined : '不是有效的 HLS 清单', direct };
     }
-    return { key: line.key, ok: true, status: response.status };
+    return { key: line.key, ok: true, status: response.status, direct };
   } catch (error) {
-    return { key: line.key, ok: false, status: 0, reason: error instanceof Error && error.name === 'AbortError' ? '超时' : '不可达' };
+    return { key: line.key, ok: false, status: 0, reason: error instanceof Error && error.name === 'AbortError' ? '超时' : '不可达', direct };
   }
 }
 

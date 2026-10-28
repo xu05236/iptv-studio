@@ -23,6 +23,7 @@ interface RelayCheck {
   ok: boolean;
   status: number;
   reason?: string;
+  direct: 'https' | 'http' | 'unsupported';
 }
 
 export function ChannelDetail() {
@@ -82,6 +83,7 @@ export function ChannelDetail() {
   const orderedLines = [...lines].sort((a, b) => checkRank(a.key) - checkRank(b.key));
   const checkedLines = lines.filter((line) => relayChecks.has(line.key));
   const relayBlocked = checkedLines.length > 0 && checkedLines.every((line) => !relayChecks.get(line.key)?.ok);
+  const directPlayback = query.data.features?.directPlayback ?? false;
 
   return (
     <div className="stack" style={{ marginTop: 2 }}>
@@ -152,6 +154,8 @@ export function ChannelDetail() {
                         {relayChecks.get(line.key)?.ok ? '中继可播' : `中继不可用${relayChecks.get(line.key)?.status ? ` ${relayChecks.get(line.key)?.status}` : ''}`}
                       </Badge>
                     ) : null}
+                    {directPlayback && relayChecks.get(line.key)?.direct === 'https' ? <Badge tone="green">直连可用</Badge> : null}
+                    {directPlayback && relayChecks.get(line.key)?.direct === 'http' ? <Badge tone="orange">HTTP 需中继</Badge> : null}
                     <Badge>{formatResolution(line.resolution)}</Badge>
                     {line.speedKbps ? <Badge tone="green">{formatSpeed(line.speedKbps)}</Badge> : null}
                     {line.latencyMs ? <span className="caption">{formatLatency(line.latencyMs)}</span> : null}

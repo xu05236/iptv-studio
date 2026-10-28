@@ -104,6 +104,7 @@ export async function runProbes(
     }
 
     if (result.ok) {
+      line.protocol = result.protocol;
       line.speedKbps = result.speedKbps;
       line.latencyMs = result.ttfbMs;
       line.resolution = result.resolution ?? line.resolution;

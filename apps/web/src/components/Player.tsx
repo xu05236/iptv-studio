@@ -34,7 +34,15 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, directA
   const effectiveUrl = url ?? directUrl;
   const unsupported = protocol ? /^(rtsp|rtmp|rtmps|udp|rtp)$/i.test(protocol) : /^(rtsp|rtmp|udp|rtp):/i.test(effectiveUrl ?? '');
   const mixed = Boolean(effectiveUrl?.startsWith('http://')) && window.location.protocol === 'https:';
-  const isHls = protocol === 'hls' || /\.m3u8(\?|$)/i.test(effectiveUrl ?? '') || mode === 'relay';
+  const path = (effectiveUrl ?? '').split('?')[0]!.toLowerCase();
+  const looksLikeFile = /\.(mp4|m4v|webm|ogv|flv|mkv|avi|mov|ts)$/.test(path);
+  // Many providers hide HLS behind `/hls/stream` or query-only URLs; treating
+  // those as plain <video> yields "unsupported format" on Chrome.
+  const isHls =
+    protocol === 'hls' ||
+    /m3u8|\/hls\//i.test(effectiveUrl ?? '') ||
+    mode === 'relay' ||
+    (/^https?:/i.test(effectiveUrl ?? '') && !looksLikeFile);
 
   const play = useCallback(() => {
     const video = videoRef.current;
@@ -87,7 +95,7 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, directA
     };
     const onError = (): void => {
       setLoading(false);
-      setError('无法播放：浏览器不支持该格式，或线路需要请求头');
+      setError('无法播放：可能是 TS/FLV 格式，或线路需要 Referer/User-Agent 请求头。请改用中继试播，或用订阅地址在 VLC 中播放。');
     };
     video.addEventListener('loadeddata', onReady, { once: true });
     video.addEventListener('error', onError, { once: true });

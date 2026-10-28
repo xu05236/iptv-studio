@@ -16,7 +16,7 @@ export function isStreamUrl(raw: string): boolean {
 export function guessProtocol(raw: string): Protocol {
   const url = raw.trim().toLowerCase();
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    return /\.m3u8?(\?|$)/.test(url.split('|')[0]!) ? 'hls' : 'http';
+    return /m3u8|\/hls\//.test(url.split('|')[0]!) ? 'hls' : 'http';
   }
   if (url.startsWith('rtsp://') || url.startsWith('rtsps://')) return 'rtsp';
   if (url.startsWith('rtmp://') || url.startsWith('rtmps://')) return 'rtmp';
