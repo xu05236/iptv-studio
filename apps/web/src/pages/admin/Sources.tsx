@@ -69,6 +69,17 @@ function FilterFields({ form, onChange }: { form: FilterForm; onChange: (next: F
   );
 }
 
+interface PreviewResult {
+  exists: boolean;
+  duplicateOf?: { id: string; name: string; reason: 'url' | 'content' };
+  reachable: boolean;
+  entries: number;
+  groups?: Array<{ group: string; count: number }>;
+  sample?: Array<{ name: string; url: string }>;
+  warnings?: string[];
+  error?: string;
+}
+
 interface ProbeSummary {
   summary?: {
     kind: string;
@@ -91,6 +102,7 @@ export function Sources() {
   const [content, setContent] = useState('');
   const [skipFetch, setSkipFetch] = useState(false);
   const [filterSource, setFilterSource] = useState<SourceItem | null>(null);
+  const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [filterForm, setFilterForm] = useState({ groups: '', excludeGroups: '', keywords: '', excludeKeywords: '', maxEntries: '' });
   const [region, setRegion] = useState('');
   const [operator, setOperator] = useState('');
@@ -101,6 +113,16 @@ export function Sources() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'sources'],
     queryFn: () => api.get<{ items: SourceItem[] }>('/api/admin/sources'),
+  });
+
+  const checkDuplicate = useMutation({
+    mutationFn: () =>
+      api.post<PreviewResult>('/api/admin/sources/preview', {
+        url: mode === 'url' ? url.trim() : undefined,
+        content: mode === 'url' ? undefined : content,
+      }),
+    onSuccess: (result) => setPreview(result),
+    onError: (error: Error) => { setPreview(null); show(error.message, 'error'); },
   });
 
   const create = useMutation({
@@ -116,14 +138,13 @@ export function Sources() {
     onSuccess: (result) => {
       show(`已添加，解析到 ${result.summary?.entries ?? 0} 条`);
       setOpen(false);
-      setName(''); setUrl(''); setContent(''); setRegion(''); setOperator(''); setSkipFetch(false); setFilterForm(EMPTY_FILTER_FORM);
+      setName(''); setUrl(''); setContent(''); setRegion(''); setOperator(''); setSkipFetch(false); setFilterForm(EMPTY_FILTER_FORM); setPreview(null);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
 
-  const saveFilters = useMutation({
-    mutationFn: () => api.patch(`/api/admin/sources/${filterSource?.id}`, { filters: buildFilters(filterForm) ?? {} }),
+  const saveFilters = useMutation({    mutationFn: () => api.patch(`/api/admin/sources/${filterSource?.id}`, { filters: buildFilters(filterForm) ?? {} }),
     onSuccess: () => {
       show('过滤规则已保存，下一轮采集生效');
       setFilterSource(null);
@@ -248,9 +269,14 @@ export function Sources() {
         title="添加采集站"
         subtitle="支持 M3U / TXT / JSON / TVBox lives / 华为 JSP，自动识别"
         footer={
-          <Button block variant="primary" loading={create.isPending} onClick={() => create.mutate()}>
-            添加并解析
-          </Button>
+          <div className="row">
+            <Button loading={checkDuplicate.isPending} onClick={() => checkDuplicate.mutate()}>
+              检查是否已存在
+            </Button>
+            <Button block variant="primary" loading={create.isPending} disabled={preview?.exists} onClick={() => create.mutate()}>
+              添加并解析
+            </Button>
+          </div>
         }
       >
         <div className="stack">
@@ -307,6 +333,15 @@ export function Sources() {
           </div>
           <FilterFields form={filterForm} onChange={setFilterForm} />
           {mode !== 'url' && content ? <div className="caption"><Upload size={12} /> 已读取 {content.length.toLocaleString()} 字符</div> : null}
+          {preview ? (
+            <div className="caption" style={{ color: preview.exists ? 'var(--red)' : preview.reachable ? 'var(--green)' : 'var(--orange)' }}>
+              {preview.exists
+                ? `该订阅已存在：${preview.duplicateOf?.name}（${preview.duplicateOf?.reason === 'content' ? '内容相同' : '地址相同'}）`
+                : preview.reachable
+                  ? `未收录，预计 ${preview.entries} 条`
+                  : `无法抓取：${preview.error ?? '未知错误'}；可勾选「跳过预检」交给采集器`}
+            </div>
+          ) : null}
         </div>
       </Sheet>
 

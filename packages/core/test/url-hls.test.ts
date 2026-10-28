@@ -59,7 +59,13 @@ describe('URL normalisation', () => {
     const a = normalizeUrlForDedupe('HTTP://CDN.example.com:80/live/a.m3u8?token=1&b=2&a=1');
     const b = normalizeUrlForDedupe('http://cdn.example.com/live/a.m3u8?a=1&b=2&token=999');
     expect(a).toBe(b);
-    expect(a).toBe('http://cdn.example.com/live/a.m3u8?a=1&b=2');
+    expect(a).toBe('//cdn.example.com/live/a.m3u8?a=1&b=2');
+  });
+
+  it('treats http and https variants as the same stream', () => {
+    expect(normalizeUrlForDedupe('http://cdn.example.com/live/a.m3u8')).toBe(
+      normalizeUrlForDedupe('https://cdn.example.com/live/a.m3u8'),
+    );
   });
 
   it('keeps different paths apart', () => {

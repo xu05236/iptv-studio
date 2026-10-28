@@ -42,6 +42,57 @@ sourceRoutes.get('/', async (c) => {
   });
 });
 
+sourceRoutes.post('/preview', async (c) => {
+  const body = (await readJson<{ url?: string; content?: string }>(c)) ?? {};
+  if (!body.url && !body.content) return fail('请提供订阅地址或内容');
+
+  const existing = await listSources(c.env);
+  if (body.url) {
+    const validation = validateRemoteUrl(body.url);
+    if (!validation.ok) return fail(validation.reason ?? '订阅地址不合法');
+    const normalized = normalizeUrlForDedupe(body.url);
+    const duplicate = existing.find((source) => source.url && normalizeUrlForDedupe(source.url) === normalized);
+    if (duplicate) {
+      return ok({ exists: true, duplicateOf: { id: duplicate.id, name: duplicate.name, reason: 'url' }, reachable: true, entries: duplicate.entry_count });
+    }
+    const fetched = await fetchSourceText(body.url);
+    if (!fetched.ok || !fetched.text) {
+      return ok({ exists: false, reachable: false, error: fetched.error ?? '抓取失败', entries: 0, warnings: ['源站可能限制 Cloudflare/海外 IP，可勾选「跳过预检」交给采集器抓取'] });
+    }
+    return summarizePreview(fetched.text, existing);
+  }
+
+  const text = body.content ?? '';
+  if (text.length > 24 * 1024 * 1024) return fail('内容超过 24MB 限制', 413);
+  return summarizePreview(text, existing);
+});
+
+async function summarizePreview(text: string, existing: Awaited<ReturnType<typeof listSources>>) {
+  const contentHash = await sha256(text);
+  const duplicateContent = existing.find((source) => source.content_hash === contentHash);
+  if (duplicateContent) {
+    return ok({ exists: true, duplicateOf: { id: duplicateContent.id, name: duplicateContent.name, reason: 'content' }, reachable: true, entries: duplicateContent.entry_count });
+  }
+  if (text.length > 512 * 1024) {
+    return ok({ exists: false, reachable: true, entries: 0, warnings: ['内容较大，添加后由采集器解析'], groups: [], sample: [] });
+  }
+  const parsed = parseSource(text, 'auto');
+  const counts = new Map<string, number>();
+  for (const entry of parsed.entries) {
+    const group = entry.group?.trim() || '未分组';
+    counts.set(group, (counts.get(group) ?? 0) + 1);
+  }
+  const groups = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([group, count]) => ({ group, count }));
+  return ok({
+    exists: false,
+    reachable: true,
+    entries: parsed.entries.length,
+    groups,
+    sample: parsed.entries.slice(0, 8),
+    warnings: parsed.warnings,
+  });
+}
+
 sourceRoutes.get('/:id', async (c) => {
   const source = await getSource(c.env, c.req.param('id'));
   if (!source) return fail('直播源不存在', 404);

@@ -78,7 +78,9 @@ export function normalizeUrlForDedupe(raw: string): string {
     const search = params.length
       ? `?${params.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')}`
       : '';
-    return `${parsed.protocol}//${parsed.host}${path}${search}`;
+    // http and https are the same stream for dedupe purposes.
+    const scheme = parsed.protocol === 'http:' || parsed.protocol === 'https:' ? '' : parsed.protocol;
+    return `${scheme}//${parsed.host}${path}${search}`;
   } catch {
     return url.trim().toLowerCase();
   }
