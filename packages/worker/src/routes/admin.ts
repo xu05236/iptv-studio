@@ -100,15 +100,16 @@ adminRoutes.get('/runs/:id/log', async (c) => {
 });
 
 adminRoutes.post('/runs/dispatch', async (c) => {
-  const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string }>(c)) ?? {};
+  const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string }>(c)) ?? {};
   const command = body.command === 'export' ? 'export' : body.command === 'epg' ? 'epg' : 'collect';
   const force = Boolean(body.force);
   // GitHub rejects any input that is not declared in the workflow file, so only
-  // send the three keys collect.yml actually defines.
+  // send the keys collect.yml actually defines.
   const result = await dispatchWorkflow(c.env, {
     command,
     force: force ? 'true' : 'false',
     budget: String(body.budget ?? (force ? 6000 : 1200)),
+    source_id: body.sourceId?.trim() ?? '',
   });
   await audit(c.env, c.get('actor'), 'run.dispatch', 'github', result);
   if (!result.ok) return fail(result.message, 400, 'dispatch_failed');
@@ -305,6 +306,7 @@ adminRoutes.get('/lines', async (c) => {
 
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
   const status = c.req.query('status') ?? '';
+  const sourceId = c.req.query('sourceId') ?? '';
   const resolution = c.req.query('resolution') ?? '';
   const minSpeed = Number(c.req.query('minSpeed') ?? '0') || 0;
   const limit = Math.min(Number(c.req.query('limit') ?? 200) || 200, 500);
@@ -341,6 +343,7 @@ adminRoutes.get('/lines', async (c) => {
 
   if (q) rows = rows.filter((row) => row.channelName.toLowerCase().includes(q) || row.sourceId.includes(q) || row.url.toLowerCase().includes(q));
   if (status) rows = rows.filter((row) => row.status === status);
+  if (sourceId) rows = rows.filter((row) => row.sourceId === sourceId);
   if (resolution) rows = rows.filter((row) => (row.resolution ?? '未知') === resolution);
   if (minSpeed > 0) rows = rows.filter((row) => row.speedKbps >= minSpeed);
 

@@ -37,13 +37,19 @@ export function planProbes(
   const candidates = lines.filter((line) => {
     if (UNPROBEABLE.test(line.url)) return false;
     if (line.status === 'dead' && line.failCount >= 5) return false;
-    return force || isDueForProbe(line, tierOf(sources.get(line.sourceId)), now);
+    // Re-check working lines daily even when their tier TTL is longer, so the
+    // scheduled run removes lines that died before spending budget on new ones.
+    const aliveDue =
+      line.status === 'alive' &&
+      (!line.lastProbeAt || now.getTime() - new Date(line.lastProbeAt).getTime() > 24 * 60 * 60 * 1000);
+    return force || aliveDue || isDueForProbe(line, tierOf(sources.get(line.sourceId)), now);
   });
 
   const weight = (line: LineEntry): number => {
-    if (!line.lastProbeAt) return 0;
-    if (line.status === 'dead') return 1;
-    if (line.status === 'suspect') return 2;
+    if (!line.lastProbeAt) return 3;
+    if (line.status === 'alive') return 0;
+    if (line.status === 'suspect') return 1;
+    if (line.status === 'dead') return 2;
     return 3;
   };
 

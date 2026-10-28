@@ -47,6 +47,7 @@ export function Probe() {
   const { show } = useToast();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'all' | 'alive' | 'suspect' | 'dead'>('all');
+  const [sourceId, setSourceId] = useState('');
   const [resolution, setResolution] = useState('');
   const [openTester, setOpenTester] = useState(false);
   const [url, setUrl] = useState('');
@@ -55,15 +56,23 @@ export function Probe() {
   const [result, setResult] = useState<{ ok: boolean; status?: number; protocol: string; ttfbMs?: number; speedKbps?: number; resolution?: string; bandwidthKbps?: number; durationSec?: number; loop?: boolean; error?: string } | null>(null);
 
   const lines = useQuery({
-    queryKey: ['admin', 'lines', search, status, resolution],
+    queryKey: ['admin', 'lines', search, status, resolution, sourceId],
     queryFn: () => {
       const params = new URLSearchParams({ limit: '300' });
       if (search.trim()) params.set('q', search.trim());
       if (status !== 'all') params.set('status', status);
+      if (sourceId) params.set('sourceId', sourceId);
       if (resolution) params.set('resolution', resolution);
       return api.get<LinesResponse>(`/api/admin/lines?${params.toString()}`);
     },
   });
+
+  const sources = useQuery({
+    queryKey: ['admin', 'sources', 'probe-filter'],
+    queryFn: () => api.get<{ items: Array<{ id: string; name: string }> }>('/api/admin/sources'),
+  });
+
+  const visibleItems = (lines.data?.items ?? []).filter((row) => status === 'all' || row.status === status);
 
   const runs = useQuery({
     queryKey: ['admin', 'runs', 8],
@@ -71,7 +80,7 @@ export function Probe() {
   });
 
   const dispatch = useMutation({
-    mutationFn: (input: { command: 'collect' | 'export' | 'epg'; force?: boolean }) =>
+    mutationFn: (input: { command: 'collect' | 'export' | 'epg'; force?: boolean; sourceId?: string }) =>
       api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', input),
     onSuccess: (res) => show(res.message),
     onError: (error: Error) => show(error.message, 'error'),
@@ -152,6 +161,20 @@ export function Probe() {
             { value: 'dead', label: '失效' },
           ]}
         />
+        <select className="input" style={{ maxWidth: 220 }} value={sourceId} onChange={(event) => setSourceId(event.target.value)}>
+          <option value="">全部采集站</option>
+          {(sources.data?.items ?? []).map((source) => (
+            <option key={source.id} value={source.id}>{source.name}</option>
+          ))}
+        </select>
+        {sourceId ? (
+          <Button
+            loading={dispatch.isPending}
+            onClick={() => dispatch.mutate({ command: 'collect', force: true, sourceId })}
+          >
+            检测此源
+          </Button>
+        ) : null}
       </div>
 
       {lines.isLoading ? <Skeleton height={280} radius={16} /> : null}
@@ -173,7 +196,7 @@ export function Probe() {
                 </tr>
               </thead>
               <tbody>
-                {lines.data.items.map((row) => (
+                {visibleItems.map((row) => (
                   <tr key={row.key}>
                     <td>
                       <div style={{ fontWeight: 600 }}>{row.channelName}</div>

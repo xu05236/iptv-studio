@@ -19,6 +19,9 @@ on:
         type: choice
         options: ['false', 'true']
         default: 'false'
+      source_id:
+        description: '仅检测指定采集站 ID（留空=全部）'
+        default: ''
 
 concurrency:
   group: iptv-collect
@@ -59,6 +62,7 @@ jobs:
           PROBE_BUDGET: ${{ github.event.inputs.budget || vars.PROBE_BUDGET || '6000' }}
           PROBE_CONCURRENCY: ${{ vars.PROBE_CONCURRENCY || '32' }}
           PROBE_FORCE: ${{ github.event.inputs.force || 'false' }}
+          SOURCE_ID: ${{ github.event.inputs.source_id || '' }}
           PUBLISH_COOLDOWN_MS: '60000'
           FFPROBE_LIMIT: ${{ vars.FFPROBE_LIMIT || '150' }}
           TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}

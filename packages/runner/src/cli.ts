@@ -228,16 +228,23 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
     let bytes = 0;
 
     if (command === 'collect') {
-      const collected = await collectAll(remote.sources, store, logger);
+      const sourceId = (process.env.SOURCE_ID ?? '').trim();
+      const targetSources = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
+      if (sourceId && !targetSources.length) throw new Error(`采集站不存在或已停用：${sourceId}`);
+      const collected = await collectAll(targetSources, store, logger);
       const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso());
-      lines = normalized.lines;
-      logger.info('线路归一完成', { lines: lines.length });
+      // A per-source check must keep every other source's lines intact.
+      lines = sourceId
+        ? [...(previousState?.lines ?? []).filter((line) => line.sourceId !== sourceId), ...normalized.lines]
+        : normalized.lines;
+      logger.info('线路归一完成', { lines: lines.length, sourceId: sourceId || undefined });
 
       const budget = config.probeBudget || settings.probeBudget;
       const force = process.env.PROBE_FORCE === '1' || process.env.PROBE_FORCE === 'true';
-      const planned = planProbes(lines, sources, settings, budget, new Date(), force);
-      logger.info('测速计划', { due: planned.length, budget, force });
-      const aliveBefore = lines.filter((line) => line.status === 'alive').length;
+      const probeCandidates = sourceId ? lines.filter((line) => line.sourceId === sourceId) : lines;
+      const planned = planProbes(probeCandidates, sources, settings, budget, new Date(), force);
+      logger.info('测速计划', { due: planned.length, budget, force, sourceId: sourceId || undefined });
+      const aliveBefore = probeCandidates.filter((line) => line.status === 'alive').length;
 
       const summary = await runProbes(planned, settings, config.concurrency || settings.concurrency, logger);
       probed = summary.probed;
@@ -246,13 +253,13 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       report.probed = summary.probed;
       logger.info('测速完成', { probed: summary.probed, alive: summary.alive, dead: summary.dead, suspect: summary.suspect, mb: Math.round(summary.bytes / 1024 / 1024) });
 
-      const aliveAfter = lines.filter((line) => line.status === 'alive').length;
+      const aliveAfter = probeCandidates.filter((line) => line.status === 'alive').length;
       if (aliveBefore >= 20 && summary.probed >= 100 && aliveAfter < aliveBefore * 0.5) {
         throw new Error(`探测异常：可用线路 ${aliveBefore} → ${aliveAfter}，已放弃发布以保护现有订阅（请降低并发或稍后重试）`);
       }
 
       const ffprobeLimit = Number(process.env.FFPROBE_LIMIT ?? '150') || 0;
-      if (ffprobeLimit > 0) await enrichResolutions(lines, ffprobeLimit, logger);
+      if (ffprobeLimit > 0) await enrichResolutions(sourceId ? lines.filter((line) => line.sourceId === sourceId) : lines, ffprobeLimit, logger);
 
       // Mass probing can get the runner IP briefly rate-limited by Cloudflare
       // edges. Cool down before the upload burst so publishing starts clean.
