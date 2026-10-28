@@ -5,6 +5,10 @@ on:
     - cron: '23 */6 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+
 concurrency:
   group: iptv-usage
   cancel-in-progress: true

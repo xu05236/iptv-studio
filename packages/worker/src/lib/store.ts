@@ -45,6 +45,11 @@ export async function putArtifact(
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   const etag = `"${hex(digest).slice(0, 32)}"`;
   const meta: ArtifactMeta = { contentType, etag, size: bytes.byteLength, updatedAt: isoNow() };
+  // KV writes are the scarce resource on the free plan. Skip rewriting a value
+  // when the bytes and content type are unchanged.
+  const existing = await env.KV.list({ prefix: key, limit: 10 });
+  const current = existing.keys.find((entry) => entry.name === key)?.metadata as ArtifactMeta | undefined;
+  if (current?.etag === etag && current.contentType === contentType) return current;
   await env.KV.put(key, bytes, { metadata: meta });
   return meta;
 }
