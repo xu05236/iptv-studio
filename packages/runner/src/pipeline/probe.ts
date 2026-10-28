@@ -31,11 +31,12 @@ export function planProbes(
   settings: AppSettings,
   budget: number,
   now = new Date(),
+  force = false,
 ): LineEntry[] {
   const candidates = lines.filter((line) => {
     if (UNPROBEABLE.test(line.url)) return false;
     if (line.status === 'dead' && line.failCount >= 5) return false;
-    return isDueForProbe(line, tierOf(sources.get(line.sourceId)), now);
+    return force || isDueForProbe(line, tierOf(sources.get(line.sourceId)), now);
   });
 
   const weight = (line: LineEntry): number => {

@@ -100,10 +100,11 @@ adminRoutes.get('/runs/:id/log', async (c) => {
 });
 
 adminRoutes.post('/runs/dispatch', async (c) => {
-  const body = (await readJson<{ reason?: string; sourceId?: string; command?: string }>(c)) ?? {};
+  const body = (await readJson<{ reason?: string; sourceId?: string; command?: string; force?: boolean }>(c)) ?? {};
   const result = await dispatchWorkflow(c.env, {
     trigger: 'manual',
-    command: body.command === 'export' ? 'export' : 'collect',
+    command: body.command === 'export' ? 'export' : body.command === 'epg' ? 'epg' : 'collect',
+    force: body.force ? 'true' : 'false',
     reason: (body.reason ?? 'admin').slice(0, 100),
     source_id: body.sourceId ?? '',
   });

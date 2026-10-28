@@ -55,7 +55,7 @@ const ROWS: Row[] = [
   ['shandong-weishi', '山东卫视', '卫视', '山东卫视'],
   ['henan-weishi', '河南卫视', '卫视', '河南卫视'],
   ['hubei-weishi', '湖北卫视', '卫视', '湖北卫视'],
-  ['hunan-weishi', '湖南卫视', '卫视', '湖南卫视', ['湖南卫视高清']],
+  ['hunan-weishi', '湖南卫视', '卫视', '湖南卫视', ['湖南卫视高清', 'Hunan TV', 'Hunan Satellite TV', 'HunanTV', 'Hunan TV (2160p)']],
   ['guangdong-weishi', '广东卫视', '卫视', '广东卫视'],
   ['guangxi-weishi', '广西卫视', '卫视', '广西卫视'],
   ['hainan-weishi', '海南卫视', '卫视', '海南卫视', ['旅游卫视']],

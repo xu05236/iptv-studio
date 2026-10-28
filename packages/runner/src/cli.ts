@@ -233,8 +233,9 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       logger.info('线路归一完成', { lines: lines.length });
 
       const budget = config.probeBudget || settings.probeBudget;
-      const planned = planProbes(lines, sources, settings, budget);
-      logger.info('测速计划', { due: planned.length, budget });
+      const force = process.env.PROBE_FORCE === '1' || process.env.PROBE_FORCE === 'true';
+      const planned = planProbes(lines, sources, settings, budget, new Date(), force);
+      logger.info('测速计划', { due: planned.length, budget, force });
 
       const summary = await runProbes(planned, settings, config.concurrency || settings.concurrency, logger);
       probed = summary.probed;

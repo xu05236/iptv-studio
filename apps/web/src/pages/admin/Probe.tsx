@@ -71,7 +71,8 @@ export function Probe() {
   });
 
   const dispatch = useMutation({
-    mutationFn: (command: 'collect' | 'export' | 'epg') => api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', { command }),
+    mutationFn: (input: { command: 'collect' | 'export' | 'epg'; force?: boolean }) =>
+      api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', input),
     onSuccess: (res) => show(res.message),
     onError: (error: Error) => show(error.message, 'error'),
   });
@@ -97,10 +98,18 @@ export function Probe() {
         </div>
         <div className="row row--wrap">
           <Button onClick={() => setOpenTester(true)}><Zap size={15} /> 单条探测</Button>
-          <Button variant="primary" loading={dispatch.isPending} onClick={() => dispatch.mutate('collect')}>
+          <Button variant="primary" loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'collect' })}>
             <PlayCircle size={15} /> 全量检测
           </Button>
-          <Button loading={dispatch.isPending} onClick={() => dispatch.mutate('export')}>
+          <Button
+            loading={dispatch.isPending}
+            onClick={() => {
+              if (confirm('强制重测预算内所有线路（忽略到期时间），耗时较长，确定继续？')) dispatch.mutate({ command: 'collect', force: true });
+            }}
+          >
+            强制全量
+          </Button>
+          <Button loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'export' })}>
             <RefreshCw size={15} /> 重建导出
           </Button>
         </div>

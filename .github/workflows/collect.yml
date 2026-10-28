@@ -14,6 +14,11 @@ on:
       budget:
         description: '本次测速条数（首轮建议 1200，稳定后再调大）'
         default: '1200'
+      force:
+        description: '强制全量测速（忽略 TTL 到期时间，配合 budget 使用）'
+        type: choice
+        options: ['false', 'true']
+        default: 'false'
 
 concurrency:
   group: iptv-collect
@@ -53,6 +58,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PROBE_BUDGET: ${{ github.event.inputs.budget || vars.PROBE_BUDGET || '6000' }}
           PROBE_CONCURRENCY: ${{ vars.PROBE_CONCURRENCY || '32' }}
+          PROBE_FORCE: ${{ github.event.inputs.force || 'false' }}
           PUBLISH_COOLDOWN_MS: '60000'
           FFPROBE_LIMIT: ${{ vars.FFPROBE_LIMIT || '150' }}
           TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}
