@@ -178,3 +178,12 @@ Actions 手动入口：
   - 相同内容 SHA-256 → 409
 - 修复 runner 304：源返回 304 时没有本地正文，改为无条件重取，避免过滤/解析被跳过
 - 实测 `all-7990`：7946 条 → 过滤后 1202 条，频道 7596 → 1203，线路 2926，可用 341
+## 2026-10-28 晚：主域名切换三网优选 CNAME
+
+- `iptv.xu05236.dpdns.org` 不再使用 Worker 自定义域名（Cloudflare 代理）
+- 改为 DNS-only CNAME：`iptv.xu05236.dpdns.org` → `youxuan.cf.090227.xyz`
+- 通过 Worker Route 提供服务：`iptv.xu05236.dpdns.org/*`（`wrangler.jsonc` 已改为 route 配置）
+- 实测：首页 200、健康接口连续 6 次 200、后台频道树 200；延迟约 0.6–6 秒
+- 临时测试域名 `pref-test` / `iptv2` 已删除
+- 回滚：恢复 `custom_domain` 配置并 deploy，删除 CNAME 与 route，重新创建自定义域名
+- 注意：CNAME 目标可用性依赖 `youxuan.cf.090227.xyz`；若该域名失效，主站会不可用

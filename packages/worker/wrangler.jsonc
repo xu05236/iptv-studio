@@ -14,8 +14,8 @@
   },
   "routes": [
     {
-      "pattern": "iptv.xu05236.dpdns.org",
-      "custom_domain": true
+      "pattern": "iptv.xu05236.dpdns.org/*",
+      "zone_name": "xu05236.dpdns.org"
     }
   ],
   "d1_databases": [
