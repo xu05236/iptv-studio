@@ -100,6 +100,16 @@ artifactRoutes.get('/epg/:file', async (c) => {
   if (!match) return fail('节目单地址格式不正确', 404);
   const row = await getSubscriptionByToken(c.env, match[1]!);
   if (!row || row.enabled !== 1) return fail('订阅不存在或已停用', 404);
+
+  // Prefer the per-subscription guide (much smaller for players).
+  const perSub = await serveArtifact(c, `out/epg-${row.id}.xml`, {
+    contentType: 'application/xml; charset=utf-8',
+    filename: `${encodeURIComponent(row.name)}.xml`,
+    maxAge: 300,
+    sMaxAge: 900,
+  });
+  if (perSub) return perSub;
+
   return serveArtifactOr404(c, 'out/epg.xml', {
     contentType: 'application/xml; charset=utf-8',
     filename: 'epg.xml',

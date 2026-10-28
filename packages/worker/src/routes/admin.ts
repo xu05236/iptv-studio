@@ -100,13 +100,15 @@ adminRoutes.get('/runs/:id/log', async (c) => {
 });
 
 adminRoutes.post('/runs/dispatch', async (c) => {
-  const body = (await readJson<{ reason?: string; sourceId?: string; command?: string; force?: boolean }>(c)) ?? {};
+  const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string }>(c)) ?? {};
+  const command = body.command === 'export' ? 'export' : body.command === 'epg' ? 'epg' : 'collect';
+  const force = Boolean(body.force);
+  // GitHub rejects any input that is not declared in the workflow file, so only
+  // send the three keys collect.yml actually defines.
   const result = await dispatchWorkflow(c.env, {
-    trigger: 'manual',
-    command: body.command === 'export' ? 'export' : body.command === 'epg' ? 'epg' : 'collect',
-    force: body.force ? 'true' : 'false',
-    reason: (body.reason ?? 'admin').slice(0, 100),
-    source_id: body.sourceId ?? '',
+    command,
+    force: force ? 'true' : 'false',
+    budget: String(body.budget ?? (force ? 6000 : 1200)),
   });
   await audit(c.env, c.get('actor'), 'run.dispatch', 'github', result);
   if (!result.ok) return fail(result.message, 400, 'dispatch_failed');

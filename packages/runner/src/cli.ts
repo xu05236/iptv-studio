@@ -282,7 +282,7 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
         runId,
         generatedAt: output.catalog.generatedAt,
       }, logger);
-      await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, logger);
+      await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, epg.data, logger);
 
       // Channel discovery + alias sync
       await api.post('/api/admin/sync/channels', {
@@ -388,7 +388,7 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
     });
     const logKey = await writeLog(store, runId, logger);
     await publish(store, output, { lines, log: logger.toJSONL(), runId, generatedAt: output.catalog.generatedAt }, logger);
-    await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, logger);
+    await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, null, logger);
     await api.post('/api/admin/sync/channels', { channels: output.channels.map((channel) => ({ ...channel, aliases: [] })) });
     report = {
       ...report,

@@ -1,8 +1,10 @@
 import {
   buildPlaylist,
+  buildXmltv,
   selectLines,
   toExportChannels,
   type AppSettings,
+  type EpgData,
   type PlaylistFormat,
   type Protocol,
   type Quality,
@@ -39,6 +41,7 @@ export async function publishSubscriptions(
   catalog: ExportCatalog,
   settings: AppSettings,
   publicBaseUrl: string,
+  epg: EpgData | null,
   logger: RunLogger,
 ): Promise<number> {
   let { items } = await api.get<{ items: SubscriptionRow[] }>('/api/admin/subscriptions');
@@ -89,6 +92,26 @@ export async function publishSubscriptions(
         format === 'm3u' ? 'audio/x-mpegurl; charset=utf-8' : format === 'txt' ? 'text/plain; charset=utf-8' : 'application/json; charset=utf-8',
       );
       written++;
+    }
+
+    // Per-subscription EPG: players should not download the full 6MB guide.
+    if (epg && sub.includeEpg) {
+      const ids = new Set(selected.map((item) => item.channel.id));
+      const channels = epg.channels.filter((channel) => ids.has(channel.id));
+      const programmes = epg.programmes.filter((programme) => ids.has(programme.channelId));
+      if (channels.length) {
+        const xml = buildXmltv(
+          { channels, programmes },
+          {
+            generator: 'iptv-studio',
+            channelNames: new Map(channels.map((channel) => [channel.id, channel.names[0] ?? channel.id])),
+          },
+        );
+        if (new TextEncoder().encode(xml).byteLength < 24 * 1024 * 1024) {
+          await store.put(`out/epg-${sub.id}.xml`, xml, 'application/xml; charset=utf-8');
+          written++;
+        }
+      }
     }
   }
 
