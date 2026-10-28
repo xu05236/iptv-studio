@@ -83,7 +83,7 @@ export async function publishSubscriptions(
       const body = buildPlaylist(channels, format, {
         epgUrl: epgUrl ?? undefined,
         showRegionSuffix: sub.showRegionSuffix,
-        headerComment: `iptv-studio · ${sub.name} · ${catalog.generatedAt}`,
+        headerComment: `iptv-studio · ${sub.name}`,
       });
       const key = format === 'diyp' ? `out/sub-${sub.id}.diyp` : `out/sub-${sub.id}.${format === 'm3u' ? 'm3u' : format}`;
       await store.put(
