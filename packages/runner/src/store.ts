@@ -131,6 +131,9 @@ export interface SourceRecord {
   tier: 'high' | 'normal' | 'low';
   r2_key: string | null;
   status: string;
+  last_fetch_at?: string | null;
+  entry_count?: number;
+  refresh_hours?: number;
   filters?: string | { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number } | null;
 }
 

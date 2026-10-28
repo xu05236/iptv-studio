@@ -61,6 +61,7 @@ export interface SourceItem {
   tier: 'high' | 'normal' | 'low';
   status: string;
   notes: string | null;
+  refresh_hours?: number;
   filters?: { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number };
   created_at: string;
 }
@@ -97,6 +98,13 @@ export interface AdminStats {
   subscriptions: number;
   feedbackOpen: number;
   runs: RunItem[];
+}
+
+export interface UsageSnapshot {
+  collectedAt: string;
+  kv: { day: string; reads: number; writes: number; lists: number; deletes: number; storageBytes: number };
+  d1: { day: string; rowsRead: number; rowsWritten: number };
+  github: { month: string; minutes: number; runs: number };
 }
 
 export interface SubscriptionItem {

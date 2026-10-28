@@ -2,9 +2,35 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowUpRight, Database, PlayCircle, RefreshCw, RadioTower, Users } from 'lucide-react';
 import { api } from '../../lib/api';
-import type { AdminStats } from '../../lib/types';
+import type { AdminStats, UsageSnapshot } from '../../lib/types';
 import { formatDuration, timeAgo } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Skeleton, Stat, useToast } from '../../components/ui';
+
+function formatNumber(value: number): string {
+  return value.toLocaleString('zh-CN');
+}
+
+function formatBytes(value: number): string {
+  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GB`;
+  if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(1)} MB`;
+  return `${Math.round(value / 1024)} KB`;
+}
+
+function UsageBar({ label, used, limit, format = formatNumber }: { label: string; used: number; limit: number; format?: (value: number) => string }) {
+  const percent = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+  const color = percent >= 90 ? 'var(--red)' : percent >= 70 ? 'var(--orange)' : 'var(--green)';
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div className="row row--between caption">
+        <span>{label}</span>
+        <span>{format(used)} / {format(limit)}</span>
+      </div>
+      <div className="meter" style={{ marginTop: 4 }}>
+        <div className="meter__fill" style={{ width: `${Math.max(1, percent)}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
 
 export function Dashboard() {
   const queryClient = useQueryClient();
@@ -12,6 +38,11 @@ export function Dashboard() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'stats'],
     queryFn: () => api.get<AdminStats>('/api/admin/stats'),
+  });
+
+  const usageQuery = useQuery({
+    queryKey: ['admin', 'usage'],
+    queryFn: () => api.get<{ usage: UsageSnapshot | null }>('/api/admin/usage'),
   });
 
   const dispatch = useMutation({
@@ -74,6 +105,68 @@ export function Dashboard() {
         <Stat value={stats.index.totals.alive} label={`可用线路 · ${aliveRatio}%`} />
         <Stat value={stats.sources.enabled} label={`启用源 / 共 ${stats.sources.total}`} />
         <Stat value={stats.subscriptions} label="订阅出口" />
+      </div>
+
+      <div className="grid">
+        {(() => {
+          const snapshot = usageQuery.data?.usage ?? null;
+          return (
+            <>
+              <Card>
+                <div className="row row--between">
+                  <div className="title-3">GitHub Actions</div>
+                  <span className="caption">{snapshot ? timeAgo(snapshot.collectedAt) : '等待用量快照'}</span>
+                </div>
+                {snapshot ? (
+                  <>
+                    <UsageBar label="本月已用（估算）" used={snapshot.github.minutes} limit={2000} format={(value) => `${value} 分钟`} />
+                    <div className="caption" style={{ marginTop: 8 }}>
+                      本月 {snapshot.github.runs} 次运行 · 剩余约 {Math.max(0, 2000 - snapshot.github.minutes)} 分钟
+                    </div>
+                  </>
+                ) : (
+                  <div className="caption" style={{ marginTop: 10 }}>用量工作流每 6 小时更新一次</div>
+                )}
+                <div className="caption" style={{ marginTop: 6 }}>私有仓库免费 2000 分钟/月，按运行时长估算，账单日重置</div>
+              </Card>
+
+              <Card>
+                <div className="row row--between">
+                  <div className="title-3">Cloudflare KV</div>
+                  <span className="caption">{snapshot ? `${snapshot.kv.day} (UTC)` : '等待快照'}</span>
+                </div>
+                {snapshot ? (
+                  <>
+                    <UsageBar label="今日写入" used={snapshot.kv.writes} limit={1000} />
+                    <UsageBar label="今日读取" used={snapshot.kv.reads} limit={100000} />
+                    <UsageBar label="存储占用" used={snapshot.kv.storageBytes} limit={1024 ** 3} format={formatBytes} />
+                    <div className="caption" style={{ marginTop: 8 }}>免费额度每日 UTC 00:00（北京时间 08:00）重置</div>
+                  </>
+                ) : (
+                  <div className="caption" style={{ marginTop: 10 }}>等待用量工作流采集</div>
+                )}
+              </Card>
+
+              <Card>
+                <div className="row row--between">
+                  <div className="title-3">Cloudflare D1</div>
+                  <span className="caption">{snapshot ? `${snapshot.d1.day} (UTC)` : '等待快照'}</span>
+                </div>
+                {snapshot ? (
+                  <>
+                    <UsageBar label="今日写入行数" used={snapshot.d1.rowsWritten} limit={100000} />
+                    <UsageBar label="今日读取行数" used={snapshot.d1.rowsRead} limit={5000000} />
+                    <div className="caption" style={{ marginTop: 8 }}>
+                      写入已用 {Math.round((snapshot.d1.rowsWritten / 100000) * 100)}% · 免费额度每日 UTC 00:00 重置
+                    </div>
+                  </>
+                ) : (
+                  <div className="caption" style={{ marginTop: 10 }}>等待用量工作流采集</div>
+                )}
+              </Card>
+            </>
+          );
+        })()}
       </div>
 
       <div className="grid grid--wide">

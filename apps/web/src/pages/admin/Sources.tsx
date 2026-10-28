@@ -101,6 +101,7 @@ export function Sources() {
   const [url, setUrl] = useState('');
   const [content, setContent] = useState('');
   const [skipFetch, setSkipFetch] = useState(false);
+  const [refreshHours, setRefreshHours] = useState('24');
   const [filterSource, setFilterSource] = useState<SourceItem | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [filterForm, setFilterForm] = useState({ groups: '', excludeGroups: '', keywords: '', excludeKeywords: '', maxEntries: '' });
@@ -131,6 +132,7 @@ export function Sources() {
       url: mode === 'url' ? url.trim() : undefined,
       content: mode === 'url' ? undefined : content,
       skipFetch: mode === 'url' ? skipFetch : undefined,
+      refresh_hours: Number(refreshHours) || 24,
       filters: buildFilters(filterForm),
       region: region.trim() || undefined,
       operator: operator.trim() || undefined,
@@ -138,13 +140,17 @@ export function Sources() {
     onSuccess: (result) => {
       show(`已添加，解析到 ${result.summary?.entries ?? 0} 条`);
       setOpen(false);
-      setName(''); setUrl(''); setContent(''); setRegion(''); setOperator(''); setSkipFetch(false); setFilterForm(EMPTY_FILTER_FORM); setPreview(null);
+      setName(''); setUrl(''); setContent(''); setRegion(''); setOperator(''); setSkipFetch(false); setFilterForm(EMPTY_FILTER_FORM); setPreview(null); setRefreshHours('24');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
 
-  const saveFilters = useMutation({    mutationFn: () => api.patch(`/api/admin/sources/${filterSource?.id}`, { filters: buildFilters(filterForm) ?? {} }),
+  const saveFilters = useMutation({
+    mutationFn: () => api.patch(`/api/admin/sources/${filterSource?.id}`, {
+      filters: buildFilters(filterForm) ?? {},
+      refresh_hours: Number(refreshHours) || 24,
+    }),
     onSuccess: () => {
       show('过滤规则已保存，下一轮采集生效');
       setFilterSource(null);
@@ -229,7 +235,7 @@ export function Sources() {
                   {source.status === 'degraded' ? <Badge tone="red">抓取异常</Badge> : null}
                 </div>
                 <div className="caption" style={{ marginTop: 4 }}>
-                  {source.entry_count} 条 · {source.alive_count} 可用 · 信誉 {Math.round(source.reputation)} · 更新 {timeAgo(source.last_ok_at)}
+                  {source.entry_count} 条 · {source.alive_count} 可用 · 信誉 {Math.round(source.reputation)} · 更新 {timeAgo(source.last_ok_at)} · 每 {source.refresh_hours ?? 24}h
                   {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
                 </div>
                 {source.url ? <div className="caption mono truncate" style={{ marginTop: 2 }}>{source.url}</div> : null}
@@ -252,7 +258,7 @@ export function Sources() {
               <Button size="sm" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}>
                 <Zap size={13} /> 抽样测速
               </Button>
-              <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); }}>
+              <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); }}>
                 <SlidersHorizontal size={13} /> 过滤
               </Button>
               <Button size="sm" variant="danger" onClick={() => { if (confirm(`删除「${source.name}」？`)) remove.mutate(source.id); }}>
@@ -332,6 +338,9 @@ export function Sources() {
             <div className="grow"><Field label="运营商（可选）"><input className="input" value={operator} onChange={(event) => setOperator(event.target.value)} placeholder="电信" /></Field></div>
           </div>
           <FilterFields form={filterForm} onChange={setFilterForm} />
+          <Field label="更新间隔（小时）" hint="未到间隔时跳过抓取，直接复用上一轮线路；0 表示每次都抓">
+            <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="24" />
+          </Field>
           {mode !== 'url' && content ? <div className="caption"><Upload size={12} /> 已读取 {content.length.toLocaleString()} 字符</div> : null}
           {preview ? (
             <div className="caption" style={{ color: preview.exists ? 'var(--red)' : preview.reachable ? 'var(--green)' : 'var(--orange)' }}>
@@ -359,6 +368,9 @@ export function Sources() {
         <div className="stack">
           <p className="caption">过滤在采集器解析后生效，不会删除已入库频道；清空后保存即恢复全量。</p>
           <FilterFields form={filterForm} onChange={setFilterForm} />
+          <Field label="更新间隔（小时）" hint="未到间隔时跳过抓取，直接复用上一轮线路；0 表示每次都抓">
+            <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="24" />
+          </Field>
         </div>
       </Sheet>
 

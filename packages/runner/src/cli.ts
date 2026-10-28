@@ -233,10 +233,9 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       if (sourceId && !targetSources.length) throw new Error(`采集站不存在或已停用：${sourceId}`);
       const collected = await collectAll(targetSources, store, logger);
       const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso());
-      // A per-source check must keep every other source's lines intact.
-      lines = sourceId
-        ? [...(previousState?.lines ?? []).filter((line) => line.sourceId !== sourceId), ...normalized.lines]
-        : normalized.lines;
+      // normalize() already keeps previous lines for sources that were skipped,
+      // returned 304 or failed; merging them again would duplicate state.
+      lines = normalized.lines;
       logger.info('线路归一完成', { lines: lines.length, sourceId: sourceId || undefined });
 
       const budget = config.probeBudget || settings.probeBudget;

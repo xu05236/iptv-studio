@@ -8,6 +8,7 @@
     "export": "tsx src/cli.ts export",
     "epg": "tsx src/cli.ts epg",
     "shots": "tsx src/cli.ts shots",
+    "usage": "tsx src/usage.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

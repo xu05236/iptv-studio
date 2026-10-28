@@ -28,6 +28,7 @@ interface CreateSourceInput {
   /** Store a remote URL without fetching it now; the runner fetches it later. */
   skipFetch?: boolean;
   filters?: SourceFilters;
+  refresh_hours?: number;
 }
 
 sourceRoutes.get('/', async (c) => {
@@ -154,6 +155,7 @@ sourceRoutes.post('/', async (c) => {
       r2Key: null,
       notes: input.notes ?? '等待采集器抓取',
       filters: input.filters ?? null,
+      refreshHours: Number(input.refresh_hours ?? 24),
     });
     await audit(c.env, c.get('actor'), 'source.create.skip_fetch', id, { url: input.url });
     return ok(
@@ -216,6 +218,7 @@ sourceRoutes.post('/', async (c) => {
     notes: input.notes ?? null,
     filters: input.filters ?? null,
     contentHash,
+    refreshHours: Number(input.refresh_hours ?? 24),
   });
 
   await updateSource(c.env, id, {

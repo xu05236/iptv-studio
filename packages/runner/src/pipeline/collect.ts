@@ -79,6 +79,16 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
 
   let text: string | null = null;
 
+  const refreshHours = Number(source.refresh_hours ?? 24) || 0;
+  const forceFetch = process.env.PROBE_FORCE === '1' || process.env.PROBE_FORCE === 'true';
+  if (!forceFetch && refreshHours > 0 && source.last_fetch_at && (source.entry_count ?? 0) > 0) {
+    const ageHours = (Date.now() - new Date(source.last_fetch_at).getTime()) / 3_600_000;
+    if (ageHours < refreshHours) {
+      logger.info('源未到更新间隔，复用上一轮线路', { source: source.name, ageHours: Math.round(ageHours), refreshHours });
+      return { ...base, fetched: false, notModified: true };
+    }
+  }
+
   if (source.r2_key) {
     text = await store.getText(source.r2_key);
     if (text === null) {

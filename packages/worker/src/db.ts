@@ -22,6 +22,7 @@ export interface SourceRow {
   last_error: string | null;
   entry_count: number;
   alive_count: number;
+  refresh_hours: number;
   reputation: number;
   tier: string;
   consecutive_failures: number;
@@ -137,12 +138,13 @@ export interface NewSource {
   notes?: string | null;
   filters?: unknown;
   contentHash?: string | null;
+  refreshHours?: number;
 }
 
 export async function insertSource(env: Env, input: NewSource): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO sources (id, name, kind, url, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, content_hash, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+    `INSERT INTO sources (id, name, kind, url, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, content_hash, refresh_hours, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
   )
     .bind(
       input.id,
@@ -159,6 +161,7 @@ export async function insertSource(env: Env, input: NewSource): Promise<void> {
       input.notes ?? null,
       input.filters ? JSON.stringify(input.filters) : null,
       input.contentHash ?? null,
+      input.refreshHours ?? 24,
     )
     .run();
 }
@@ -185,6 +188,7 @@ const SOURCE_COLUMNS: Record<string, string> = {
   alive_count: 'alive_count',
   filters: 'filters',
   content_hash: 'content_hash',
+  refresh_hours: 'refresh_hours',
 };
 
 export async function updateSource(env: Env, id: string, patch: Record<string, unknown>): Promise<boolean> {
