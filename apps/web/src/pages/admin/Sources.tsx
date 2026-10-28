@@ -37,6 +37,7 @@ export function Sources() {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [content, setContent] = useState('');
+  const [skipFetch, setSkipFetch] = useState(false);
   const [region, setRegion] = useState('');
   const [operator, setOperator] = useState('');
   const [probeResult, setProbeResult] = useState<ProbeSummary | null>(null);
@@ -53,13 +54,14 @@ export function Sources() {
       name: name.trim() || undefined,
       url: mode === 'url' ? url.trim() : undefined,
       content: mode === 'url' ? undefined : content,
+      skipFetch: mode === 'url' ? skipFetch : undefined,
       region: region.trim() || undefined,
       operator: operator.trim() || undefined,
     }),
     onSuccess: (result) => {
       show(`已添加，解析到 ${result.summary?.entries ?? 0} 条`);
       setOpen(false);
-      setName(''); setUrl(''); setContent(''); setRegion(''); setOperator('');
+      setName(''); setUrl(''); setContent(''); setRegion(''); setOperator(''); setSkipFetch(false);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
@@ -201,6 +203,15 @@ export function Sources() {
             <Field label="订阅 URL" hint="仅支持 http/https；添加时会先真实抓取一次并校验可解析。">
               <input className="input" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com/iptv.m3u" inputMode="url" />
             </Field>
+          ) : null}
+          {mode === 'url' ? (
+            <div className="list__row" style={{ padding: '4px 0' }}>
+              <div className="grow">
+                <div className="list__title">跳过预检，交给采集器抓取</div>
+                <div className="caption">源站限制 Cloudflare/海外 IP 时使用；添加时不再校验，下一轮采集由 GitHub Actions 抓取。</div>
+              </div>
+              <Switch checked={skipFetch} onChange={setSkipFetch} />
+            </div>
           ) : null}
           {mode === 'paste' ? (
             <Field label="列表内容">

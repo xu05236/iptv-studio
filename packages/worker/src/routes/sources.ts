@@ -25,6 +25,8 @@ interface CreateSourceInput {
   priority?: number;
   enabled?: boolean;
   notes?: string;
+  /** Store a remote URL without fetching it now; the runner fetches it later. */
+  skipFetch?: boolean;
 }
 
 sourceRoutes.get('/', async (c) => {
@@ -76,6 +78,32 @@ sourceRoutes.post('/', async (c) => {
   if (!input.url && !input.content) return fail('请提供订阅地址或文件/文本内容');
   if (input.content && input.content.length > 24 * 1024 * 1024) return fail('内容超过 24MB 限制', 413);
 
+  if (input.url && input.skipFetch) {
+    const id = `src-${randomId(8)}`;
+    const pendingName = input.name?.trim() || new URL(input.url).hostname;
+    await insertSource(c.env, {
+      id,
+      name: pendingName,
+      kind: input.kind ?? 'auto',
+      url: input.url,
+      origin: 'remote',
+      enabled: input.enabled === false ? 0 : 1,
+      priority: Number(input.priority ?? 100),
+      region: input.region ?? null,
+      operator: input.operator ?? null,
+      r2Key: null,
+      notes: input.notes ?? '等待采集器抓取',
+    });
+    await audit(c.env, c.get('actor'), 'source.create.skip_fetch', id, { url: input.url });
+    return ok(
+      {
+        source: await getSource(c.env, id),
+        summary: { kind: input.kind ?? 'auto', entries: 0, groups: [], sample: [], warnings: ['已跳过预检，采集器会在下一轮抓取'] },
+      },
+      201,
+    );
+  }
+
   let text = input.content ?? '';
   let etag: string | null = null;
   let lastModified: string | null = null;
@@ -85,7 +113,7 @@ sourceRoutes.post('/', async (c) => {
     const validation = validateRemoteUrl(input.url);
     if (!validation.ok) return fail(validation.reason ?? '订阅地址不合法');
     const fetched = await fetchSourceText(input.url);
-    if (!fetched.ok || fetched.notModified) return fail(`抓取失败：${fetched.error ?? '未知错误'}`);
+    if (!fetched.ok || fetched.notModified) return fail(`抓取失败：${fetched.error ?? '未知错误'}。若源站限制 Cloudflare/海外 IP，可勾选「跳过预检」交给采集器抓取，或下载后上传文件。`);
     text = fetched.text ?? '';
     etag = fetched.etag ?? null;
     lastModified = fetched.lastModified ?? null;
@@ -94,8 +122,10 @@ sourceRoutes.post('/', async (c) => {
     origin = 'upload';
   }
 
-  const parsed: ParsedSource = parseSource(text, (input.kind as never) ?? 'auto');
-  if (!parsed.entries.length) {
+  // Parsing a 1.5MB / 8000-entry playlist exceeds the Workers free CPU budget.
+  // Store it now and let the runner parse it during collect.
+  const parsed: ParsedSource | null = text.length <= 512 * 1024 ? parseSource(text, (input.kind as never) ?? 'auto') : null;
+  if (parsed && !parsed.entries.length) {
     return fail(`解析失败：${parsed.warnings.join('；') || '未发现有效频道条目'}`, 422);
   }
 
@@ -122,14 +152,30 @@ sourceRoutes.post('/', async (c) => {
   });
 
   await updateSource(c.env, id, {
-    entry_count: parsed.entries.length,
+    entry_count: parsed?.entries.length ?? 0,
     last_fetch_at: isoNow(),
-    last_ok_at: isoNow(),
+    last_ok_at: parsed ? isoNow() : null,
     last_error: null,
     etag,
     last_modified: lastModified,
   });
-  await audit(c.env, c.get('actor'), 'source.create', id, { name, origin, entries: parsed.entries.length });
+  await audit(c.env, c.get('actor'), 'source.create', id, { name, origin, entries: parsed?.entries.length ?? 0 });
+
+  if (!parsed) {
+    return ok(
+      {
+        source: await getSource(c.env, id),
+        summary: {
+          kind: input.kind ?? 'auto',
+          entries: 0,
+          groups: [],
+          sample: [],
+          warnings: ['内容较大，已保存，采集器会在下一次运行时解析'],
+        },
+      },
+      201,
+    );
+  }
 
   return ok(
     {
