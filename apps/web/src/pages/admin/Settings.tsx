@@ -117,6 +117,13 @@ export function SettingsPage() {
             </div>
             <Switch checked={form.relayEnabled} onChange={(value) => set('relayEnabled', value)} />
           </div>
+          <div className="list__row">
+            <div className="grow">
+              <div className="list__title">允许前台直连播放</div>
+              <div className="caption">开启后公开接口会返回真实线路地址，浏览器可用你的网络绕过 Cloudflare 的 IP 限制；地址可能被爬取，请自行评估。</div>
+            </div>
+            <Switch checked={form.directPlayback} onChange={(value) => set('directPlayback', value)} />
+          </div>
         </div>
         {data?.publicBaseUrl ? <div className="caption" style={{ marginTop: 10 }}>公开地址：{data.publicBaseUrl}</div> : null}
       </Card>

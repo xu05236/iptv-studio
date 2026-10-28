@@ -8,6 +8,7 @@ interface PlayerProps {
   protocol?: string;
   lineKey?: string;
   relayAvailable?: boolean;
+  directAvailable?: boolean;
   autoPlay?: boolean;
 }
 
@@ -21,17 +22,19 @@ interface PlayerProps {
  *  - HLS without CORS: hls.js network error.
  * The optional line relay fixes the last two by proxying through the Worker.
  */
-export function Player({ url, protocol, lineKey, relayAvailable = false, autoPlay = false }: PlayerProps) {
+export function Player({ url, protocol, lineKey, relayAvailable = false, directAvailable = false, autoPlay = false }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [mode, setMode] = useState<'direct' | 'relay'>('direct');
+  const [directUrl, setDirectUrl] = useState<string | undefined>(undefined);
   const [started, setStarted] = useState(autoPlay && Boolean(url));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const unsupported = protocol ? /^(rtsp|rtmp|rtmps|udp|rtp)$/i.test(protocol) : /^(rtsp|rtmp|udp|rtp):/i.test(url ?? '');
-  const mixed = Boolean(url?.startsWith('http://')) && window.location.protocol === 'https:';
-  const isHls = protocol === 'hls' || /\.m3u8(\?|$)/i.test(url ?? '') || mode === 'relay';
+  const effectiveUrl = url ?? directUrl;
+  const unsupported = protocol ? /^(rtsp|rtmp|rtmps|udp|rtp)$/i.test(protocol) : /^(rtsp|rtmp|udp|rtp):/i.test(effectiveUrl ?? '');
+  const mixed = Boolean(effectiveUrl?.startsWith('http://')) && window.location.protocol === 'https:';
+  const isHls = protocol === 'hls' || /\.m3u8(\?|$)/i.test(effectiveUrl ?? '') || mode === 'relay';
 
   const play = useCallback(() => {
     const video = videoRef.current;
@@ -40,7 +43,7 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, autoPla
     setLoading(true);
     setStarted(true);
 
-    const source = mode === 'relay' && lineKey ? `/relay/line/${encodeURIComponent(lineKey)}` : (url ?? '');
+    const source = mode === 'relay' && lineKey ? `/relay/line/${encodeURIComponent(lineKey)}` : (effectiveUrl ?? '');
     if (!source) {
       setLoading(false);
       setError('出于安全考虑，页面不展示真实线路地址；请使用中继试播或订阅地址。');
@@ -88,7 +91,7 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, autoPla
     };
     video.addEventListener('loadeddata', onReady, { once: true });
     video.addEventListener('error', onError, { once: true });
-  }, [url, mode, lineKey, isHls, mixed, relayAvailable]);
+  }, [effectiveUrl, mode, lineKey, isHls, mixed, relayAvailable]);
   useEffect(() => {
     if (!started) return;
     play();
@@ -118,6 +121,22 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, autoPla
     );
   }
 
+  const requestDirect = useCallback(async () => {
+    if (!lineKey) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/public/lines/${encodeURIComponent(lineKey)}/direct`);
+      const data = (await response.json()) as { url?: string; error?: string };
+      if (!response.ok || !data.url) throw new Error(data.error ?? '直连地址不可用');
+      setDirectUrl(data.url);
+      setMode('direct');
+      setStarted(true);
+    } catch (requestError) {
+      setLoading(false);
+      setError(requestError instanceof Error ? requestError.message : '直连地址不可用');
+    }
+  }, [lineKey]);
+
   return (
     <div className="player">
       <video ref={videoRef} controls playsInline />
@@ -145,6 +164,11 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, autoPla
                 <Play size={18} /> 中继试播
               </Button>
             ) : null}
+            {directAvailable && lineKey && !url && !mixed ? (
+              <Button variant="glass" size="lg" loading={loading} onClick={() => void requestDirect()}>
+                <Play size={18} /> 直连试播
+              </Button>
+            ) : null}
             {!mixed && url ? (
               <Button
                 variant="glass"
@@ -153,8 +177,7 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, autoPla
                   setMode('direct');
                   setStarted(true);
                 }}
-              >
-                <Play size={18} /> 在线试播
+              >                <Play size={18} /> 在线试播
               </Button>
             ) : null}
           </div>

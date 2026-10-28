@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from '../env.js';
 import { fail, hashIp, intParam, ok, randomId, readJson } from '../lib/http.js';
-import { loadChannelShard, loadGuide, loadIndex } from '../lib/catalog.js';
+import { loadChannelShard, loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
+import { getJson } from '../lib/store.js';
 import { countOpenFeedback, getChannel, insertFeedback, listRuns, listSources, loadSettings } from '../db.js';
 import { sourceMetaMap } from '../lib/source.js';
 import { inferResolution, isPrivateHost, type LineEntry } from '@iptv/core';
@@ -48,7 +49,7 @@ publicRoutes.get('/overview', async (c) => {
       groups: index.groups,
       lastRun: runs[0] ?? null,
       openFeedback,
-      features: { relay: settings.relayEnabled },
+      features: { relay: settings.relayEnabled, directPlayback: settings.directPlayback },
     },
     200,
     CACHE_30,
@@ -81,6 +82,26 @@ publicRoutes.get('/channels', async (c) => {
     200,
     CACHE_30,
   );
+});
+
+publicRoutes.get('/lines/:key/direct', async (c) => {
+  const settings = await loadSettings(c.env);
+  if (!settings.directPlayback) return fail('直连播放未开启', 403);
+  const key = c.req.param('key');
+  const probe = await getJson<{ items: Array<{ key: string; url: string }> }>(c.env, 'state/probe.json');
+  let url = probe?.items.find((item) => item.key === key)?.url;
+  if (!url) {
+    const catalog = await loadCatalog(c.env);
+    for (const item of catalog?.items ?? []) {
+      const line = item.lines.find((candidate) => candidate.key === key);
+      if (line) {
+        url = line.url;
+        break;
+      }
+    }
+  }
+  if (!url) return fail('线路不存在', 404);
+  return ok({ url }, 200, { 'cache-control': 'no-store' });
 });
 
 publicRoutes.get('/channels/:id/relay-check', async (c) => {
@@ -152,7 +173,7 @@ publicRoutes.get('/channels/:id', async (c) => {
         channel: shard.channel,
         lines: safeLines,
         epg: shard.epg ?? null,
-        features: { relay: settings.relayEnabled },
+        features: { relay: settings.relayEnabled, directPlayback: settings.directPlayback },
       },
       200,
       CACHE_30,
@@ -165,7 +186,7 @@ publicRoutes.get('/channels/:id', async (c) => {
       channel: { id: channel.id, name: channel.name, group: channel.group_title ?? '其他', tvgId: channel.tvg_id ?? undefined, logo: channel.logo ?? undefined },
       lines: [],
       epg: null,
-      features: { relay: settings.relayEnabled },
+      features: { relay: settings.relayEnabled, directPlayback: settings.directPlayback },
     },
     200,
     CACHE_30,

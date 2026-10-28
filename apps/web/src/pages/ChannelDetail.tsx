@@ -243,6 +243,7 @@ export function ChannelDetail() {
               protocol={playing.protocol}
               lineKey={playing.key}
               relayAvailable={query.data?.features?.relay ?? false}
+              directAvailable={query.data?.features?.directPlayback ?? false}
               autoPlay
             />
             <div className="row row--wrap">

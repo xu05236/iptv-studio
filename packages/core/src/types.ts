@@ -273,6 +273,7 @@ export interface AppSettings {
   retentionDays: number;
   screenshots: boolean;
   relayEnabled: boolean;
+  directPlayback: boolean;
 }
 
 export const DEFAULT_EPG_URLS = [
@@ -300,6 +301,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   retentionDays: 7,
   screenshots: false,
   relayEnabled: false,
+  directPlayback: false,
 };
 
 export interface RunReport {

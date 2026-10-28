@@ -167,7 +167,7 @@ adminRoutes.put('/settings', async (c) => {
   const allowed: Array<keyof AppSettings> = [
     'logoBaseUrl', 'maxLinesPerChannel', 'maxLinesPerSource', 'compensate', 'keepSuspect', 'deadReviveDays',
     'probeBudget', 'concurrency', 'probeTimeoutMs', 'warmupBytes', 'sampleMs', 'epgUrls', 'regionSuffix',
-    'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled',
+    'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback',
   ];
   const clean: Partial<AppSettings> = {};
   for (const key of allowed) {
