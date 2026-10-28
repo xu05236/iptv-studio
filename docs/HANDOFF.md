@@ -118,3 +118,43 @@ Actions 手动入口：
 - KV 单值 25MB，EPG/线路状态有 24MB 保护
 - RTSP/RTMP 浏览器无法播放，只能 VLC/盒子
 - 中继已开启，会消耗 Worker 流量；如遇限速可在「设置 → 高级」关闭
+
+---
+
+# 2026-10-28 上午续记
+
+## 已完成
+
+- `Hunan TV` 等英文名加入湖南卫视别名（`Hunan TV / Hunan Satellite TV / HunanTV`）
+- 新增 `PROBE_FORCE`：
+  - Actions 输入 `force=true`
+  - 后台「检测中心 → 强制全量」
+  - 临时分支 `run-collect` 推送即触发（`collect-force.yml`）
+- 频道名清理：重命名 220 个，去掉 `(1080p)`、`[Geo-blocked]`、`[Not 24/7]`，繁转简
+- 后台「频道」新增「清理名称」按钮
+- 配置 `GITHUB_REPO` / `GITHUB_WORKFLOW` / `GITHUB_REF`，写入 `GITHUB_TOKEN` Secret，修复后台触发 400（网络原因尚未完成最终点击验证）
+
+## 事故与修复：强制全量把可用数打崩
+
+- 第一次强制全量：并发 48，2043 条全测，alive 从 235 掉到 39
+- 原因：高并发下大量原本可用的线路瞬时超时，被状态机一次判死
+- 修复：
+  1. 之前 alive 的线路探测失败自动重试一次
+  2. 强制全量并发降到 16
+  3. 可用数腰斩保护：`aliveAfter < aliveBefore * 0.5` 时放弃发布
+- 恢复运行：2043 条，**alive 恢复到 339**，比事故前更高
+- 分辨率同步改善：1080p 168、720p 119、1080 实测 155、720 实测 40，未知 1474
+
+## 当前线上
+
+- 855 频道 / 2020 线路 / 339 可用
+- Worker 版本：`cce29bd3-7607-47e0-a05f-abfcfa4b666a`（之后只改了 runner）
+- 最新运行：`run-mvrfyuj5-aeny`（09:34 UTC，forced，success）
+
+## 待办
+
+- [ ] 验证后台「全量检测 / 重建导出」按钮（Token 已配，网络抖时多试一次）
+- [ ] 轮换 `ADMIN_TOKEN`：当前 PAT 没有 Secrets 写权限，需要在 GitHub UI 改 `ADMIN_TOKEN`，或新建带 Secrets 权限的 PAT
+- [ ] 删除/保留 `run-collect` 分支的取舍（保留=可推送触发，删除=只能 Actions 手动）
+- [ ] EPG 卫视/地方台官方源适配器（下一步主线）
+- [ ] CI 已连续 success，可放心继续
