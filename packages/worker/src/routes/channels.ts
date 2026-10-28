@@ -16,6 +16,8 @@ import {
 import { fail, ok, readJson } from '../lib/http.js';
 import { loadChannelShard, loadIndex } from '../lib/catalog.js';
 import { sourceMetaMap } from '../lib/source.js';
+import { countryOfGroup, countryRank } from '../lib/channelCountry.js';
+import type { ChannelRow } from '../db.js';
 
 export const channelRoutes = new Hono<AppEnv>();
 
@@ -91,6 +93,97 @@ channelRoutes.post('/cleanup-names', async (c) => {
   }
   await audit(c.env, c.get('actor'), 'channel.cleanup_names', 'all', { renamed: statements.length });
   return ok({ renamed: statements.length, scanned: channels.length });
+});
+
+channelRoutes.get('/meta/tree', async (c) => {
+  // Count published channels only: D1 still contains thousands of stale rows
+  // from historical imports, which made the admin page enormous.
+  const index = await loadIndex(c.env);
+  const countries = new Map<string, { country: string; total: number; groups: Array<{ group: string; count: number }> }>();
+  for (const channel of index?.channels ?? []) {
+    const group = channel.group?.trim() || '其他';
+    const country = countryOfGroup(group);
+    const entry = countries.get(country) ?? { country, total: 0, groups: [] };
+    entry.total++;
+    const groupEntry = entry.groups.find((item) => item.group === group);
+    if (groupEntry) groupEntry.count++;
+    else entry.groups.push({ group, count: 1 });
+    countries.set(country, entry);
+  }
+
+  return ok({
+    total: index?.channels.length ?? 0,
+    countries: [...countries.values()]
+      .map((entry) => ({ ...entry, groups: entry.groups.sort((a, b) => b.count - a.count) }))
+      .sort((a, b) => countryRank(a.country) - countryRank(b.country) || b.total - a.total || a.country.localeCompare(b.country)),
+  });
+});
+
+channelRoutes.get('/page', async (c) => {
+  const q = (c.req.query('q') ?? '').trim().toLowerCase();
+  const group = (c.req.query('group') ?? '').trim();
+  const groups = (c.req.query('groups') ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+  const country = (c.req.query('country') ?? '').trim();
+  const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 100) || 100, 1), 200);
+  const offset = Math.max(Number(c.req.query('offset') ?? 0) || 0, 0);
+
+  const index = await loadIndex(c.env);
+  if (!index) return ok({ items: [], total: 0, offset, limit });
+
+  const filtered = index.channels
+    .filter((channel) => {
+      const channelGroup = channel.group?.trim() || '其他';
+      if (group && channelGroup !== group) return false;
+      if (!group && groups.length && !groups.includes(channelGroup)) return false;
+      if (country && countryOfGroup(channelGroup) !== country) return false;
+      if (q && !channel.name.toLowerCase().includes(q) && !channel.id.includes(q)) return false;
+      return true;
+    })
+    .sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
+
+  const total = filtered.length;
+  const page = filtered.slice(offset, offset + limit);
+  const ids = page.map((channel) => channel.id);
+
+  const [rows, aliasRows] = await Promise.all([
+    ids.length
+      ? c.env.DB.prepare(`SELECT * FROM channels WHERE id IN (${ids.map(() => '?').join(', ')})`).bind(...ids).all<ChannelRow>()
+      : Promise.resolve({ results: [] as ChannelRow[] }),
+    ids.length
+      ? c.env.DB.prepare(
+          `SELECT channel_id, COUNT(*) AS total FROM aliases WHERE channel_id IN (${ids.map(() => '?').join(', ')}) GROUP BY channel_id`,
+        ).bind(...ids).all<{ channel_id: string; total: number }>()
+      : Promise.resolve({ results: [] as Array<{ channel_id: string; total: number }> }),
+  ]);
+  const rowMap = new Map(rows.results.map((row) => [row.id, row]));
+  const aliases = new Map(aliasRows.results.map((row) => [row.channel_id, row.total]));
+
+  return ok({
+    items: page.map((channel) => {
+      const row = rowMap.get(channel.id);
+      const displayGroup = row?.group_title ?? channel.group ?? '其他';
+      return {
+        id: channel.id,
+        name: row?.name ?? channel.name,
+        group: displayGroup,
+        country: countryOfGroup(displayGroup),
+        tvgId: row?.tvg_id ?? channel.tvgId,
+        logo: row?.logo ?? channel.logo,
+        number: row?.number ?? channel.number,
+        enabled: row ? row.enabled === 1 : channel.enabled,
+        sort: row?.sort ?? 0,
+        aliases: aliases.get(channel.id) ?? 0,
+        lines: channel.lines,
+        alive: channel.alive,
+        bestResolution: channel.bestResolution,
+        bestSpeedKbps: channel.bestSpeedKbps ?? 0,
+        sources: channel.sources,
+      };
+    }),
+    total,
+    offset,
+    limit,
+  });
 });
 
 channelRoutes.get('/:id', async (c) => {

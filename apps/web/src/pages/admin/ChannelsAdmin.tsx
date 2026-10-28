@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eraser, Pencil, Search, Tag, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminChannel } from '../../lib/types';
@@ -10,16 +10,39 @@ export function ChannelsAdmin() {
   const queryClient = useQueryClient();
   const { show } = useToast();
   const [search, setSearch] = useState('');
+  const [country, setCountry] = useState('');
+  const [group, setGroup] = useState('');
   const [editing, setEditing] = useState<AdminChannel | null>(null);
   const [form, setForm] = useState({ name: '', group: '', tvgId: '', logo: '' });
   const [aliasChannel, setAliasChannel] = useState<AdminChannel | null>(null);
   const [aliases, setAliases] = useState<string[]>([]);
   const [aliasInput, setAliasInput] = useState('');
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin', 'channels'],
-    queryFn: () => api.get<{ items: AdminChannel[] }>('/api/admin/channels'),
+  const tree = useQuery({
+    queryKey: ['admin', 'channels', 'tree'],
+    queryFn: () => api.get<{ total: number; countries: Array<{ country: string; total: number; groups: Array<{ group: string; count: number }> }> }>('/api/admin/channels/meta/tree'),
   });
+
+  const channels = useInfiniteQuery({
+    queryKey: ['admin', 'channels', 'page', search, country, group],
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({ limit: '100', offset: String(pageParam) });
+      if (search.trim()) params.set('q', search.trim());
+      if (group) params.set('group', group);
+      else if (country) {
+        const groups = tree.data?.countries.find((item) => item.country === country)?.groups.map((item) => item.group) ?? [];
+        if (groups.length) params.set('groups', groups.join(','));
+      }
+      return api.get<{ items: AdminChannel[]; total: number; offset: number; limit: number }>(`/api/admin/channels/page?${params.toString()}`);
+    },
+    getNextPageParam: (last) => (last.offset + last.items.length < last.total ? last.offset + last.items.length : undefined),
+    enabled: !country || Boolean(tree.data),
+  });
+
+  const items = channels.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = channels.data?.pages[0]?.total ?? 0;
+  const activeCountry = tree.data?.countries.find((item) => item.country === country);
 
   const update = useMutation({
     mutationFn: () => api.patch(`/api/admin/channels/${editing?.id}`, {
@@ -58,13 +81,6 @@ export function ChannelsAdmin() {
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
-
-  const items = useMemo(() => {
-    const list = data?.items ?? [];
-    const keyword = search.trim().toLowerCase();
-    if (!keyword) return list;
-    return list.filter((item) => item.name.toLowerCase().includes(keyword) || item.id.includes(keyword) || (item.tvgId ?? '').toLowerCase().includes(keyword));
-  }, [data, search]);
 
   async function openAliases(channel: AdminChannel): Promise<void> {
     setAliasChannel(channel);
@@ -111,10 +127,42 @@ export function ChannelsAdmin() {
         <input className="input" placeholder="搜索频道名称或 ID" value={search} onChange={(event) => setSearch(event.target.value)} />
       </div>
 
-      {isLoading ? <Card><div className="caption">加载中…</div></Card> : null}
+      <div className="row row--wrap" style={{ gap: 6 }}>
+        <button className={country ? 'chip' : 'chip chip--active'} onClick={() => { setCountry(''); setGroup(''); }}>
+          全部 {tree.data?.total ?? ''}
+        </button>
+        {(tree.data?.countries ?? []).map((item) => (
+          <button
+            key={item.country}
+            className={country === item.country ? 'chip chip--active' : 'chip'}
+            onClick={() => { setCountry(item.country); setGroup(''); }}
+          >
+            {item.country} {item.total}
+          </button>
+        ))}
+      </div>
+
+      {activeCountry ? (
+        <div className="row row--wrap" style={{ gap: 6 }}>
+          <button className={group ? 'chip' : 'chip chip--active'} onClick={() => setGroup('')}>全部分组</button>
+          {activeCountry.groups.map((item) => (
+            <button
+              key={item.group}
+              className={group === item.group ? 'chip chip--active' : 'chip'}
+              onClick={() => setGroup(item.group)}
+            >
+              {item.group} {item.count}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="caption">共 {total} 个频道{country ? ` · ${country}` : ''}{group ? ` / ${group}` : ''}</div>
+
+      {channels.isLoading ? <Card><div className="caption">加载中…</div></Card> : null}
 
       <div className="list">
-        {items.slice(0, 300).map((channel) => (
+        {items.map((channel) => (
           <div key={channel.id} className="list__row">
             <div className="logo logo--fallback" style={{ fontSize: 13 }}>{channel.name.slice(0, 1)}</div>
             <div className="grow" style={{ minWidth: 0 }}>
@@ -146,10 +194,16 @@ export function ChannelsAdmin() {
             </div>
           </div>
         ))}
-        {!isLoading && !items.length ? (
-          <div className="caption" style={{ padding: 16 }}><Tv size={14} /> 还没有频道，先运行一次采集。</div>
+        {!channels.isLoading && !items.length ? (
+          <div className="caption" style={{ padding: 16 }}><Tv size={14} /> 没有匹配的频道。</div>
         ) : null}
       </div>
+
+      {channels.hasNextPage ? (
+        <Button loading={channels.isFetchingNextPage} onClick={() => void channels.fetchNextPage()}>
+          加载更多（已显示 {items.length} / {total}）
+        </Button>
+      ) : null}
 
       <Sheet
         open={Boolean(editing)}
@@ -161,6 +215,7 @@ export function ChannelsAdmin() {
         <div className="stack">
           <Field label="显示名称"><input className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field>
           <Field label="分组"><input className="input" value={form.group} onChange={(event) => setForm({ ...form, group: event.target.value })} /></Field>
+          <div className="caption">分组决定国家归属：央视/卫视/港澳台/地方/国内其他归入中国；新闻/影视/付费/4K 等内容分组也归中国；其他分组名会单独成为一个国家或自定义分类。保存后下一轮发布进入对应分组。</div>
           <Field label="TVG ID（EPG 匹配用）"><input className="input" value={form.tvgId} onChange={(event) => setForm({ ...form, tvgId: event.target.value })} /></Field>
           <Field label="台标 URL"><input className="input" value={form.logo} onChange={(event) => setForm({ ...form, logo: event.target.value })} /></Field>
           <div className="caption">别名用于把不同写法归并到同一频道，可在列表页的 Tag 图标中维护。</div>

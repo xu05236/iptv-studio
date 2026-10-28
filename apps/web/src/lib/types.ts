@@ -122,6 +122,7 @@ export interface AdminChannel {
   id: string;
   name: string;
   group: string;
+  country?: string;
   tvgId: string | null;
   logo: string | null;
   number: number | null;
