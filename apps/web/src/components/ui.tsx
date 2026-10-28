@@ -105,6 +105,44 @@ export function Segmented<T extends string>({
   );
 }
 
+export function Pagination({
+  page,
+  totalPages,
+  onChange,
+}: {
+  page: number;
+  totalPages: number;
+  onChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+  const numbers: Array<number | '…'> = [];
+  for (let index = 1; index <= totalPages; index++) {
+    if (index === 1 || index === totalPages || Math.abs(index - page) <= 2) numbers.push(index);
+    else if (numbers[numbers.length - 1] !== '…') numbers.push('…');
+  }
+  return (
+    <div className="row" style={{ justifyContent: 'center', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+      <button className="chip" disabled={page <= 1} onClick={() => onChange(page - 1)}>上一页</button>
+      {numbers.map((number, index) =>
+        number === '…' ? (
+          <span key={`gap-${index}`} className="chip" style={{ opacity: 0.6 }}>…</span>
+        ) : (
+          <button
+            key={number}
+            className={clsx('chip', number === page && 'chip--active')}
+            aria-current={number === page ? 'page' : undefined}
+            onClick={() => onChange(number)}
+          >
+            {number}
+          </button>
+        ),
+      )}
+      <button className="chip" disabled={page >= totalPages} onClick={() => onChange(page + 1)}>下一页</button>
+      <span className="caption" style={{ alignSelf: 'center' }}>{page} / {totalPages}</span>
+    </div>
+  );
+}
+
 export function Badge({ children, tone = 'default' }: { children: ReactNode; tone?: 'default' | 'green' | 'orange' | 'red' | 'blue' }) {
   return <span className={clsx('badge', tone !== 'default' && `badge--${tone}`)}>{children}</span>;
 }

@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Signal, Tv } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
 import type { ChannelsResponse } from '../lib/types';
 import { formatResolution, formatSpeed } from '../lib/format';
-import { Badge, Button, EmptyState, Skeleton } from '../components/ui';
+import { Badge, Button, EmptyState, Pagination, Skeleton } from '../components/ui';
 import { ChannelLogo } from '../components/ChannelLogo';
+
+const PAGE_SIZE = 50;
 
 export function Channels() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const group = params.get('group') ?? '';
+  const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
   const [search, setSearch] = useState(params.get('q') ?? '');
   const [debounced, setDebounced] = useState(search);
 
@@ -25,26 +28,35 @@ export function Channels() {
     const next = new URLSearchParams(params);
     if (debounced) next.set('q', debounced);
     else next.delete('q');
+    next.delete('page');
     setParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced]);
 
-  const query = useInfiniteQuery({
-    queryKey: ['channels', debounced, group],
-    queryFn: ({ pageParam }) => {
-      const search = new URLSearchParams({ page: String(pageParam), limit: '60' });
-      if (debounced) search.set('q', debounced);
-      if (group) search.set('group', group);
-      return api.get<ChannelsResponse>(`/api/public/channels?${search.toString()}`);
+  const query = useQuery({
+    queryKey: ['channels', debounced, group, page],
+    queryFn: () => {
+      const searchParams = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
+      if (debounced) searchParams.set('q', debounced);
+      if (group) searchParams.set('group', group);
+      return api.get<ChannelsResponse>(`/api/public/channels?${searchParams.toString()}`);
     },
-    initialPageParam: 1,
-    getNextPageParam: (last, pages) => (pages.length * last.limit < last.total ? pages.length + 1 : undefined),
+    placeholderData: keepPreviousData,
   });
 
-  const pages = query.data?.pages ?? [];
-  const items = pages.flatMap((page) => page.items);
-  const groups = pages[0]?.groups ?? [];
-  const total = pages[0]?.total ?? 0;
+  const items = query.data?.items ?? [];
+  const groups = query.data?.groups ?? [];
+  const total = query.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  useEffect(() => {
+    if (query.data && page > totalPages) {
+      const next = new URLSearchParams(params);
+      next.delete('page');
+      setParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query.data, page, totalPages]);
 
   return (
     <div className="stack" style={{ marginTop: 6 }}>
@@ -69,7 +81,7 @@ export function Channels() {
         />
       </div>
 
-      <div className="scroll-x">
+      <div className="row row--wrap" style={{ gap: 6 }}>
         <button className={clsx('chip', !group && 'chip--active')} onClick={() => updateGroup('')}>
           全部
         </button>
@@ -113,10 +125,10 @@ export function Channels() {
       ) : (
         <EmptyState
           icon={<Tv size={24} />}
-          title={pages[0]?.ready === false ? '尚未生成频道数据' : '没有找到频道'}
-          description={pages[0]?.ready === false ? '请先在管理后台触发一次采集任务。' : '换个关键词或分类试试。'}
+          title={query.data?.ready === false ? '尚未生成频道数据' : '没有找到频道'}
+          description={query.data?.ready === false ? '请先在管理后台触发一次采集任务。' : '换个关键词或分类试试。'}
           action={
-            pages[0]?.ready === false ? (
+            query.data?.ready === false ? (
               <Button variant="primary" onClick={() => navigate('/admin')}>
                 去管理后台
               </Button>
@@ -125,18 +137,22 @@ export function Channels() {
         />
       )}
 
-      {query.hasNextPage ? (
-        <Button block loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
-          加载更多
-        </Button>
-      ) : null}
+      <Pagination page={page} totalPages={totalPages} onChange={updatePage} />
     </div>
   );
+
+  function updatePage(next: number): void {
+    const nextParams = new URLSearchParams(params);
+    if (next > 1) nextParams.set('page', String(next));
+    else nextParams.delete('page');
+    setParams(nextParams);
+  }
 
   function updateGroup(next: string): void {
     const paramsNext = new URLSearchParams(params);
     if (next) paramsNext.set('group', next);
     else paramsNext.delete('group');
+    paramsNext.delete('page');
     setParams(paramsNext, { replace: true });
   }
 }

@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eraser, Pencil, Search, Tag, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminChannel } from '../../lib/types';
 import { formatResolution, formatSpeed } from '../../lib/format';
-import { Badge, Button, Card, Field, Sheet, Switch, useToast } from '../../components/ui';
+import { Badge, Button, Card, Field, Pagination, Sheet, Switch, useToast } from '../../components/ui';
+
+const PAGE_SIZE = 50;
 
 export function ChannelsAdmin() {
   const queryClient = useQueryClient();
@@ -12,6 +14,7 @@ export function ChannelsAdmin() {
   const [search, setSearch] = useState('');
   const [country, setCountry] = useState('');
   const [group, setGroup] = useState('');
+  const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<AdminChannel | null>(null);
   const [form, setForm] = useState({ name: '', group: '', tvgId: '', logo: '' });
   const [aliasChannel, setAliasChannel] = useState<AdminChannel | null>(null);
@@ -25,11 +28,11 @@ export function ChannelsAdmin() {
     queryFn: () => api.get<{ total: number; countries: Array<{ country: string; total: number; groups: Array<{ group: string; count: number }> }> }>('/api/admin/channels/meta/tree'),
   });
 
-  const channels = useInfiniteQuery({
-    queryKey: ['admin', 'channels', 'page', search, country, group],
-    initialPageParam: 0,
-    queryFn: ({ pageParam }) => {
-      const params = new URLSearchParams({ limit: '100', offset: String(pageParam) });
+  const channels = useQuery({
+    queryKey: ['admin', 'channels', 'page', search, country, group, page],
+    placeholderData: keepPreviousData,
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE) });
       if (search.trim()) params.set('q', search.trim());
       if (group) params.set('group', group);
       else if (country) {
@@ -38,14 +41,18 @@ export function ChannelsAdmin() {
       }
       return api.get<{ items: AdminChannel[]; total: number; offset: number; limit: number }>(`/api/admin/channels/page?${params.toString()}`);
     },
-    getNextPageParam: (last) => (last.offset + last.items.length < last.total ? last.offset + last.items.length : undefined),
     enabled: !country || Boolean(tree.data),
   });
 
-  const items = channels.data?.pages.flatMap((page) => page.items) ?? [];
-  const total = channels.data?.pages[0]?.total ?? 0;
+  const items = channels.data?.items ?? [];
+  const total = channels.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const activeCountry = tree.data?.countries.find((item) => item.country === country);
   const allSelected = items.length > 0 && items.every((channel) => selected.has(channel.id));
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, country, group]);
 
   const bulkGroup = useMutation({
     mutationFn: () => api.post<{ updated: number }>('/api/admin/channels/bulk-group', { ids: [...selected], group: bulkTarget.trim() }),
@@ -141,7 +148,7 @@ export function ChannelsAdmin() {
         <input className="input" placeholder="搜索频道名称或 ID" value={search} onChange={(event) => setSearch(event.target.value)} />
       </div>
 
-      <div className="row row--wrap" style={{ gap: 6 }}>
+      <div className="row row--wrap" style={{ gap: 6, flexWrap: 'wrap' }}>
         <button className={country ? 'chip' : 'chip chip--active'} onClick={() => { setCountry(''); setGroup(''); }}>
           全部 {tree.data?.total ?? ''}
         </button>
@@ -157,7 +164,7 @@ export function ChannelsAdmin() {
       </div>
 
       {activeCountry ? (
-        <div className="row row--wrap" style={{ gap: 6 }}>
+        <div className="row row--wrap" style={{ gap: 6, flexWrap: 'wrap' }}>
           <button className={group ? 'chip' : 'chip chip--active'} onClick={() => setGroup('')}>全部分组</button>
           {activeCountry.groups.map((item) => (
             <button
@@ -252,11 +259,7 @@ export function ChannelsAdmin() {
         ) : null}
       </div>
 
-      {channels.hasNextPage ? (
-        <Button loading={channels.isFetchingNextPage} onClick={() => void channels.fetchNextPage()}>
-          加载更多（已显示 {items.length} / {total}）
-        </Button>
-      ) : null}
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
 
       <Sheet
         open={Boolean(editing)}
