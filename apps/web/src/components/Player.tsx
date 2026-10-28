@@ -7,6 +7,7 @@ interface PlayerProps {
   url?: string;
   protocol?: string;
   lineKey?: string;
+  codecs?: string;
   relayAvailable?: boolean;
   directAvailable?: boolean;
   autoPlay?: boolean;
@@ -22,7 +23,7 @@ interface PlayerProps {
  *  - HLS without CORS: hls.js network error.
  * The optional line relay fixes the last two by proxying through the Worker.
  */
-export function Player({ url, protocol, lineKey, relayAvailable = false, directAvailable = false, autoPlay = false }: PlayerProps) {
+export function Player({ url, protocol, lineKey, codecs, relayAvailable = false, directAvailable = false, autoPlay = false }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [mode, setMode] = useState<'direct' | 'relay'>('direct');
@@ -80,7 +81,9 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, directA
                 : mixed || !relayAvailable
                   ? '源站拒绝跨域，或 HTTP 线路被 HTTPS 页面拦截；可尝试中继试播'
                   : '网络错误：线路可能已失效'
-            : '播放失败：编码格式不受浏览器支持',
+            : /hvc1|hev1|hvc/i.test(codecs ?? '')
+              ? '该线路是 H.265/HEVC，Chrome/Edge 不支持；请换 H.264 线路，或用 Safari / VLC 播放'
+              : '播放失败：编码格式不受浏览器支持',
         );
         hls.destroy();
       });
@@ -99,7 +102,7 @@ export function Player({ url, protocol, lineKey, relayAvailable = false, directA
     };
     video.addEventListener('loadeddata', onReady, { once: true });
     video.addEventListener('error', onError, { once: true });
-  }, [effectiveUrl, mode, lineKey, isHls, mixed, relayAvailable]);
+  }, [effectiveUrl, mode, lineKey, isHls, mixed, relayAvailable, codecs]);
   useEffect(() => {
     if (!started) return;
     play();

@@ -24,6 +24,7 @@ interface RelayCheck {
   status: number;
   reason?: string;
   direct: 'https' | 'http' | 'unsupported';
+  codecs?: string;
 }
 
 export function ChannelDetail() {
@@ -80,7 +81,11 @@ export function ChannelDetail() {
     const check = relayChecks.get(key);
     return check ? (check.ok ? 0 : 1) : 2;
   };
-  const orderedLines = [...lines].sort((a, b) => checkRank(a.key) - checkRank(b.key));
+  const codecsOf = (line: (typeof lines)[number]): string => (relayChecks.get(line.key)?.codecs ?? line.codecs ?? '').toLowerCase();
+  const isHevc = (line: (typeof lines)[number]): boolean => /hvc1|hev1|hvc/.test(codecsOf(line));
+  const orderedLines = [...lines].sort(
+    (a, b) => checkRank(a.key) - checkRank(b.key) || (isHevc(a) ? 1 : 0) - (isHevc(b) ? 1 : 0),
+  );
   const checkedLines = lines.filter((line) => relayChecks.has(line.key));
   const relayBlocked = checkedLines.length > 0 && checkedLines.every((line) => !relayChecks.get(line.key)?.ok);
   const directPlayback = query.data.features?.directPlayback ?? false;
@@ -156,6 +161,7 @@ export function ChannelDetail() {
                     ) : null}
                     {directPlayback && relayChecks.get(line.key)?.direct === 'https' ? <Badge tone="green">直连可用</Badge> : null}
                     {directPlayback && relayChecks.get(line.key)?.direct === 'http' ? <Badge tone="orange">HTTP 需中继</Badge> : null}
+                    {isHevc(line) ? <Badge tone="orange">H.265</Badge> : codecsOf(line).includes('avc') ? <Badge tone="green">H.264</Badge> : null}
                     <Badge>{formatResolution(line.resolution)}</Badge>
                     {line.speedKbps ? <Badge tone="green">{formatSpeed(line.speedKbps)}</Badge> : null}
                     {line.latencyMs ? <span className="caption">{formatLatency(line.latencyMs)}</span> : null}
@@ -246,6 +252,7 @@ export function ChannelDetail() {
               url={playing.url}
               protocol={playing.protocol}
               lineKey={playing.key}
+              codecs={relayChecks.get(playing.key)?.codecs ?? playing.codecs}
               relayAvailable={query.data?.features?.relay ?? false}
               directAvailable={query.data?.features?.directPlayback ?? false}
               autoPlay

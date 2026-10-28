@@ -112,6 +112,7 @@ export async function runProbes(
       line.height = result.height;
       line.frameRate = result.frameRate;
       line.bandwidthKbps = result.bandwidthKbps;
+      line.codecs = result.codecs ?? line.codecs;
       line.loop = result.loop;
       line.error = undefined;
     } else {

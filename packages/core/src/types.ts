@@ -115,6 +115,7 @@ export interface LineEntry {
   height?: number;
   frameRate?: number;
   bandwidthKbps?: number;
+  codecs?: string;
   speedKbps?: number;
   latencyMs?: number;
   score: number;
@@ -150,6 +151,8 @@ export interface ProbeResult {
   frameRate?: number;
   /** bandwidth advertised by the HLS master playlist, kbit/s */
   bandwidthKbps?: number;
+  /** RFC 6381 codec string from the HLS master playlist */
+  codecs?: string;
   /** short, self-restarting playlist -> likely an advert / filler loop */
   loop?: boolean;
   durationSec?: number;

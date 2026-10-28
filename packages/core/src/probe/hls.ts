@@ -243,6 +243,7 @@ export async function probeHls(url: string, options: HlsProbeOptions): Promise<P
       height,
       frameRate: variant?.frameRate,
       bandwidthKbps: variant?.bandwidthKbps,
+      codecs: variant?.codecs,
       loop,
       durationSec: Math.round(selected.totalDuration),
       segments: selected.segments.length,

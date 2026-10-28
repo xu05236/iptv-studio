@@ -219,6 +219,7 @@ export async function publish(
       speedKbps: line.speedKbps ?? 0,
       latencyMs: line.latencyMs ?? 0,
       protocol: line.protocol,
+      codecs: line.codecs,
       failCount: line.failCount,
       score: line.score,
       lastProbeAt: line.lastProbeAt ?? null,

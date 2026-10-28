@@ -124,6 +124,7 @@ interface RelayCheck {
   status: number;
   reason?: string;
   direct: 'https' | 'http' | 'unsupported';
+  codecs?: string;
 }
 
 function directKind(url: string): RelayCheck['direct'] {
@@ -157,7 +158,8 @@ async function checkRelayLine(line: LineEntry): Promise<RelayCheck> {
     if (/mpegurl/i.test(type) || /\.m3u8$/i.test(parsed.pathname)) {
       const text = await response.text();
       const valid = /^\s*#EXTM3U/i.test(text) && /#EXTINF|#EXT-X-STREAM-INF/i.test(text);
-      return { key: line.key, ok: valid, status: response.status, reason: valid ? undefined : '不是有效的 HLS 清单', direct };
+      const codecs = /CODECS="([^"]+)"/i.exec(text)?.[1];
+      return { key: line.key, ok: valid, status: response.status, reason: valid ? undefined : '不是有效的 HLS 清单', direct, codecs };
     }
     return { key: line.key, ok: true, status: response.status, direct };
   } catch (error) {
