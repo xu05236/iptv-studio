@@ -27,16 +27,23 @@ interface FetchResult {
 async function fetchPlaylist(url: string, etag?: string | null, lastModified?: string | null): Promise<FetchResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('timeout')), 45_000);
-  const headers: Record<string, string> = {
+  const baseHeaders: Record<string, string> = {
     'User-Agent': 'IPTV-Studio-Runner/0.1',
     Accept: 'application/json, text/plain, application/x-mpegURL, */*',
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.6',
   };
-  if (etag) headers['If-None-Match'] = etag;
-  if (lastModified) headers['If-Modified-Since'] = lastModified;
+  const request = (conditional: boolean): Promise<Response> => {
+    const headers = { ...baseHeaders };
+    if (conditional && etag) headers['If-None-Match'] = etag;
+    if (conditional && lastModified) headers['If-Modified-Since'] = lastModified;
+    return fetch(url, { headers, redirect: 'follow', signal: controller.signal });
+  };
 
   try {
-    const response = await fetch(url, { headers, redirect: 'follow', signal: controller.signal });
+    let response = await request(true);
+    // A 304 is only useful when we keep a local copy of the body. The runner
+    // does not cache source text, so re-fetch unconditionally to get content.
+    if (response.status === 304) response = await request(false);
     if (response.status === 304) return { ok: true, status: 304, notModified: true, etag, lastModified };
     if (!response.ok) return { ok: false, status: response.status, error: `HTTP ${response.status}` };
     const text = await readTextCapped(response.body, 24 * 1024 * 1024);
