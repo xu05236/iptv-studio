@@ -47,6 +47,18 @@ app.use('/api/admin/*', requireAuth);
 
 app.get('/api/admin/me', (c) => ok({ actor: c.get('actor'), ok: true }));
 
+app.get('/api/admin/usage', async (c) => {
+  const usage = await c.env.KV.get('state/usage.json', 'json');
+  return ok({ usage });
+});
+
+app.post('/api/admin/usage', async (c) => {
+  const body = await readJson<Record<string, unknown>>(c);
+  if (!body || typeof body['collectedAt'] !== 'string') return fail('缺少 collectedAt');
+  await c.env.KV.put('state/usage.json', JSON.stringify(body));
+  return ok({ saved: true });
+});
+
 app.route('/api/public', publicRoutes);
 app.route('/api/admin/sources', sourceRoutes);
 app.route('/api/admin/channels', channelRoutes);
