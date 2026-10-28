@@ -158,3 +158,10 @@ Actions 手动入口：
 - [ ] 删除/保留 `run-collect` 分支的取舍（保留=可推送触发，删除=只能 Actions 手动）
 - [ ] EPG 卫视/地方台官方源适配器（下一步主线）
 - [ ] CI 已连续 success，可放心继续
+## 2026-10-28 中午补充
+
+- 修复后台触发 422：GitHub workflow_dispatch 只接受 `command/budget/force`，已移除多余输入
+- 后台「全量检测 / 强制全量 / 重建导出」按钮恢复可用
+- 新增每订阅 EPG：`out/epg-<subId>.xml`，`/epg/<token>.xml` 优先返回该文件（下一次 collect 生成）
+- 当前数据：855 频道 / 2020 线路 / 339 可用（02:25 UTC 发布）
+- 卫视官方 EPG 接口调研：芒果 TV 仅暴露 `api.mgtv.com`，实际调用需签名参数，暂不硬接
