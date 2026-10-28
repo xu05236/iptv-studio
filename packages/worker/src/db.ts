@@ -233,8 +233,8 @@ export async function upsertChannelSeeds(
   // daily write quota.
   const existing = new Map<string, { group_title: string | null; tvg_id: string | null; logo: string | null }>();
   const ids = seeds.map((seed) => seed.id);
-  for (let offset = 0; offset < ids.length; offset += 400) {
-    const chunk = ids.slice(offset, offset + 400);
+  for (let offset = 0; offset < ids.length; offset += 80) {
+    const chunk = ids.slice(offset, offset + 80);
     const { results } = await env.DB.prepare(
       `SELECT id, group_title, tvg_id, logo FROM channels WHERE id IN (${chunk.map(() => '?').join(', ')})`,
     ).bind(...chunk).all<{ id: string; group_title: string | null; tvg_id: string | null; logo: string | null }>();

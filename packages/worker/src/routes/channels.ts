@@ -206,6 +206,29 @@ channelRoutes.post('/bulk-group', async (c) => {
   return ok({ updated: ids.length, group });
 });
 
+channelRoutes.post('/cleanup-empty', async (c) => {
+  const index = await loadIndex(c.env);
+  if (!index) return fail('频道索引尚未生成', 409);
+  const active = new Set(index.channels.map((channel) => channel.id));
+  const channels = await listChannels(c.env);
+  const { results: aliasRows } = await c.env.DB.prepare(
+    'SELECT channel_id, COUNT(*) AS total FROM aliases GROUP BY channel_id',
+  ).all<{ channel_id: string; total: number }>();
+  const aliases = new Map(aliasRows.map((row) => [row.channel_id, row.total]));
+
+  // Keep channels with aliases: they may be built-in/EPG anchors or user-edited.
+  const candidates = channels.filter((channel) => !active.has(channel.id) && (aliases.get(channel.id) ?? 0) === 0);
+  const statements: D1PreparedStatement[] = [];
+  for (const channel of candidates) {
+    statements.push(c.env.DB.prepare('DELETE FROM channels WHERE id = ?').bind(channel.id));
+  }
+  for (let offset = 0; offset < statements.length; offset += 50) {
+    await c.env.DB.batch(statements.slice(offset, offset + 50));
+  }
+  await audit(c.env, c.get('actor'), 'channel.cleanup_empty', 'all', { deleted: candidates.length, active: active.size });
+  return ok({ deleted: candidates.length, kept: channels.length - candidates.length, active: active.size });
+});
+
 channelRoutes.get('/:id', async (c) => {
   const id = c.req.param('id');
   const channel = await getChannel(c.env, id);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eraser, Pencil, Search, Tag, Tv, Wand2 } from 'lucide-react';
+import { Eraser, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminChannel } from '../../lib/types';
 import { formatResolution, formatSpeed } from '../../lib/format';
@@ -103,6 +103,15 @@ export function ChannelsAdmin() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const cleanupEmpty = useMutation({
+    mutationFn: () => api.post<{ deleted: number; kept: number }>('/api/admin/channels/cleanup-empty'),
+    onSuccess: (result) => {
+      show(`已删除 ${result.deleted} 个空频道，保留 ${result.kept} 个`);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'channels'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   async function openAliases(channel: AdminChannel): Promise<void> {
     setAliasChannel(channel);
     try {
@@ -134,6 +143,14 @@ export function ChannelsAdmin() {
           <p className="subhead" style={{ marginTop: 4 }}>频道身份由别名库驱动；改名、合并、禁用都会影响下一轮聚合。</p>
         </div>
         <div className="row">
+          <Button
+            loading={cleanupEmpty.isPending}
+            onClick={() => {
+              if (confirm('删除不在当前发布目录、且没有任何别名的频道？这不会影响已发布频道。')) cleanupEmpty.mutate();
+            }}
+          >
+            <Trash2 size={15} /> 清理空频道
+          </Button>
           <Button loading={cleanupNames.isPending} onClick={() => cleanupNames.mutate()}>
             <Eraser size={15} /> 清理名称
           </Button>
