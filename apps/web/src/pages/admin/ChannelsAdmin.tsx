@@ -17,6 +17,8 @@ export function ChannelsAdmin() {
   const [aliasChannel, setAliasChannel] = useState<AdminChannel | null>(null);
   const [aliases, setAliases] = useState<string[]>([]);
   const [aliasInput, setAliasInput] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkTarget, setBulkTarget] = useState('');
 
   const tree = useQuery({
     queryKey: ['admin', 'channels', 'tree'],
@@ -43,6 +45,18 @@ export function ChannelsAdmin() {
   const items = channels.data?.pages.flatMap((page) => page.items) ?? [];
   const total = channels.data?.pages[0]?.total ?? 0;
   const activeCountry = tree.data?.countries.find((item) => item.country === country);
+  const allSelected = items.length > 0 && items.every((channel) => selected.has(channel.id));
+
+  const bulkGroup = useMutation({
+    mutationFn: () => api.post<{ updated: number }>('/api/admin/channels/bulk-group', { ids: [...selected], group: bulkTarget.trim() }),
+    onSuccess: (result) => {
+      show(`已移动 ${result.updated} 个频道`);
+      setSelected(new Set());
+      setBulkTarget('');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'channels'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
 
   const update = useMutation({
     mutationFn: () => api.patch(`/api/admin/channels/${editing?.id}`, {
@@ -157,13 +171,52 @@ export function ChannelsAdmin() {
         </div>
       ) : null}
 
-      <div className="caption">共 {total} 个频道{country ? ` · ${country}` : ''}{group ? ` / ${group}` : ''}</div>
+      <div className="row row--between row--wrap">
+        <div className="caption">共 {total} 个频道{country ? ` · ${country}` : ''}{group ? ` / ${group}` : ''}</div>
+        <label className="caption" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={(event) => {
+              const next = new Set(selected);
+              for (const channel of items) {
+                if (event.target.checked) next.add(channel.id);
+                else next.delete(channel.id);
+              }
+              setSelected(next);
+            }}
+          />
+          全选本页
+        </label>
+      </div>
+
+      {selected.size ? (
+        <Card>
+          <div className="row row--wrap" style={{ gap: 8, alignItems: 'center' }}>
+            <span className="caption">已选 {selected.size} 个频道</span>
+            <input className="input grow" value={bulkTarget} onChange={(event) => setBulkTarget(event.target.value)} placeholder="目标分组，例如：我的收藏" />
+            <Button loading={bulkGroup.isPending} onClick={() => bulkGroup.mutate()}>移动分组</Button>
+            <Button variant="ghost" onClick={() => setSelected(new Set())}>取消选择</Button>
+          </div>
+        </Card>
+      ) : null}
 
       {channels.isLoading ? <Card><div className="caption">加载中…</div></Card> : null}
 
       <div className="list">
         {items.map((channel) => (
           <div key={channel.id} className="list__row">
+            <input
+              type="checkbox"
+              checked={selected.has(channel.id)}
+              onChange={(event) => {
+                const next = new Set(selected);
+                if (event.target.checked) next.add(channel.id);
+                else next.delete(channel.id);
+                setSelected(next);
+              }}
+              style={{ marginTop: 4 }}
+            />
             <div className="logo logo--fallback" style={{ fontSize: 13 }}>{channel.name.slice(0, 1)}</div>
             <div className="grow" style={{ minWidth: 0 }}>
               <div className="row" style={{ gap: 6 }}>

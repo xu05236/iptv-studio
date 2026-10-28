@@ -186,6 +186,26 @@ channelRoutes.get('/page', async (c) => {
   });
 });
 
+channelRoutes.post('/bulk-group', async (c) => {
+  const body = (await readJson<{ ids?: string[]; group?: string }>(c)) ?? {};
+  const ids = [...new Set((body.ids ?? []).filter((id) => typeof id === 'string' && id))].slice(0, 500);
+  const group = (body.group ?? '').trim().slice(0, 40);
+  if (!ids.length) return fail('请选择频道');
+  if (!group) return fail('请填写目标分组');
+
+  const statements: D1PreparedStatement[] = [];
+  for (const id of ids) {
+    statements.push(
+      c.env.DB.prepare("UPDATE channels SET group_title = ?, updated_at = datetime('now') WHERE id = ?").bind(group, id),
+    );
+  }
+  for (let offset = 0; offset < statements.length; offset += 40) {
+    await c.env.DB.batch(statements.slice(offset, offset + 40));
+  }
+  await audit(c.env, c.get('actor'), 'channel.bulk_group', 'bulk', { ids: ids.length, group });
+  return ok({ updated: ids.length, group });
+});
+
 channelRoutes.get('/:id', async (c) => {
   const id = c.req.param('id');
   const channel = await getChannel(c.env, id);
