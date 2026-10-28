@@ -5,7 +5,7 @@ import { fail, hashIp, intParam, ok, randomId, readJson } from '../lib/http.js';
 import { loadChannelShard, loadGuide, loadIndex } from '../lib/catalog.js';
 import { countOpenFeedback, getChannel, insertFeedback, listRuns, listSources, loadSettings } from '../db.js';
 import { sourceMetaMap } from '../lib/source.js';
-import { inferResolution } from '@iptv/core';
+import { inferResolution, isPrivateHost, type LineEntry } from '@iptv/core';
 
 export const publicRoutes = new Hono<AppEnv>();
 
@@ -82,6 +82,54 @@ publicRoutes.get('/channels', async (c) => {
     CACHE_30,
   );
 });
+
+publicRoutes.get('/channels/:id/relay-check', async (c) => {
+  const id = c.req.param('id');
+  const cacheKey = `relaycheck:${id}`;
+  const cached = await c.env.KV.get<{ items: RelayCheck[] }>(cacheKey, 'json');
+  if (cached) return ok(cached, 200, { 'cache-control': 'no-store' });
+
+  const shard = await loadChannelShard(c.env, id);
+  if (!shard) return fail('频道不存在', 404);
+  const items = await Promise.all(shard.lines.slice(0, 8).map(checkRelayLine));
+  const payload = { generatedAt: new Date().toISOString(), items };
+  await c.env.KV.put(cacheKey, JSON.stringify(payload), { expirationTtl: 300 });
+  return ok(payload, 200, { 'cache-control': 'no-store' });
+});
+
+interface RelayCheck {
+  key: string;
+  ok: boolean;
+  status: number;
+  reason?: string;
+}
+
+async function checkRelayLine(line: LineEntry): Promise<RelayCheck> {
+  try {
+    const parsed = new URL(line.url);
+    if (!/^https?:$/.test(parsed.protocol) || isPrivateHost(parsed.hostname)) {
+      return { key: line.key, ok: false, status: 0, reason: '地址不可中继' };
+    }
+    const headers: Record<string, string> = { range: 'bytes=0-65535' };
+    if (line.headers?.userAgent) headers['user-agent'] = line.headers.userAgent;
+    if (line.headers?.referer) headers.referer = line.headers.referer;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(parsed.toString(), { headers, signal: controller.signal, redirect: 'follow' }).finally(() =>
+      clearTimeout(timer),
+    );
+    if (!response.ok) return { key: line.key, ok: false, status: response.status, reason: `HTTP ${response.status}` };
+    const type = response.headers.get('content-type') ?? '';
+    if (/mpegurl/i.test(type) || /\.m3u8$/i.test(parsed.pathname)) {
+      const text = await response.text();
+      const valid = /^\s*#EXTM3U/i.test(text) && /#EXTINF|#EXT-X-STREAM-INF/i.test(text);
+      return { key: line.key, ok: valid, status: response.status, reason: valid ? undefined : '不是有效的 HLS 清单' };
+    }
+    return { key: line.key, ok: true, status: response.status };
+  } catch (error) {
+    return { key: line.key, ok: false, status: 0, reason: error instanceof Error && error.name === 'AbortError' ? '超时' : '不可达' };
+  }
+}
 
 publicRoutes.get('/channels/:id', async (c) => {
   const id = c.req.param('id');

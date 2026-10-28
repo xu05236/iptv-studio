@@ -18,6 +18,13 @@ function probeAge(value?: string | null): string {
   return `${Math.round(minutes / 1440)} 天前`;
 }
 
+interface RelayCheck {
+  key: string;
+  ok: boolean;
+  status: number;
+  reason?: string;
+}
+
 export function ChannelDetail() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -31,6 +38,14 @@ export function ChannelDetail() {
     queryFn: () => api.get<ChannelDetailResponse>(`/api/public/channels/${encodeURIComponent(id)}`),
     enabled: Boolean(id),
   });
+
+  const relayCheck = useQuery({
+    queryKey: ['relay-check', id],
+    queryFn: () => api.get<{ items: RelayCheck[] }>(`/api/public/channels/${encodeURIComponent(id)}/relay-check`),
+    enabled: Boolean(id),
+    staleTime: 120_000,
+  });
+  const relayChecks = new Map((relayCheck.data?.items ?? []).map((item) => [item.key, item]));
 
   const feedback = useMutation({
     mutationFn: (payload: { entryKey?: string; sourceId?: string }) =>
@@ -60,6 +75,13 @@ export function ChannelDetail() {
 
   const { channel, lines, epg } = query.data;
   const alive = lines.filter((line) => line.status === 'alive');
+  const checkRank = (key: string): number => {
+    const check = relayChecks.get(key);
+    return check ? (check.ok ? 0 : 1) : 2;
+  };
+  const orderedLines = [...lines].sort((a, b) => checkRank(a.key) - checkRank(b.key));
+  const checkedLines = lines.filter((line) => relayChecks.has(line.key));
+  const relayBlocked = checkedLines.length > 0 && checkedLines.every((line) => !relayChecks.get(line.key)?.ok);
 
   return (
     <div className="stack" style={{ marginTop: 2 }}>
@@ -111,15 +133,25 @@ export function ChannelDetail() {
       {tab === 'lines' ? (
         lines.length ? (
           <div className="list">
+            {relayBlocked ? (
+              <p className="caption" style={{ padding: '0 4px 8px', color: 'var(--red, #e5484d)' }}>
+                当前 Cloudflare 中继无法访问该频道的任何线路（源站按 IP 限制）。请复制订阅地址，在 VLC/盒子中直连播放。
+              </p>
+            ) : null}
             <p className="caption" style={{ padding: '0 4px 8px' }}>
-              状态来自 GitHub Actions 探测节点；试播经 Cloudflare 中继，源站限制出口 IP 时会返回 403/502。
+              状态来自 GitHub Actions 探测节点；中继标签是 Cloudflare 实测。源站限制出口 IP 时会显示「中继不可用」。
             </p>
-            {lines.map((line, index) => (
+            {orderedLines.map((line, index) => (
               <div key={line.key} className="list__row" style={{ alignItems: 'flex-start' }}>
                 <div className="logo logo--fallback" style={{ fontSize: 12 }}>#{index + 1}</div>
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="row row--wrap" style={{ gap: 6 }}>
                     <Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge>
+                    {relayChecks.has(line.key) ? (
+                      <Badge tone={relayChecks.get(line.key)?.ok ? 'green' : 'red'}>
+                        {relayChecks.get(line.key)?.ok ? '中继可播' : `中继不可用${relayChecks.get(line.key)?.status ? ` ${relayChecks.get(line.key)?.status}` : ''}`}
+                      </Badge>
+                    ) : null}
                     <Badge>{formatResolution(line.resolution)}</Badge>
                     {line.speedKbps ? <Badge tone="green">{formatSpeed(line.speedKbps)}</Badge> : null}
                     {line.latencyMs ? <span className="caption">{formatLatency(line.latencyMs)}</span> : null}
