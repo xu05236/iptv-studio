@@ -246,11 +246,15 @@ export function classifyGroup(name: string, hint?: string | null): ChannelGroup 
   return '地方';
 }
 
-/** Human facing name with obvious quality markers removed (identity keeps them). */
+/** Human facing name with quality/geo annotations removed (identity keeps them). */
 export function displayName(raw: string): string {
-  const cleaned = cleanLabel(raw)
+  const cleaned = toSimplified(cleanLabel(raw))
+    // `[Geo-blocked]`, `[Not 24/7]`, `[1080p]`, `[HD]` …
+    .replace(/\[[A-Za-z0-9 /._-]*\]/g, ' ')
+    .replace(/[（(]\s*(?:2160p|1440p|1080p|720p|540p|480p|360p|4k|8k|uhd|fhd|hd|sd)\s*[）)]/gi, ' ')
     .replace(/[（(【\[](?:高清|超清|蓝光|标清|4K|8K|UHD|HD)[）)】\]]/gi, '')
     .replace(/\s*[-_|]\s*(?:高清|超清|蓝光|标清|4K|8K|UHD|HD)\s*$/i, '')
+    .replace(/\s+/g, ' ')
     .trim();
   return cleaned || cleanLabel(raw);
 }

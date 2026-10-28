@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Search, Tag, Tv, Wand2 } from 'lucide-react';
+import { Eraser, Pencil, Search, Tag, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminChannel } from '../../lib/types';
 import { formatResolution, formatSpeed } from '../../lib/format';
@@ -50,6 +50,15 @@ export function ChannelsAdmin() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const cleanupNames = useMutation({
+    mutationFn: () => api.post<{ renamed: number; scanned: number }>('/api/admin/channels/cleanup-names'),
+    onSuccess: (result) => {
+      show(`已清理 ${result.renamed} 个频道名（扫描 ${result.scanned} 个）`);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'channels'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const items = useMemo(() => {
     const list = data?.items ?? [];
     const keyword = search.trim().toLowerCase();
@@ -87,9 +96,14 @@ export function ChannelsAdmin() {
           <h1 className="large-title">频道</h1>
           <p className="subhead" style={{ marginTop: 4 }}>频道身份由别名库驱动；改名、合并、禁用都会影响下一轮聚合。</p>
         </div>
-        <Button loading={reclassify.isPending} onClick={() => reclassify.mutate()}>
-          <Wand2 size={15} /> 修复分类
-        </Button>
+        <div className="row">
+          <Button loading={cleanupNames.isPending} onClick={() => cleanupNames.mutate()}>
+            <Eraser size={15} /> 清理名称
+          </Button>
+          <Button loading={reclassify.isPending} onClick={() => reclassify.mutate()}>
+            <Wand2 size={15} /> 修复分类
+          </Button>
+        </div>
       </div>
 
       <div className="search">
