@@ -10,7 +10,7 @@ const DAY = 86_400_000;
 export async function runCron(env: Env): Promise<void> {
   await purgeOldRows(env, 90);
   await env.DB.prepare(
-    "UPDATE sources SET status = 'degraded' WHERE enabled = 1 AND last_ok_at IS NOT NULL AND last_ok_at < datetime('now', '-2 days')",
+    "UPDATE sources SET status = 'degraded' WHERE enabled = 1 AND status <> 'degraded' AND last_ok_at IS NOT NULL AND last_ok_at < datetime('now', '-2 days')",
   ).run();
 
   const settings = await loadSettings(env);
