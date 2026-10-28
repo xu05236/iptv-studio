@@ -313,6 +313,8 @@ adminRoutes.get('/lines', async (c) => {
   const normalized = sourceItems.map((row) => ({
     ...row,
     name: row.name ?? nameByKey.get(row.key),
+    // Clamp historical burst measurements until the next probe rewrites them.
+    speedKbps: Math.min(row.speedKbps || 0, 50_000),
     // Prefer measured dimensions; otherwise parse 720p/1080p/480p from the
     // channel name, the line label or the URL path.
     resolution: row.resolution || inferResolution(`${row.name ?? nameByKey.get(row.key) ?? ''} ${row.channelName} ${row.url}`) || null,

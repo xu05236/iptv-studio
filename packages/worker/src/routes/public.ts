@@ -94,6 +94,7 @@ publicRoutes.get('/channels/:id', async (c) => {
     const meta = sourceMetaMap(sources);
     const safeLines = shard.lines.map(({ url, headers: _headers, ...rest }) => ({
       ...rest,
+      speedKbps: Math.min(rest.speedKbps ?? 0, 50_000),
       resolution: rest.resolution ?? inferResolution(`${rest.name} ${url}`),
       sourceName: meta.get(rest.sourceId)?.name ?? rest.sourceId,
       sourceSite: meta.get(rest.sourceId)?.site ?? '未知来源',

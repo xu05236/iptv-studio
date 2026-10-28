@@ -223,6 +223,7 @@ export async function publish(
       score: line.score,
       lastProbeAt: line.lastProbeAt ?? null,
       url: line.url,
+      headers: line.headers,
     })),
   );
   await store.put('state/probe.json', JSON.stringify({ generatedAt: options.generatedAt, items: probeItems }), json);

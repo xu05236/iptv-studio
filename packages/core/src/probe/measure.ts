@@ -75,12 +75,18 @@ export async function measureReader(
   }
 
   const totalMs = Math.max(1, now() - startedAt - ttfbMs);
-  const speedKbps =
-    measuredBytes > 0 && measuredMs > 0
-      ? (measuredBytes * 8) / measuredMs
+  // CDN bursts can deliver a segment in a few milliseconds; without a floor the
+  // reported speed becomes absurd (e.g. 2 Gbit/s). Cap the claim and require a
+  // meaningful window.
+  const MIN_SAMPLE_MS = 500;
+  const MAX_SPEED_KBPS = 100_000;
+  const rawSpeed =
+    measuredBytes > 0
+      ? (measuredBytes * 8) / Math.max(measuredMs, MIN_SAMPLE_MS)
       : bytes > 0
-        ? (bytes * 8) / totalMs
+        ? (bytes * 8) / Math.max(totalMs, MIN_SAMPLE_MS)
         : 0;
+  const speedKbps = Math.min(MAX_SPEED_KBPS, rawSpeed);
 
   return {
     bytes,

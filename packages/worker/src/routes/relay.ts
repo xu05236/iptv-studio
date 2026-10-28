@@ -5,6 +5,7 @@ import type { AppEnv, Env } from '../env.js';
 import { getSubscriptionByToken, loadSettings } from '../db.js';
 import { fail } from '../lib/http.js';
 import { loadCatalog } from '../lib/catalog.js';
+import { getJson } from '../lib/store.js';
 
 export const relayRoutes = new Hono<AppEnv>();
 
@@ -160,17 +161,29 @@ relayRoutes.get('/line/:key', async (c) => {
   if (!settings.relayEnabled) return fail('中继功能未开启（设置 → 高级）', 403);
 
   const key = c.req.param('key');
-  const catalog = await loadCatalog(c.env);
-  if (!catalog) return fail('频道数据尚未生成', 404);
 
-  let line: LineEntry | undefined;
-  for (const item of catalog.items) {
-    line = item.lines.find((candidate) => candidate.key === key);
-    if (line) break;
+  // The channel sheet shows every line in the shard, while the export catalog
+  // only contains selected lines. Look in the full probe index first, otherwise
+  // a visible line can 404 here and hls.js reports a network error.
+  const probe = await getJson<{ items: Array<{ key: string; url: string; headers?: RequestHeaders }> }>(c.env, 'state/probe.json');
+  const probed = probe?.items.find((item) => item.key === key);
+  let sourceUrl = probed?.url;
+  let sourceHeaders = probed?.headers;
+
+  if (!sourceUrl) {
+    const catalog = await loadCatalog(c.env);
+    for (const item of catalog?.items ?? []) {
+      const candidate = item.lines.find((line) => line.key === key);
+      if (candidate) {
+        sourceUrl = candidate.url;
+        sourceHeaders = candidate.headers;
+        break;
+      }
+    }
   }
-  if (!line) return fail('线路不存在', 404);
+  if (!sourceUrl) return fail('线路不存在', 404);
 
-  let target = line.url;
+  let target = sourceUrl;
   const signed = c.req.query('u');
   if (signed) {
     const expires = Number(c.req.query('exp') ?? '0');
@@ -187,7 +200,7 @@ relayRoutes.get('/line/:key', async (c) => {
   }
   if (!/^https?:$/.test(parsed.protocol) || isPrivateHost(parsed.hostname)) return fail('地址不合法');
 
-  const upstream = await fetchUpstream(c, parsed, line.headers ?? { userAgent: DEFAULT_UA }).catch(() => null);
+  const upstream = await fetchUpstream(c, parsed, sourceHeaders ?? { userAgent: DEFAULT_UA }).catch(() => null);
   if (!upstream) return fail('上游线路超时或不可达', 504);
   if (isPlaylist(upstream, parsed)) {
     const text = await upstream.text();
