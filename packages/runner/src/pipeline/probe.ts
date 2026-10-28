@@ -3,6 +3,7 @@ import {
   mapPool,
   probeStream,
   scoreLine,
+  sleep,
   transition,
   type AppSettings,
   type LineEntry,
@@ -79,22 +80,13 @@ export async function runProbes(
   let done = 0;
 
   await mapPool(lines, Math.max(1, Math.min(concurrency, 128)), async (line) => {
-    let result: ProbeResult;
-    try {
-      result = await probeStream(line.url, {
-        headers: line.headers,
-        timeoutMs: settings.probeTimeoutMs,
-        warmupBytes: settings.warmupBytes,
-        sampleMs: settings.sampleMs,
-        maxBytes: 2_500_000,
-      });
-    } catch (error) {
-      result = {
-        ok: false,
-        protocol: line.protocol,
-        error: error instanceof Error ? error.message : String(error),
-        checkedAt: nowIso,
-      };
+    const wasAlive = line.status === 'alive';
+    let result = await probeOnce(line, settings, nowIso);
+    // A single transient timeout must not demote a line that has been stable.
+    if (!result.ok && wasAlive && line.failCount === 0) {
+      await sleep(700);
+      const retry = await probeOnce(line, settings, nowIso);
+      if (retry.ok) result = retry;
     }
 
     const next = transition(line, result, { reviveDays: settings.deadReviveDays });
@@ -140,4 +132,23 @@ export async function runProbes(
   });
 
   return summary;
+}
+
+async function probeOnce(line: LineEntry, settings: AppSettings, checkedAt: string): Promise<ProbeResult> {
+  try {
+    return await probeStream(line.url, {
+      headers: line.headers,
+      timeoutMs: settings.probeTimeoutMs,
+      warmupBytes: settings.warmupBytes,
+      sampleMs: settings.sampleMs,
+      maxBytes: 2_500_000,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      protocol: line.protocol,
+      error: error instanceof Error ? error.message : String(error),
+      checkedAt,
+    };
+  }
 }

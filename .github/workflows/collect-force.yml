@@ -37,7 +37,7 @@ jobs:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           PROBE_BUDGET: '6000'
-          PROBE_CONCURRENCY: '48'
+          PROBE_CONCURRENCY: '16'
           PROBE_FORCE: 'true'
           PUBLISH_COOLDOWN_MS: '60000'
           FFPROBE_LIMIT: '200'

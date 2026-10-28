@@ -236,6 +236,7 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       const force = process.env.PROBE_FORCE === '1' || process.env.PROBE_FORCE === 'true';
       const planned = planProbes(lines, sources, settings, budget, new Date(), force);
       logger.info('测速计划', { due: planned.length, budget, force });
+      const aliveBefore = lines.filter((line) => line.status === 'alive').length;
 
       const summary = await runProbes(planned, settings, config.concurrency || settings.concurrency, logger);
       probed = summary.probed;
@@ -243,6 +244,11 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       report.bytes = summary.bytes;
       report.probed = summary.probed;
       logger.info('测速完成', { probed: summary.probed, alive: summary.alive, dead: summary.dead, suspect: summary.suspect, mb: Math.round(summary.bytes / 1024 / 1024) });
+
+      const aliveAfter = lines.filter((line) => line.status === 'alive').length;
+      if (aliveBefore >= 20 && summary.probed >= 100 && aliveAfter < aliveBefore * 0.5) {
+        throw new Error(`探测异常：可用线路 ${aliveBefore} → ${aliveAfter}，已放弃发布以保护现有订阅（请降低并发或稍后重试）`);
+      }
 
       const ffprobeLimit = Number(process.env.FFPROBE_LIMIT ?? '150') || 0;
       if (ffprobeLimit > 0) await enrichResolutions(lines, ffprobeLimit, logger);
