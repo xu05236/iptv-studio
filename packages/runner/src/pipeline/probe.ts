@@ -49,7 +49,9 @@ export function planProbes(
     if (!line.lastProbeAt) return 3;
     if (line.status === 'alive') return 0;
     if (line.status === 'suspect') return 1;
-    if (line.status === 'dead') return 2;
+    // New lines beat dead-line revival: dead lines rarely come back, and new
+    // channels are what the daily run is trying to discover.
+    if (line.status === 'dead') return 4;
     return 3;
   };
 
