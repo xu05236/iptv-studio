@@ -208,7 +208,16 @@ export function ChannelsAdmin() {
         </Card>
       ) : null}
 
-      {channels.isLoading ? <Card><div className="caption">加载中…</div></Card> : null}
+      {channels.isError ? (
+        <Card>
+          <div className="caption" style={{ color: 'var(--red, #e5484d)', marginBottom: 8 }}>
+            {channels.error instanceof Error ? channels.error.message : '加载失败，请重试'}
+          </div>
+          <Button onClick={() => void channels.refetch()}>重新加载</Button>
+        </Card>
+      ) : channels.isLoading ? (
+        <Card><div className="caption">加载中…</div></Card>
+      ) : null}
 
       <div className="list">
         {items.map((channel) => (
@@ -254,7 +263,7 @@ export function ChannelsAdmin() {
             </div>
           </div>
         ))}
-        {!channels.isLoading && !items.length ? (
+        {!channels.isLoading && !channels.isError && !items.length ? (
           <div className="caption" style={{ padding: 16 }}><Tv size={14} /> 没有匹配的频道。</div>
         ) : null}
       </div>

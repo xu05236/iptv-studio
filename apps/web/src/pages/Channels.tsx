@@ -6,7 +6,7 @@ import clsx from 'clsx';
 import { api } from '../lib/api';
 import type { ChannelsResponse } from '../lib/types';
 import { formatResolution, formatSpeed } from '../lib/format';
-import { Badge, Button, EmptyState, Pagination, Skeleton } from '../components/ui';
+import { Badge, Button, Card, EmptyState, Pagination, Skeleton } from '../components/ui';
 import { ChannelLogo } from '../components/ChannelLogo';
 
 const PAGE_SIZE = 50;
@@ -97,7 +97,14 @@ export function Channels() {
         ))}
       </div>
 
-      {query.isLoading ? (
+      {query.isError ? (
+        <Card>
+          <div className="caption" style={{ color: 'var(--red, #e5484d)', marginBottom: 8 }}>
+            {query.error instanceof Error ? query.error.message : '加载失败，请重试'}
+          </div>
+          <Button onClick={() => void query.refetch()}>重新加载</Button>
+        </Card>
+      ) : query.isLoading ? (
         <div className="stack stack--tight">
           {Array.from({ length: 6 }).map((_, index) => (
             <Skeleton key={index} height={66} radius={16} />

@@ -32,19 +32,51 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  const response = await fetch(path, { ...init, headers });
-  const text = await response.text();
-  const data = text ? safeParse(text) : null;
+  const method = (init.method ?? 'GET').toUpperCase();
+  const attempts = method === 'GET' ? 3 : 1;
+  let lastError: unknown;
 
-  if (!response.ok) {
-    if (response.status === 401) {
-      clearToken();
-      window.dispatchEvent(new Event('auth:logout'));
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const { response, text } = await fetchWithTimeout(path, { ...init, headers });
+      const data = text ? safeParse(text) : null;
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          clearToken();
+          window.dispatchEvent(new Event('auth:logout'));
+        }
+        const message = (data as { error?: string } | null)?.error ?? `请求失败 (${response.status})`;
+        throw new ApiError(response.status, message);
+      }
+      return data as T;
+    } catch (error) {
+      // 4xx/5xx are definitive; only network errors/timeouts get another IP
+      // (Cloudflare returns two IPv4 addresses and one can be unreachable).
+      if (error instanceof ApiError) throw error;
+      lastError = error;
+      if (attempt < attempts - 1) await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    const message = (data as { error?: string } | null)?.error ?? `请求失败 (${response.status})`;
-    throw new ApiError(response.status, message);
   }
-  return data as T;
+
+  throw new ApiError(
+    0,
+    lastError instanceof DOMException && lastError.name === 'AbortError'
+      ? '连接 Cloudflare 超时，已自动重试；若持续失败请开启 IPv6 或稍后再试'
+      : '网络连接失败，请检查网络后重试',
+  );
+}
+
+async function fetchWithTimeout(path: string, init: RequestInit): Promise<{ response: Response; text: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6_000);
+  try {
+    const response = await fetch(path, { ...init, signal: controller.signal });
+    const text = await response.text();
+    return { response, text };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function safeParse(text: string): unknown {
