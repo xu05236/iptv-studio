@@ -89,6 +89,6 @@ export function channelStats(lines: LineEntry[]): ChannelStats {
     dead: dead.length,
     bestSpeedKbps,
     bestQuality,
-    sources: new Set(lines.map((line) => line.sourceId)).size,
+    sources: new Set(lines.flatMap((line) => line.sourceIds ?? [line.sourceId])).size,
   };
 }

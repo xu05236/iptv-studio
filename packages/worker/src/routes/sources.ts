@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { mapPool, parseSource, probeStream, splitUrlHeaders, validateRemoteUrl, type ParsedSource } from '@iptv/core';
+import { mapPool, normalizeUrlForDedupe, parseSource, probeStream, splitUrlHeaders, validateRemoteUrl, type ParsedSource, type SourceFilters } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   deleteSource,
@@ -27,6 +27,7 @@ interface CreateSourceInput {
   notes?: string;
   /** Store a remote URL without fetching it now; the runner fetches it later. */
   skipFetch?: boolean;
+  filters?: SourceFilters;
 }
 
 sourceRoutes.get('/', async (c) => {
@@ -35,6 +36,7 @@ sourceRoutes.get('/', async (c) => {
     items: sources.map((source) => ({
       ...source,
       tags: parseJsonField<string[]>(source.tags, []),
+      filters: parseJsonField<SourceFilters>(source.filters, {}),
       enabled: source.enabled === 1,
     })),
   });
@@ -43,7 +45,7 @@ sourceRoutes.get('/', async (c) => {
 sourceRoutes.get('/:id', async (c) => {
   const source = await getSource(c.env, c.req.param('id'));
   if (!source) return fail('直播源不存在', 404);
-  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), enabled: source.enabled === 1 } });
+  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), enabled: source.enabled === 1 } });
 });
 
 sourceRoutes.get('/:id/content', async (c) => {
@@ -78,6 +80,13 @@ sourceRoutes.post('/', async (c) => {
   if (!input.url && !input.content) return fail('请提供订阅地址或文件/文本内容');
   if (input.content && input.content.length > 24 * 1024 * 1024) return fail('内容超过 24MB 限制', 413);
 
+  const existingSources = await listSources(c.env);
+  if (input.url) {
+    const normalized = normalizeUrlForDedupe(input.url);
+    const duplicate = existingSources.find((source) => source.url && normalizeUrlForDedupe(source.url) === normalized);
+    if (duplicate) return fail(`该订阅已存在：${duplicate.name}`, 409);
+  }
+
   if (input.url && input.skipFetch) {
     const id = `src-${randomId(8)}`;
     const pendingName = input.name?.trim() || new URL(input.url).hostname;
@@ -93,6 +102,7 @@ sourceRoutes.post('/', async (c) => {
       operator: input.operator ?? null,
       r2Key: null,
       notes: input.notes ?? '等待采集器抓取',
+      filters: input.filters ?? null,
     });
     await audit(c.env, c.get('actor'), 'source.create.skip_fetch', id, { url: input.url });
     return ok(
@@ -122,6 +132,10 @@ sourceRoutes.post('/', async (c) => {
     origin = 'upload';
   }
 
+  const contentHash = await sha256(text);
+  const duplicateContent = existingSources.find((source) => source.content_hash === contentHash);
+  if (duplicateContent) return fail(`相同内容已存在：${duplicateContent.name}`, 409);
+
   // Parsing a 1.5MB / 8000-entry playlist exceeds the Workers free CPU budget.
   // Store it now and let the runner parse it during collect.
   const parsed: ParsedSource | null = text.length <= 512 * 1024 ? parseSource(text, (input.kind as never) ?? 'auto') : null;
@@ -149,6 +163,8 @@ sourceRoutes.post('/', async (c) => {
     operator: input.operator ?? null,
     r2Key,
     notes: input.notes ?? null,
+    filters: input.filters ?? null,
+    contentHash,
   });
 
   await updateSource(c.env, id, {
@@ -201,6 +217,7 @@ sourceRoutes.patch('/:id', async (c) => {
     const validation = validateRemoteUrl(String(patch['url']));
     if (!validation.ok) return fail(validation.reason ?? '订阅地址不合法');
   }
+  if (patch['filters'] && typeof patch['filters'] !== 'object') return fail('filters 必须是对象');
   const updated = await updateSource(c.env, id, patch);
   if (!updated) return fail('没有可更新的字段');
   await audit(c.env, c.get('actor'), 'source.update', id, patch);
@@ -318,3 +335,8 @@ sourceRoutes.post('/:id/toggle', async (c) => {
   await updateSource(c.env, id, { enabled: source.enabled === 1 ? 0 : 1 });
   return ok({ source: await getSource(c.env, id) });
 });
+
+async function sha256(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}

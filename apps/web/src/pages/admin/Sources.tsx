@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, RefreshCw, RadioTower, Trash2, Upload, Zap } from 'lucide-react';
+import { Plus, RefreshCw, RadioTower, SlidersHorizontal, Trash2, Upload, Zap } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { SourceItem } from '../../lib/types';
 import { timeAgo } from '../../lib/format';
@@ -15,6 +15,58 @@ function sourceSite(source: SourceItem): string {
     }
   }
   return source.origin === 'upload' ? '本地上传' : '手动粘贴';
+}
+
+interface FilterForm {
+  groups: string;
+  excludeGroups: string;
+  keywords: string;
+  excludeKeywords: string;
+  maxEntries: string;
+}
+
+const EMPTY_FILTER_FORM: FilterForm = { groups: '', excludeGroups: '', keywords: '', excludeKeywords: '', maxEntries: '' };
+
+function listOf(value: string): string[] {
+  return value.split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function buildFilters(form: FilterForm): NonNullable<SourceItem['filters']> | undefined {
+  const filters: NonNullable<SourceItem['filters']> = {};
+  if (listOf(form.groups).length) filters.groups = listOf(form.groups);
+  if (listOf(form.excludeGroups).length) filters.excludeGroups = listOf(form.excludeGroups);
+  if (listOf(form.keywords).length) filters.keywords = listOf(form.keywords);
+  if (listOf(form.excludeKeywords).length) filters.excludeKeywords = listOf(form.excludeKeywords);
+  if (Number(form.maxEntries) > 0) filters.maxEntries = Number(form.maxEntries);
+  return Object.keys(filters).length ? filters : undefined;
+}
+
+function filtersToForm(filters: SourceItem['filters']): FilterForm {
+  return {
+    groups: (filters?.groups ?? []).join(', '),
+    excludeGroups: (filters?.excludeGroups ?? []).join(', '),
+    keywords: (filters?.keywords ?? []).join(', '),
+    excludeKeywords: (filters?.excludeKeywords ?? []).join(', '),
+    maxEntries: filters?.maxEntries ? String(filters.maxEntries) : '',
+  };
+}
+
+function FilterFields({ form, onChange }: { form: FilterForm; onChange: (next: FilterForm) => void }) {
+  return (
+    <div className="stack">
+      <div className="row">
+        <div className="grow"><Field label="只保留分组" hint="逗号分隔，匹配分组或频道名"><input className="input" value={form.groups} onChange={(event) => onChange({ ...form, groups: event.target.value })} placeholder="央视, 卫视, 翡翠" /></Field></div>
+        <div className="grow"><Field label="排除分组"><input className="input" value={form.excludeGroups} onChange={(event) => onChange({ ...form, excludeGroups: event.target.value })} placeholder="购物, 测试" /></Field></div>
+      </div>
+      <div className="row">
+        <div className="grow"><Field label="只保留频道名包含"><input className="input" value={form.keywords} onChange={(event) => onChange({ ...form, keywords: event.target.value })} placeholder="CCTV, 湖南" /></Field></div>
+        <div className="grow"><Field label="排除频道名包含"><input className="input" value={form.excludeKeywords} onChange={(event) => onChange({ ...form, excludeKeywords: event.target.value })} placeholder="支付, 广告" /></Field></div>
+      </div>
+      <Field label="最多保留条数" hint="过滤后硬上限，留空不限制">
+        <input className="input" type="number" min={0} value={form.maxEntries} onChange={(event) => onChange({ ...form, maxEntries: event.target.value })} placeholder="例如 300" />
+      </Field>
+    </div>
+  );
 }
 
 interface ProbeSummary {
@@ -38,6 +90,8 @@ export function Sources() {
   const [url, setUrl] = useState('');
   const [content, setContent] = useState('');
   const [skipFetch, setSkipFetch] = useState(false);
+  const [filterSource, setFilterSource] = useState<SourceItem | null>(null);
+  const [filterForm, setFilterForm] = useState({ groups: '', excludeGroups: '', keywords: '', excludeKeywords: '', maxEntries: '' });
   const [region, setRegion] = useState('');
   const [operator, setOperator] = useState('');
   const [probeResult, setProbeResult] = useState<ProbeSummary | null>(null);
@@ -55,20 +109,30 @@ export function Sources() {
       url: mode === 'url' ? url.trim() : undefined,
       content: mode === 'url' ? undefined : content,
       skipFetch: mode === 'url' ? skipFetch : undefined,
+      filters: buildFilters(filterForm),
       region: region.trim() || undefined,
       operator: operator.trim() || undefined,
     }),
     onSuccess: (result) => {
       show(`已添加，解析到 ${result.summary?.entries ?? 0} 条`);
       setOpen(false);
-      setName(''); setUrl(''); setContent(''); setRegion(''); setOperator(''); setSkipFetch(false);
+      setName(''); setUrl(''); setContent(''); setRegion(''); setOperator(''); setSkipFetch(false); setFilterForm(EMPTY_FILTER_FORM);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
 
-  const toggle = useMutation({
-    mutationFn: (id: string) => api.post(`/api/admin/sources/${id}/toggle`),
+  const saveFilters = useMutation({
+    mutationFn: () => api.patch(`/api/admin/sources/${filterSource?.id}`, { filters: buildFilters(filterForm) ?? {} }),
+    onSuccess: () => {
+      show('过滤规则已保存，下一轮采集生效');
+      setFilterSource(null);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const toggle = useMutation({    mutationFn: (id: string) => api.post(`/api/admin/sources/${id}/toggle`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] }),
     onError: (error: Error) => show(error.message, 'error'),
   });
@@ -167,6 +231,9 @@ export function Sources() {
               <Button size="sm" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}>
                 <Zap size={13} /> 抽样测速
               </Button>
+              <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); }}>
+                <SlidersHorizontal size={13} /> 过滤
+              </Button>
               <Button size="sm" variant="danger" onClick={() => { if (confirm(`删除「${source.name}」？`)) remove.mutate(source.id); }}>
                 <Trash2 size={13} /> 删除
               </Button>
@@ -238,7 +305,25 @@ export function Sources() {
             <div className="grow"><Field label="地区（可选）"><input className="input" value={region} onChange={(event) => setRegion(event.target.value)} placeholder="江苏" /></Field></div>
             <div className="grow"><Field label="运营商（可选）"><input className="input" value={operator} onChange={(event) => setOperator(event.target.value)} placeholder="电信" /></Field></div>
           </div>
+          <FilterFields form={filterForm} onChange={setFilterForm} />
           {mode !== 'url' && content ? <div className="caption"><Upload size={12} /> 已读取 {content.length.toLocaleString()} 字符</div> : null}
+        </div>
+      </Sheet>
+
+      <Sheet
+        open={Boolean(filterSource)}
+        onClose={() => setFilterSource(null)}
+        title="源过滤"
+        subtitle={filterSource?.name}
+        footer={
+          <Button block variant="primary" loading={saveFilters.isPending} onClick={() => saveFilters.mutate()}>
+            保存过滤
+          </Button>
+        }
+      >
+        <div className="stack">
+          <p className="caption">过滤在采集器解析后生效，不会删除已入库频道；清空后保存即恢复全量。</p>
+          <FilterFields form={filterForm} onChange={setFilterForm} />
         </div>
       </Sheet>
 

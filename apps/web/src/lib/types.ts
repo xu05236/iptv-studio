@@ -61,6 +61,7 @@ export interface SourceItem {
   tier: 'high' | 'normal' | 'low';
   status: string;
   notes: string | null;
+  filters?: { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number };
   created_at: string;
 }
 

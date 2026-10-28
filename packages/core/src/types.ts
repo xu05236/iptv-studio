@@ -99,6 +99,8 @@ export interface LineEntry {
   /** stable identity: hash(sourceId + normalized url) */
   key: string;
   sourceId: string;
+  /** every source that advertised this exact URL (dedupe attribution) */
+  sourceIds?: string[];
   channelId: string;
   /** display name advertised by the source */
   name: string;

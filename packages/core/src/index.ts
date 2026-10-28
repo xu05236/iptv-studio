@@ -7,6 +7,7 @@ export * from './util/hash.js';
 export * from './util/pool.js';
 export * from './parse/index.js';
 export * from './normalize/channels.js';
+export * from './source/filters.js';
 export * from './probe/index.js';
 export * from './probe/hls.js';
 export * from './probe/measure.js';

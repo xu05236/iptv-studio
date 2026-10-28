@@ -1,4 +1,4 @@
-import { parseSource, readTextCapped, type ParsedSource, type RawEntry } from '@iptv/core';
+import { filterSourceEntries, parseSource, readTextCapped, type ParsedSource, type RawEntry, type SourceFilters } from '@iptv/core';
 import type { ArtifactStore, SourceRecord } from '../store.js';
 import type { RunLogger } from '../logger.js';
 
@@ -100,13 +100,21 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
   if (parsed.warnings.length) {
     logger.warn('解析警告', { source: source.name, warnings: parsed.warnings.slice(0, 3) });
   }
-  logger.info('源解析完成', { source: source.name, kind: parsed.kind, entries: parsed.entries.length });
+  let filters: SourceFilters | null = null;
+  try {
+    filters = typeof source.filters === 'string' ? (JSON.parse(source.filters) as SourceFilters) : (source.filters ?? null);
+  } catch {
+    filters = null;
+  }
+  const filtered = filterSourceEntries(parsed.entries, filters);
+  if (filtered.dropped) logger.info('源过滤', { source: source.name, kept: filtered.entries.length, dropped: filtered.dropped });
+  logger.info('源解析完成', { source: source.name, kind: parsed.kind, entries: filtered.entries.length });
 
   return {
     ...base,
     fetched: true,
-    parsed,
-    entries: parsed.entries,
+    parsed: { ...parsed, entries: filtered.entries },
+    entries: filtered.entries,
     bytes: text.length,
   };
 }

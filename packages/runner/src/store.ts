@@ -131,6 +131,7 @@ export interface SourceRecord {
   tier: 'high' | 'normal' | 'low';
   r2_key: string | null;
   status: string;
+  filters?: string | { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number } | null;
 }
 
 export interface ChannelRecord {

@@ -102,6 +102,7 @@ function normalize(
       const line: LineEntry = {
         key,
         sourceId: item.source.id,
+        sourceIds: [item.source.id],
         channelId: resolved.id,
         name: raw.name,
         url,

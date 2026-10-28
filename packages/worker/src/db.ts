@@ -28,6 +28,8 @@ export interface SourceRow {
   status: string;
   r2_key: string | null;
   notes: string | null;
+  filters: string | null;
+  content_hash: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -133,12 +135,14 @@ export interface NewSource {
   tags?: string;
   r2Key?: string | null;
   notes?: string | null;
+  filters?: unknown;
+  contentHash?: string | null;
 }
 
 export async function insertSource(env: Env, input: NewSource): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO sources (id, name, kind, url, origin, enabled, priority, region, operator, tags, r2_key, notes, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+    `INSERT INTO sources (id, name, kind, url, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, content_hash, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
   )
     .bind(
       input.id,
@@ -153,6 +157,8 @@ export async function insertSource(env: Env, input: NewSource): Promise<void> {
       input.tags ?? '[]',
       input.r2Key ?? null,
       input.notes ?? null,
+      input.filters ? JSON.stringify(input.filters) : null,
+      input.contentHash ?? null,
     )
     .run();
 }
@@ -177,6 +183,8 @@ const SOURCE_COLUMNS: Record<string, string> = {
   last_error: 'last_error',
   entry_count: 'entry_count',
   alive_count: 'alive_count',
+  filters: 'filters',
+  content_hash: 'content_hash',
 };
 
 export async function updateSource(env: Env, id: string, patch: Record<string, unknown>): Promise<boolean> {
@@ -186,7 +194,7 @@ export async function updateSource(env: Env, id: string, patch: Record<string, u
     const column = SOURCE_COLUMNS[key];
     if (!column) continue;
     sets.push(`${column} = ?`);
-    values.push(key === 'enabled' ? (value ? 1 : 0) : key === 'tags' && Array.isArray(value) ? JSON.stringify(value) : value);
+    values.push(key === 'enabled' ? (value ? 1 : 0) : key === 'tags' && Array.isArray(value) ? JSON.stringify(value) : key === 'filters' ? JSON.stringify(value) : value);
   }
   if (!sets.length) return false;
   sets.push("updated_at = datetime('now')");

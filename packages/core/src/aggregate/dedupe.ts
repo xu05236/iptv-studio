@@ -20,6 +20,7 @@ export function dedupeLines(lines: LineEntry[]): LineEntry[] {
     const loser = winner === existing ? line : existing;
     byKey.set(key, {
       ...winner,
+      sourceIds: [...new Set([...(existing.sourceIds ?? [existing.sourceId]), ...(line.sourceIds ?? [line.sourceId])])],
       firstSeenAt: earliest(existing.firstSeenAt, line.firstSeenAt),
       lastSeenAt: latest(existing.lastSeenAt, line.lastSeenAt) ?? winner.lastSeenAt,
       lastProbeAt: latest(existing.lastProbeAt, line.lastProbeAt),
