@@ -212,14 +212,25 @@ channelRoutes.post('/cleanup-empty', async (c) => {
   const active = new Set(index.channels.map((channel) => channel.id));
   const channels = await listChannels(c.env);
   const { results: aliasRows } = await c.env.DB.prepare(
-    'SELECT channel_id, COUNT(*) AS total FROM aliases GROUP BY channel_id',
-  ).all<{ channel_id: string; total: number }>();
-  const aliases = new Map(aliasRows.map((row) => [row.channel_id, row.total]));
+    'SELECT channel_id, alias FROM aliases',
+  ).all<{ channel_id: string; alias: string }>();
+  const aliases = new Map<string, string[]>();
+  for (const row of aliasRows) {
+    const list = aliases.get(row.channel_id) ?? [];
+    list.push(row.alias);
+    aliases.set(row.channel_id, list);
+  }
 
-  // Keep channels with aliases: they may be built-in/EPG anchors or user-edited.
-  const candidates = channels.filter((channel) => !active.has(channel.id) && (aliases.get(channel.id) ?? 0) === 0);
+  // Auto-created aliases (name/tvg id) do not count as user data. Only keep a
+  // stale channel when it has an additional, manually added alias.
+  const candidates = channels.filter((channel) => {
+    if (active.has(channel.id)) return false;
+    const list = aliases.get(channel.id) ?? [];
+    return list.every((alias) => alias === channel.name || alias === channel.tvg_id);
+  });
   const statements: D1PreparedStatement[] = [];
   for (const channel of candidates) {
+    statements.push(c.env.DB.prepare('DELETE FROM aliases WHERE channel_id = ?').bind(channel.id));
     statements.push(c.env.DB.prepare('DELETE FROM channels WHERE id = ?').bind(channel.id));
   }
   for (let offset = 0; offset < statements.length; offset += 50) {
