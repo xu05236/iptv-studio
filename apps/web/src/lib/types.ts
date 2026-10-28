@@ -105,6 +105,7 @@ export interface UsageSnapshot {
   kv: { day: string; reads: number; writes: number; lists: number; deletes: number; storageBytes: number };
   d1: { day: string; rowsRead: number; rowsWritten: number };
   github: { month: string; minutes: number; runs: number };
+  history?: Array<{ date: string; kvWrites: number; d1Writes: number; githubMinutes: number }>;
 }
 
 export interface SubscriptionItem {

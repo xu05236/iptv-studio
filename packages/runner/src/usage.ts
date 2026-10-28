@@ -1,8 +1,16 @@
+interface DayUsage {
+  date: string;
+  kvWrites: number;
+  d1Writes: number;
+  githubMinutes: number;
+}
+
 interface UsageSnapshot {
   collectedAt: string;
   kv: { day: string; reads: number; writes: number; lists: number; deletes: number; storageBytes: number };
   d1: { day: string; rowsRead: number; rowsWritten: number };
   github: { month: string; minutes: number; runs: number };
+  history: DayUsage[];
 }
 
 const token = process.env.CLOUDFLARE_API_TOKEN ?? '';
@@ -24,8 +32,8 @@ async function graphql(query: string): Promise<Record<string, any>> {
   return data.data ?? {};
 }
 
-function day(): string {
-  return new Date().toISOString().slice(0, 10);
+function utcDay(offsetDays = 0): string {
+  return new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
 }
 
 function monthStart(): string {
@@ -33,15 +41,23 @@ function monthStart(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
 }
 
-async function collectKv(): Promise<UsageSnapshot['kv']> {
-  const today = day();
+function lastSevenDays(): string[] {
+  return Array.from({ length: 7 }, (_, index) => utcDay(-index)).reverse();
+}
+
+async function collectKv(days: string[]): Promise<{
+  kv: UsageSnapshot['kv'];
+  writesByDay: Map<string, number>;
+}> {
+  const since = days[0];
+  const today = utcDay();
   const data = await graphql(`query {
     viewer { accounts(filter: {accountTag: "${account}"}) {
-      kvOperationsAdaptiveGroups(limit: 200, filter: {date_geq: "${today}"}) {
+      kvOperationsAdaptiveGroups(limit: 500, filter: {date_geq: "${since}"}) {
         dimensions { date actionType }
         sum { requests }
       }
-      kvStorageAdaptiveGroups(limit: 5, filter: {date_geq: "${today}"}) {
+      kvStorageAdaptiveGroups(limit: 20, filter: {date_geq: "${since}"}) {
         dimensions { date }
         max { byteCount }
       }
@@ -50,23 +66,34 @@ async function collectKv(): Promise<UsageSnapshot['kv']> {
   const result = data.viewer?.accounts?.[0] ?? {};
   const ops: Array<{ dimensions: { date: string; actionType: string }; sum: { requests: number } }> = result.kvOperationsAdaptiveGroups ?? [];
   const storage: Array<{ dimensions: { date: string }; max: { byteCount: number } }> = result.kvStorageAdaptiveGroups ?? [];
-  const totals = { reads: 0, writes: 0, lists: 0, deletes: 0 };
+  const writesByDay = new Map<string, number>();
+  const todayTotals = { reads: 0, writes: 0, lists: 0, deletes: 0 };
   for (const item of ops) {
-    if (item.dimensions.date !== today) continue;
-    if (item.dimensions.actionType === 'read') totals.reads += item.sum.requests;
-    if (item.dimensions.actionType === 'write') totals.writes += item.sum.requests;
-    if (item.dimensions.actionType === 'list') totals.lists += item.sum.requests;
-    if (item.dimensions.actionType === 'delete') totals.deletes += item.sum.requests;
+    const date = item.dimensions.date;
+    const requests = item.sum.requests;
+    if (item.dimensions.actionType === 'write') writesByDay.set(date, (writesByDay.get(date) ?? 0) + requests);
+    if (date !== today) continue;
+    if (item.dimensions.actionType === 'read') todayTotals.reads += requests;
+    if (item.dimensions.actionType === 'write') todayTotals.writes += requests;
+    if (item.dimensions.actionType === 'list') todayTotals.lists += requests;
+    if (item.dimensions.actionType === 'delete') todayTotals.deletes += requests;
   }
-  const latest = storage.filter((item) => item.dimensions.date === today).sort((a, b) => a.dimensions.date.localeCompare(b.dimensions.date)).at(-1);
-  return { day: today, ...totals, storageBytes: latest?.max.byteCount ?? 0 };
+  const latest = storage.filter((item) => item.dimensions.date === today).at(-1);
+  return {
+    kv: { day: today, ...todayTotals, storageBytes: latest?.max.byteCount ?? 0 },
+    writesByDay,
+  };
 }
 
-async function collectD1(): Promise<UsageSnapshot['d1']> {
-  const today = day();
+async function collectD1(days: string[]): Promise<{
+  d1: UsageSnapshot['d1'];
+  writesByDay: Map<string, number>;
+}> {
+  const since = days[0];
+  const today = utcDay();
   const data = await graphql(`query {
     viewer { accounts(filter: {accountTag: "${account}"}) {
-      d1AnalyticsAdaptiveGroups(limit: 200, filter: {date_geq: "${today}"}) {
+      d1AnalyticsAdaptiveGroups(limit: 500, filter: {date_geq: "${since}"}) {
         dimensions { date databaseId }
         sum { rowsRead rowsWritten }
       }
@@ -74,19 +101,25 @@ async function collectD1(): Promise<UsageSnapshot['d1']> {
   }`);
   const items: Array<{ dimensions: { date: string; databaseId: string }; sum: { rowsRead: number; rowsWritten: number } }> =
     data.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups ?? [];
-  let rowsRead = 0;
-  let rowsWritten = 0;
+  const writesByDay = new Map<string, number>();
+  const totals = { rowsRead: 0, rowsWritten: 0 };
   for (const item of items) {
-    if (item.dimensions.date !== today) continue;
     if (d1Id && item.dimensions.databaseId !== d1Id) continue;
-    rowsRead += item.sum.rowsRead;
-    rowsWritten += item.sum.rowsWritten;
+    const date = item.dimensions.date;
+    writesByDay.set(date, (writesByDay.get(date) ?? 0) + item.sum.rowsWritten);
+    if (date !== today) continue;
+    totals.rowsRead += item.sum.rowsRead;
+    totals.rowsWritten += item.sum.rowsWritten;
   }
-  return { day: today, rowsRead, rowsWritten };
+  return { d1: { day: today, ...totals }, writesByDay };
 }
 
-async function collectGithub(): Promise<UsageSnapshot['github']> {
-  if (!githubToken || !githubRepo) return { month: monthStart(), minutes: 0, runs: 0 };
+async function collectGithub(): Promise<{
+  github: UsageSnapshot['github'];
+  minutesByDay: Map<string, number>;
+}> {
+  const minutesByDay = new Map<string, number>();
+  if (!githubToken || !githubRepo) return { github: { month: monthStart(), minutes: 0, runs: 0 }, minutesByDay };
   let minutes = 0;
   let runs = 0;
   for (let page = 1; page <= 5; page++) {
@@ -98,22 +131,35 @@ async function collectGithub(): Promise<UsageSnapshot['github']> {
     const data = (await response.json()) as { workflow_runs: Array<{ run_duration_ms?: number; created_at: string; updated_at: string }> };
     for (const run of data.workflow_runs) {
       const ms = run.run_duration_ms ?? Math.max(0, new Date(run.updated_at).getTime() - new Date(run.created_at).getTime());
+      const day = run.created_at.slice(0, 10);
       minutes += ms / 60_000;
+      minutesByDay.set(day, (minutesByDay.get(day) ?? 0) + ms / 60_000);
       runs++;
     }
     if (data.workflow_runs.length < 100) break;
   }
-  return { month: monthStart(), minutes: Math.ceil(minutes), runs };
+  return { github: { month: monthStart(), minutes: Math.ceil(minutes), runs }, minutesByDay };
 }
 
 async function main(): Promise<void> {
   if (!token || !account) throw new Error('CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID 未配置');
   if (!apiBase || !adminToken) throw new Error('API_BASE_URL / ADMIN_TOKEN 未配置');
+
+  const days = lastSevenDays();
+  const [kvResult, d1Result, githubResult] = await Promise.all([collectKv(days), collectD1(days), collectGithub()]);
+  const history: DayUsage[] = days.map((date) => ({
+    date,
+    kvWrites: kvResult.writesByDay.get(date) ?? 0,
+    d1Writes: d1Result.writesByDay.get(date) ?? 0,
+    githubMinutes: Math.ceil(githubResult.minutesByDay.get(date) ?? 0),
+  }));
+
   const snapshot: UsageSnapshot = {
     collectedAt: new Date().toISOString(),
-    kv: await collectKv(),
-    d1: await collectD1(),
-    github: await collectGithub(),
+    kv: kvResult.kv,
+    d1: d1Result.d1,
+    github: githubResult.github,
+    history,
   };
   const response = await fetch(`${apiBase}/api/admin/usage`, {
     method: 'POST',

@@ -164,6 +164,32 @@ export function Dashboard() {
                   <div className="caption" style={{ marginTop: 10 }}>等待用量工作流采集</div>
                 )}
               </Card>
+
+              {snapshot?.history?.length ? (
+                <Card>
+                  <div className="row row--between">
+                    <div className="title-3">近 7 天趋势</div>
+                    <span className="caption">UTC 日期</span>
+                  </div>
+                  <div className="table-wrap" style={{ marginTop: 8, border: 0 }}>
+                    <table className="table" style={{ minWidth: 360 }}>
+                      <thead>
+                        <tr><th>日期</th><th>KV 写</th><th>D1 写</th><th>Actions</th></tr>
+                      </thead>
+                      <tbody>
+                        {snapshot.history.map((day) => (
+                          <tr key={day.date}>
+                            <td className="caption">{day.date.slice(5)}</td>
+                            <td style={{ color: day.kvWrites > 800 ? 'var(--orange)' : undefined }}>{formatNumber(day.kvWrites)}</td>
+                            <td style={{ color: day.d1Writes > 80000 ? 'var(--orange)' : undefined }}>{formatNumber(day.d1Writes)}</td>
+                            <td>{day.githubMinutes} 分</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              ) : null}
             </>
           );
         })()}
