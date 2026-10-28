@@ -33,7 +33,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
   const method = (init.method ?? 'GET').toUpperCase();
-  const attempts = method === 'GET' ? 3 : 1;
+  const attempts = method === 'GET' ? 2 : 1;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < attempts; attempt++) {
@@ -69,7 +69,9 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 
 async function fetchWithTimeout(path: string, init: RequestInit): Promise<{ response: Response; text: string }> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 6_000);
+  // The China -> Cloudflare path can spend 9-10s in TLS alone; a 6s cap
+  // aborted every request before it was even sent.
+  const timer = setTimeout(() => controller.abort(), 15_000);
   try {
     const response = await fetch(path, { ...init, signal: controller.signal });
     const text = await response.text();
