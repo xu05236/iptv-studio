@@ -341,6 +341,7 @@ export async function mergeChannels(env: Env, fromIds: string[], intoId: string)
   const target = await getChannel(env, intoId);
   if (!target) throw new Error('目标频道不存在');
   let merged = 0;
+  const fromSet = new Set(fromIds);
   for (const id of fromIds) {
     if (id === intoId) continue;
     const source = await getChannel(env, id);
@@ -350,6 +351,31 @@ export async function mergeChannels(env: Env, fromIds: string[], intoId: string)
     await env.DB.prepare('UPDATE aliases SET channel_id = ? WHERE channel_id = ?').bind(intoId, id).run();
     await env.DB.prepare('DELETE FROM channels WHERE id = ?').bind(id).run();
     merged++;
+  }
+
+  // Existing probe state still points at the old x- channel. Remap it now so
+  // the next export/subscription does not resurrect the deleted channel.
+  const linesState = await env.KV.get<{ lines: Array<{ channelId: string }> }>('state/lines.json', 'json');
+  if (linesState?.lines) {
+    let changed = 0;
+    for (const line of linesState.lines) {
+      if (fromSet.has(line.channelId)) {
+        line.channelId = intoId;
+        changed++;
+      }
+    }
+    if (changed) await env.KV.put('state/lines.json', JSON.stringify(linesState));
+  }
+  const probeState = await env.KV.get<{ items: Array<{ channelId?: string }> }>('state/probe.json', 'json');
+  if (probeState?.items) {
+    let changed = 0;
+    for (const item of probeState.items) {
+      if (item.channelId && fromSet.has(item.channelId)) {
+        item.channelId = intoId;
+        changed++;
+      }
+    }
+    if (changed) await env.KV.put('state/probe.json', JSON.stringify(probeState));
   }
   return merged;
 }
