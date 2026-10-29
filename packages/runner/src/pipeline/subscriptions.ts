@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import {
   buildPlaylist,
   buildXmltv,
@@ -109,7 +110,9 @@ export async function publishSubscriptions(
         );
         if (new TextEncoder().encode(xml).byteLength < 24 * 1024 * 1024) {
           await store.put(`out/epg-${sub.id}.xml`, xml, 'application/xml; charset=utf-8');
-          written++;
+          const compressed = gzipSync(Buffer.from(xml, 'utf8'), { level: 9 });
+          await store.put(`out/epg-${sub.id}.xml.gz`, compressed, 'application/gzip');
+          written += 2;
         }
       }
     }
