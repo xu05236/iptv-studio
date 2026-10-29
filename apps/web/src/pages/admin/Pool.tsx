@@ -181,6 +181,32 @@ export function Pool() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const saveSubscription = useMutation({
+    mutationFn: () => {
+      const name = window.prompt('订阅名称', `线路池订阅 ${new Date().toISOString().slice(0, 10)}`);
+      if (!name?.trim()) throw new Error('已取消');
+      return api.post<{ id: string; token: string; lines: number }>('/api/admin/pool/subscription', {
+        name: name.trim(),
+        country,
+        group,
+        channelId,
+        pool,
+        transport,
+        resolution,
+        minSpeed,
+        q: search.trim(),
+        keys: selected.size ? [...selected] : undefined,
+      });
+    },
+    onSuccess: (result) => {
+      show(`已保存订阅，共 ${result.lines} 条线路`);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
+    },
+    onError: (error: Error) => {
+      if (error.message !== '已取消') show(error.message, 'error');
+    },
+  });
+
   function resetPage(): void {
     setPage(1);
   }
@@ -216,6 +242,9 @@ export function Pool() {
         </Button>
         <Button loading={exportPool.isPending} onClick={() => exportPool.mutate()}>
           <Download size={15} /> 导出当前筛选
+        </Button>
+        <Button loading={saveSubscription.isPending} onClick={() => saveSubscription.mutate()}>
+          <Layers3 size={15} /> 保存为订阅
         </Button>
       </div>
 

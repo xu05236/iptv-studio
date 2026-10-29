@@ -21,6 +21,7 @@ interface SubscriptionRow {
   groups: string[];
   excludeGroups: string[];
   channelIds: string[];
+  line_keys?: string;
   min_resolution: string;
   min_speed_kbps: number;
   protocols: string[];
@@ -51,6 +52,16 @@ export async function publishSubscriptions(
   let written = 0;
   for (const sub of items) {
     if (!sub.enabled) continue;
+    let customKeys: string[] = [];
+    try {
+      customKeys = JSON.parse(sub.line_keys ?? '[]') as string[];
+    } catch {
+      customKeys = [];
+    }
+    if (customKeys.length) {
+      logger.info('自定义订阅由 Worker 按 line_keys 动态渲染', { id: sub.id });
+      continue;
+    }
     const selected = catalog.items
       .filter((item) => {
         if (item.channel.enabled === false) return false;

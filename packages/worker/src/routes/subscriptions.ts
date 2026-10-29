@@ -42,6 +42,8 @@ function defaults(input: Record<string, unknown>, id: string): SubscriptionRow {
     groups: JSON.stringify(toStringList(input['groups'])),
     exclude_groups: JSON.stringify(toStringList(input['excludeGroups'] ?? input['exclude_groups'])),
     channel_ids: JSON.stringify(toStringList(input['channelIds'] ?? input['channel_ids'])),
+    line_keys: JSON.stringify(toStringList(input['lineKeys'] ?? input['line_keys'])),
+    pool_mode: String(input['poolMode'] ?? input['pool_mode'] ?? 'premium'),
     min_resolution: String(input['minResolution'] ?? input['min_resolution'] ?? 'any'),
     min_speed_kbps: Number(input['minSpeedKbps'] ?? input['min_speed_kbps'] ?? 0),
     protocols: JSON.stringify(toStringList(input['protocols'])),

@@ -3,14 +3,16 @@ import { compareLines, qualityOf, qualityRank, type LineEntry, type Quality } fr
 import type { AppEnv, Env } from '../env.js';
 import {
   audit,
+  createSubscription,
   deleteLineOverrides,
   listChannels,
   listLineOverrides,
   listSources,
   loadSettings,
   upsertLineOverride,
+  type SubscriptionRow,
 } from '../db.js';
-import { fail, ok, readJson } from '../lib/http.js';
+import { fail, ok, randomId, randomToken, readJson } from '../lib/http.js';
 import { getJson } from '../lib/store.js';
 import { countryOfGroup } from '../lib/channelCountry.js';
 
@@ -280,4 +282,62 @@ poolRoutes.post('/export', async (c) => {
       'cache-control': 'no-store',
     },
   });
+});
+
+poolRoutes.post('/subscription', async (c) => {
+  const body = (await readJson<Record<string, unknown>>(c)) ?? {};
+  const { lines } = await loadPool(c.env);
+  const keys = Array.isArray(body.keys)
+    ? body.keys.filter((key): key is string => typeof key === 'string').slice(0, 500)
+    : [];
+  const keySet = new Set(keys);
+  const country = String(body.country ?? '');
+  const group = String(body.group ?? '');
+  const channelId = String(body.channelId ?? '');
+  const pool = String(body.pool ?? '');
+  const transport = String(body.transport ?? '');
+  const resolution = String(body.resolution ?? '');
+  const minSpeed = Math.max(0, Number(body.minSpeed ?? 0) || 0);
+  const q = String(body.q ?? '').trim().toLowerCase();
+  const minRank = resolution ? qualityRank(resolution as Quality) : -1;
+
+  const selected = lines.filter((line) => {
+    if (keySet.size && !keySet.has(line.key)) return false;
+    if (country && line.country !== country) return false;
+    if (group && line.group !== group) return false;
+    if (channelId && line.channelId !== channelId) return false;
+    if (pool && line.pool !== pool) return false;
+    if (transport && line.transport !== transport) return false;
+    if (minSpeed && (line.speedKbps ?? 0) < minSpeed) return false;
+    if (minRank >= 0 && qualityRank(qualityOf(line)) < minRank) return false;
+    if (q && !`${line.channelName} ${line.name} ${line.sourceName} ${line.url}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  if (!selected.length) return fail('筛选结果为空，无法保存订阅', 422);
+  if (selected.length > 500) return fail('自定义订阅最多 500 条线路', 422);
+
+  const now = new Date().toISOString();
+  const row: SubscriptionRow = {
+    id: `sub-${randomId(8)}`,
+    name: String(body.name ?? `线路池订阅 ${now.slice(0, 10)}`).slice(0, 60),
+    token: randomToken(),
+    enabled: 1,
+    groups: '[]',
+    exclude_groups: '[]',
+    channel_ids: '[]',
+    line_keys: JSON.stringify(selected.map((line) => line.key)),
+    pool_mode: 'custom',
+    min_resolution: 'any',
+    min_speed_kbps: 0,
+    protocols: '[]',
+    max_lines_per_channel: 999,
+    show_region_suffix: 1,
+    include_epg: 1,
+    format: 'm3u',
+    created_at: now,
+    updated_at: now,
+  };
+  await createSubscription(c.env, row);
+  await audit(c.env, c.get('actor'), 'pool.subscription', row.id, { lines: selected.length });
+  return ok({ id: row.id, token: row.token, lines: selected.length });
 });
