@@ -1,10 +1,26 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, RefreshCw, RadioTower, SlidersHorizontal, Trash2, Upload, Zap } from 'lucide-react';
+import { Activity, Plus, RefreshCw, RadioTower, SlidersHorizontal, Trash2, Upload, Zap } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { SourceItem } from '../../lib/types';
 import { timeAgo } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Field, Segmented, Sheet, Switch, useToast } from '../../components/ui';
+
+interface SourceHealthPoint {
+  day: string;
+  fetched: boolean;
+  parsed: number;
+  alive: number;
+  dead: number;
+  avgSpeedKbps: number;
+  reputation: number;
+}
+
+interface SourceHealthItem {
+  sourceId: string;
+  name: string;
+  points: SourceHealthPoint[];
+}
 
 function sourceSite(source: SourceItem): string {
   if (source.url) {
@@ -116,6 +132,11 @@ export function Sources() {
     queryFn: () => api.get<{ items: SourceItem[] }>('/api/admin/sources'),
   });
 
+  const health = useQuery({
+    queryKey: ['admin', 'source-health'],
+    queryFn: () => api.get<{ days: number; items: SourceHealthItem[] }>('/api/admin/sources/health?days=7'),
+  });
+
   const checkDuplicate = useMutation({
     mutationFn: () =>
       api.post<PreviewResult>('/api/admin/sources/preview', {
@@ -209,6 +230,47 @@ export function Sources() {
           <span className="caption">当前采集站：</span>
           {sites.map((site) => <Badge key={site} tone="blue">{site}</Badge>)}
         </div>
+      ) : null}
+
+      {health.data?.items.length ? (
+        <Card>
+          <div className="row row--between">
+            <div className="row" style={{ gap: 6 }}><Activity size={15} /><span className="title-3">近 7 天源健康</span></div>
+            <span className="caption">可用 / 解析 · UTC 日期</span>
+          </div>
+          <div className="table-wrap" style={{ marginTop: 10, border: 0 }}>
+            <table className="table" style={{ minWidth: 620 }}>
+              <thead>
+                <tr>
+                  <th>采集站</th>
+                  {Array.from({ length: health.data.days }, (_, index) => {
+                    const date = new Date(Date.now() - (health.data.days - 1 - index) * 86_400_000).toISOString().slice(5, 10);
+                    return <th key={date}>{date}</th>;
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {health.data.items.map((item) => (
+                  <tr key={item.sourceId}>
+                    <td className="truncate" style={{ maxWidth: 160 }}>{item.name}</td>
+                    {Array.from({ length: health.data.days }, (_, index) => {
+                      const date = new Date(Date.now() - (health.data.days - 1 - index) * 86_400_000).toISOString().slice(0, 10);
+                      const point = item.points.find((entry) => entry.day === date);
+                      if (!point) return <td key={date} className="caption">—</td>;
+                      const pct = point.parsed ? Math.round((point.alive / point.parsed) * 100) : 0;
+                      return (
+                        <td key={date} style={{ color: !point.fetched ? 'var(--red)' : pct >= 30 ? 'var(--green)' : 'var(--orange)' }}>
+                          {point.fetched ? `${point.alive}/${point.parsed}` : '失败'}
+                          <div className="caption">{pct}%</div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       ) : null}
 
       {isLoading ? <Card><div className="caption">加载中…</div></Card> : null}

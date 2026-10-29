@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { classifyGroup, displayName } from '@iptv/core';
+import { classifyGroup, displayName, normalizeChannelName } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   addAlias,
@@ -20,6 +20,45 @@ import { countryOfGroup, countryRank } from '../lib/channelCountry.js';
 import type { ChannelRow } from '../db.js';
 
 export const channelRoutes = new Hono<AppEnv>();
+
+channelRoutes.get('/alias-conflicts', async (c) => {
+  const [{ results: aliasRows }, channels] = await Promise.all([
+    c.env.DB.prepare('SELECT alias, channel_id FROM aliases').all<{ alias: string; channel_id: string }>(),
+    listChannels(c.env),
+  ]);
+  const names = new Map(channels.map((channel) => [channel.id, channel.name]));
+  const canonical = new Map<string, string[]>();
+  for (const channel of channels) {
+    const key = normalizeChannelName(channel.name);
+    if (!key) continue;
+    const list = canonical.get(key) ?? [];
+    list.push(channel.id);
+    canonical.set(key, list);
+  }
+
+  const grouped = new Map<string, { aliases: Set<string>; channelIds: Set<string> }>();
+  for (const row of aliasRows) {
+    const key = normalizeChannelName(row.alias);
+    if (!key) continue;
+    const entry = grouped.get(key) ?? { aliases: new Set<string>(), channelIds: new Set<string>() };
+    entry.aliases.add(row.alias);
+    entry.channelIds.add(row.channel_id);
+    for (const id of canonical.get(key) ?? []) entry.channelIds.add(id);
+    grouped.set(key, entry);
+  }
+
+  const items = [...grouped.entries()]
+    .filter(([, entry]) => entry.channelIds.size > 1)
+    .map(([normalized, entry]) => ({
+      normalized,
+      aliases: [...entry.aliases],
+      channels: [...entry.channelIds].map((id) => ({ id, name: names.get(id) ?? id })),
+    }))
+    .sort((a, b) => b.channels.length - a.channels.length)
+    .slice(0, 100);
+
+  return ok({ items, total: items.length });
+});
 
 channelRoutes.get('/meta/aliases', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT alias, channel_id FROM aliases').all<{ alias: string; channel_id: string }>();

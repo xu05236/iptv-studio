@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eraser, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
+import { AlertTriangle, Eraser, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminChannel } from '../../lib/types';
 import { formatResolution, formatSpeed } from '../../lib/format';
 import { Badge, Button, Card, Field, Pagination, Sheet, Switch, useToast } from '../../components/ui';
 
 const PAGE_SIZE = 50;
+
+interface AliasConflict {
+  normalized: string;
+  aliases: string[];
+  channels: Array<{ id: string; name: string }>;
+}
 
 export function ChannelsAdmin() {
   const queryClient = useQueryClient();
@@ -22,6 +28,7 @@ export function ChannelsAdmin() {
   const [aliasInput, setAliasInput] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState('');
+  const [conflictsOpen, setConflictsOpen] = useState(false);
 
   const tree = useQuery({
     queryKey: ['admin', 'channels', 'tree'],
@@ -42,6 +49,12 @@ export function ChannelsAdmin() {
       return api.get<{ items: AdminChannel[]; total: number; offset: number; limit: number }>(`/api/admin/channels/page?${params.toString()}`);
     },
     enabled: !country || Boolean(tree.data),
+  });
+
+  const conflicts = useQuery({
+    queryKey: ['admin', 'channels', 'alias-conflicts'],
+    queryFn: () => api.get<{ items: AliasConflict[]; total: number }>('/api/admin/channels/alias-conflicts'),
+    enabled: conflictsOpen,
   });
 
   const items = channels.data?.items ?? [];
@@ -153,6 +166,9 @@ export function ChannelsAdmin() {
           </Button>
           <Button loading={cleanupNames.isPending} onClick={() => cleanupNames.mutate()}>
             <Eraser size={15} /> 清理名称
+          </Button>
+          <Button onClick={() => setConflictsOpen(true)}>
+            <AlertTriangle size={15} /> 别名冲突
           </Button>
           <Button loading={reclassify.isPending} onClick={() => reclassify.mutate()}>
             <Wand2 size={15} /> 修复分类
@@ -319,6 +335,29 @@ export function ChannelsAdmin() {
             ))}
             {!aliases.length ? <div className="caption" style={{ padding: 12 }}>暂无别名</div> : null}
           </div>
+        </div>
+      </Sheet>
+      <Sheet open={conflictsOpen} onClose={() => setConflictsOpen(false)} title="别名冲突" subtitle="同一个归一化别名指向多个频道">
+        <div className="stack">
+          {conflicts.isLoading ? <div className="caption">正在扫描…</div> : null}
+          {conflicts.data?.items.length ? (
+            conflicts.data.items.map((item) => (
+              <Card key={item.normalized}>
+                <div className="mono" style={{ fontWeight: 600 }}>{item.normalized}</div>
+                <div className="caption" style={{ marginTop: 4 }}>别名：{item.aliases.join(' / ')}</div>
+                <div className="stack stack--tight" style={{ marginTop: 8 }}>
+                  {item.channels.map((channel) => (
+                    <div key={channel.id} className="row row--between">
+                      <span>{channel.name}</span>
+                      <span className="caption mono">{channel.id}</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            ))
+          ) : !conflicts.isLoading ? (
+            <div className="caption">没有发现归一化别名冲突。</div>
+          ) : null}
         </div>
       </Sheet>
     </div>

@@ -43,6 +43,51 @@ sourceRoutes.get('/', async (c) => {
   });
 });
 
+sourceRoutes.get('/health', async (c) => {
+  const days = Math.min(30, Math.max(1, Number(c.req.query('days') ?? 7) || 7));
+  const { results } = await c.env.DB.prepare(
+    `SELECT source_id, day, fetched, parsed, alive, dead, avg_speed, avg_latency, reputation
+     FROM source_stats
+     WHERE day >= date('now', ?)
+     ORDER BY day ASC`,
+  ).bind(`-${days - 1} days`).all<{
+    source_id: string;
+    day: string;
+    fetched: number;
+    parsed: number;
+    alive: number;
+    dead: number;
+    avg_speed: number;
+    avg_latency: number;
+    reputation: number;
+  }>();
+  const sources = await listSources(c.env);
+  const names = new Map(sources.map((source) => [source.id, source.name]));
+  const grouped = new Map<string, typeof results>();
+  for (const row of results) {
+    const list = grouped.get(row.source_id) ?? [];
+    list.push(row);
+    grouped.set(row.source_id, list);
+  }
+  return ok({
+    days,
+    items: [...grouped.entries()].map(([sourceId, points]) => ({
+      sourceId,
+      name: names.get(sourceId) ?? sourceId,
+      points: points.map((point) => ({
+        day: point.day,
+        fetched: point.fetched === 1,
+        parsed: point.parsed,
+        alive: point.alive,
+        dead: point.dead,
+        avgSpeedKbps: point.avg_speed,
+        avgLatencyMs: point.avg_latency,
+        reputation: point.reputation,
+      })),
+    })),
+  });
+});
+
 sourceRoutes.post('/preview', async (c) => {
   const body = (await readJson<{ url?: string; content?: string }>(c)) ?? {};
   if (!body.url && !body.content) return fail('请提供订阅地址或内容');
