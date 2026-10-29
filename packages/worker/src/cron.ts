@@ -4,13 +4,13 @@ import { loadSettings, purgeOldRows } from './db.js';
 const DAY = 86_400_000;
 
 /**
- * Hourly housekeeping. Heavy collection/probing deliberately runs in GitHub
- * Actions; cron only does cheap bookkeeping (KV artifacts + D1 rows).
+ * Six-hourly housekeeping. Heavy collection/probing deliberately runs in
+ * GitHub Actions; cron only does cheap bookkeeping (KV artifacts + D1 rows).
  */
 export async function runCron(env: Env): Promise<void> {
   await purgeOldRows(env, 90);
   await env.DB.prepare(
-    "UPDATE sources SET status = 'degraded' WHERE enabled = 1 AND status <> 'degraded' AND last_ok_at IS NOT NULL AND last_ok_at < datetime('now', '-2 days')",
+    "UPDATE sources SET status = 'degraded' WHERE enabled = 1 AND status <> 'degraded' AND last_ok_at IS NOT NULL AND last_ok_at < datetime('now', '-7 days') AND (last_fetch_at IS NULL OR last_fetch_at < datetime('now', '-7 days'))",
   ).run();
 
   const settings = await loadSettings(env);
