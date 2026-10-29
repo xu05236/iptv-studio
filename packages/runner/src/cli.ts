@@ -239,7 +239,7 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       lines = normalized.lines;
       logger.info('线路归一完成', { lines: lines.length, sourceId: sourceId || undefined });
 
-      const budget = config.probeBudget || settings.probeBudget;
+      const configuredBudget = config.probeBudget || settings.probeBudget;
       const force = process.env.PROBE_FORCE === '1' || process.env.PROBE_FORCE === 'true';
       const probeCandidates = sourceId ? lines.filter((line) => line.sourceId === sourceId) : lines;
       const premium = new Set<string>();
@@ -253,8 +253,20 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       for (const bucket of byChannel.values()) {
         bucket.sort(compareLines).slice(0, Math.max(1, settings.maxLinesPerChannel)).forEach((line) => premium.add(line.key));
       }
-      const planned = planProbes(probeCandidates, sources, settings, budget, new Date(), force, premium);
-      logger.info('测速计划', { due: planned.length, budget, force, premium: premium.size, sourceId: sourceId || undefined });
+      // Adaptive budget: probe every line that is actually due, capped by the
+      // configured maximum. A small due set no longer reserves the whole cap;
+      // a large set still cannot overwhelm the runner.
+      const allDue = planProbes(probeCandidates, sources, settings, Number.MAX_SAFE_INTEGER, new Date(), force, premium);
+      const budget = configuredBudget > 0 ? Math.min(configuredBudget, allDue.length) : allDue.length;
+      const planned = allDue.slice(0, budget);
+      logger.info('测速计划', {
+        due: allDue.length,
+        budget,
+        capped: allDue.length > budget,
+        force,
+        premium: premium.size,
+        sourceId: sourceId || undefined,
+      });
       const aliveBefore = probeCandidates.filter((line) => line.status === 'alive').length;
 
       const summary = await runProbes(planned, settings, config.concurrency || settings.concurrency, logger);
