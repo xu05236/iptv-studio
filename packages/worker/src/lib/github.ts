@@ -10,11 +10,15 @@ export interface DispatchResult {
  * Trigger the GitHub Actions collector. The Worker never probes thousands of
  * streams itself — heavy work lives in Actions, Cloudflare only distributes.
  */
-export async function dispatchWorkflow(env: Env, inputs: Record<string, string> = {}): Promise<DispatchResult> {
+export async function dispatchWorkflow(
+  env: Env,
+  inputs: Record<string, string> = {},
+  workflowOverride?: string,
+): Promise<DispatchResult> {
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) {
     return { ok: false, message: '未配置 GITHUB_TOKEN / GITHUB_REPO，无法远程触发采集' };
   }
-  const workflow = env.GITHUB_WORKFLOW || 'collect.yml';
+  const workflow = workflowOverride || env.GITHUB_WORKFLOW || 'collect.yml';
   const ref = env.GITHUB_REF || 'main';
   const url = `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/${workflow}/dispatches`;
 

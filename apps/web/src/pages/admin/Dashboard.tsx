@@ -32,6 +32,10 @@ function UsageBar({ label, used, limit, format = formatNumber }: { label: string
   );
 }
 
+function formatSnapshot(value: string): string {
+  return new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
 export function Dashboard() {
   const queryClient = useQueryClient();
   const { show } = useToast();
@@ -50,6 +54,15 @@ export function Dashboard() {
     onSuccess: (result) => {
       show(result.message);
       void queryClient.invalidateQueries({ queryKey: ['admin'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const refreshUsage = useMutation({
+    mutationFn: () => api.post<{ ok: boolean; message: string }>('/api/admin/usage/refresh'),
+    onSuccess: (result) => {
+      show(`${result.message}，约 1 分钟后刷新`);
+      setTimeout(() => void queryClient.invalidateQueries({ queryKey: ['admin', 'usage'] }), 60_000);
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
@@ -82,6 +95,9 @@ export function Dashboard() {
         <div className="row">
           <Button loading={dispatch.isPending} onClick={() => dispatch.mutate('collect')}>
             <PlayCircle size={15} /> 立即采集
+          </Button>
+          <Button loading={refreshUsage.isPending} onClick={() => refreshUsage.mutate()}>
+            <RefreshCw size={15} /> 刷新用量
           </Button>
           <Button loading={dispatch.isPending} onClick={() => dispatch.mutate('export')}>
             <RefreshCw size={15} /> 重建导出
@@ -133,7 +149,7 @@ export function Dashboard() {
               <Card>
                 <div className="row row--between">
                   <div className="title-3">Cloudflare KV</div>
-                  <span className="caption">{snapshot ? `${snapshot.kv.day} (UTC)` : '等待快照'}</span>
+                  <span className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)}` : '等待快照'}</span>
                 </div>
                 {snapshot ? (
                   <>
@@ -150,7 +166,7 @@ export function Dashboard() {
               <Card>
                 <div className="row row--between">
                   <div className="title-3">Cloudflare D1</div>
-                  <span className="caption">{snapshot ? `${snapshot.d1.day} (UTC)` : '等待快照'}</span>
+                  <span className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)}` : '等待快照'}</span>
                 </div>
                 {snapshot ? (
                   <>

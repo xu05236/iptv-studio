@@ -2,7 +2,7 @@ name: Usage snapshot
 
 on:
   schedule:
-    - cron: '23 */6 * * *'
+    - cron: '5 */6 * * *'
   workflow_dispatch:
 
 permissions:

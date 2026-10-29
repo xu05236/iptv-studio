@@ -11,6 +11,7 @@ import { adminRoutes } from './routes/admin.js';
 import { artifactRoutes } from './routes/artifacts.js';
 import { relayRoutes } from './routes/relay.js';
 import { runCron } from './cron.js';
+import { dispatchWorkflow } from './lib/github.js';
 
 const app = new Hono<AppEnv>();
 
@@ -57,6 +58,11 @@ app.post('/api/admin/usage', async (c) => {
   if (!body || typeof body['collectedAt'] !== 'string') return fail('缺少 collectedAt');
   await c.env.KV.put('state/usage.json', JSON.stringify(body));
   return ok({ saved: true });
+});
+
+app.post('/api/admin/usage/refresh', async (c) => {
+  const result = await dispatchWorkflow(c.env, {}, 'usage.yml');
+  return ok(result, result.ok ? 202 : 400);
 });
 
 app.route('/api/public', publicRoutes);
