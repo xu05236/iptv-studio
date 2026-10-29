@@ -301,3 +301,13 @@ Actions 手动入口：
   - akiralereal/iptv：GPL-3.0，功能全但代码不能直接搬；参考频道分类和 GUI
   - IPTV-PHP-Wasmer：Wasmer Edge PHP 代理，参考 80s 流缓存和 cKey/TEA，不适合 Cloudflare
   - CCTVLiveRelay：headless Chromium + FFmpeg 捕获，必须有状态服务器，不适合边缘
+## 2026-10-29 EPG 多源聚合结果
+
+- 三个 EPG 源全部成功：
+  - fanmingming: 128 频道 / 36,900 节目
+  - epg.pw: 539 频道 / 36,636 节目
+  - zsdc: 128 频道 / 36,900 节目
+- 合并去重后：583 频道 / 24,570 节目
+- 每订阅 EPG gzip 后仍约 **345 KB**
+- YSP 静态源的 `playseek` 参数被 GitHub Pages 忽略，当前不能做回看；需要 ysp-live 网关才有真实 7 天时移
+- 如果以后部署 ysp-live/ysp-live-go，可作为独立回看源接入
