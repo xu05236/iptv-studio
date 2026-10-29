@@ -289,3 +289,15 @@ Actions 手动入口：
 - 线路：2823 → 2808（同 URL 去重后减少）
 - 可用：841 → 838
 - 例：BRTV 北京卫视合并后 2 条线路，万州综合频道 3 条
+## 2026-10-29 参考项目评审与 YSP 接入
+
+- 接入 `https://petem379-cmd.github.io/ysp/all.m3u` 作为「央视频 YSP 静态源」
+- 62 路，第一次探测 52 路可用；CCTV1 实测 1080p / 25 Mbps
+- 刷新间隔 1 小时；上游 GitHub Pages 自动刷新播放列表
+- 已写入 `0008_ysp_source.sql`，新部署自动带上
+- 其余参考项目结论：
+  - ysp-live / ysp-live-go：YSP 协议网关，需要自建 Python/Go 服务，不适合直接跑在 Worker
+  - china-live：多 provider 兜底 + 7 天回看 + EPG 聚合，可作为后续 catch-up/EPG 参考
+  - akiralereal/iptv：GPL-3.0，功能全但代码不能直接搬；参考频道分类和 GUI
+  - IPTV-PHP-Wasmer：Wasmer Edge PHP 代理，参考 80s 流缓存和 cKey/TEA，不适合 Cloudflare
+  - CCTVLiveRelay：headless Chromium + FFmpeg 捕获，必须有状态服务器，不适合边缘
