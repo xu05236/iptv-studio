@@ -2,8 +2,8 @@ name: Collect & Probe
 
 on:
   schedule:
-    # 16:00 UTC = 00:00 Asia/Shanghai, once a day
-    - cron: '0 16 * * *'
+    # 00:30 UTC = 08:30 Asia/Shanghai, after the KV/D1 UTC reset at 08:00.
+    - cron: '30 0 * * *'
   workflow_dispatch:
     inputs:
       command:
