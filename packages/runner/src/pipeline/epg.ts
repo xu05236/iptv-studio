@@ -89,7 +89,7 @@ export async function collectEpg(urls: string[], registry: ChannelRegistry, logg
   }
 
   const epgDays = Math.max(1, Number(process.env.EPG_DAYS ?? 2) || 2);
-  const epgLookbackHours = Math.max(0, Number(process.env.EPG_LOOKBACK_HOURS ?? 6) || 6);
+  const epgLookbackHours = Math.max(0, Number(process.env.EPG_LOOKBACK_HOURS ?? 12) || 12);
   const data = mergeEpg(sources, {
     days: epgDays,
     lookbackHours: epgLookbackHours,
