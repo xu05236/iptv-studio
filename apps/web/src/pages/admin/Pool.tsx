@@ -6,7 +6,7 @@ import { formatResolution, formatSpeed, statusLabel, statusTone } from '../../li
 import { Badge, Button, Card, EmptyState, Pagination, Skeleton, useToast } from '../../components/ui';
 import { timeAgo } from '../../lib/format';
 
-const PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 10;
 const POOLS = [
   { value: '', label: '全部池' },
   { value: 'premium', label: '精品池' },
@@ -90,6 +90,7 @@ export function Pool() {
   const [minSpeed, setMinSpeed] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   const tree = useQuery({
     queryKey: ['admin', 'pool', 'tree'],
@@ -102,7 +103,7 @@ export function Pool() {
   const channels = groupItem?.channels ?? [];
 
   const params = useMemo(() => {
-    const value = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
+    const value = new URLSearchParams({ page: String(page), limit: String(pageSize) });
     if (country) value.set('country', country);
     if (group) value.set('group', group);
     if (channelId) value.set('channelId', channelId);
@@ -112,7 +113,7 @@ export function Pool() {
     if (minSpeed) value.set('minSpeed', minSpeed);
     if (search.trim()) value.set('q', search.trim());
     return value.toString();
-  }, [country, group, channelId, pool, transport, resolution, minSpeed, search, page]);
+  }, [country, group, channelId, pool, transport, resolution, minSpeed, search, page, pageSize]);
 
   const lines = useQuery({
     queryKey: ['admin', 'pool', 'lines', params],
@@ -120,7 +121,7 @@ export function Pool() {
     placeholderData: keepPreviousData,
   });
 
-  const totalPages = Math.max(1, Math.ceil((lines.data?.total ?? 0) / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil((lines.data?.total ?? 0) / pageSize));
 
   const override = useMutation({
     mutationFn: ({ keys, pool }: { keys: string[]; pool: string }) =>
@@ -313,7 +314,16 @@ export function Pool() {
 
       <div className="row row--between">
         <div className="caption"><Filter size={13} /> 共 {lines.data?.total ?? 0} 条线路</div>
-        <div className="caption">第 {page} / {totalPages} 页</div>
+        <label className="row" style={{ gap: 6 }}>
+          <span className="caption">每页</span>
+          <select className="input" style={{ width: 88 }} value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={30}>30</option>
+            <option value={50}>50</option>
+          </select>
+          <span className="caption">第 {page} / {totalPages} 页</span>
+        </label>
       </div>
 
       {selected.size ? (

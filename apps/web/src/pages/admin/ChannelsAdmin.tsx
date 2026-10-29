@@ -6,7 +6,7 @@ import type { AdminChannel } from '../../lib/types';
 import { formatResolution, formatSpeed } from '../../lib/format';
 import { Badge, Button, Card, Field, Pagination, Sheet, Switch, useToast } from '../../components/ui';
 
-const PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 10;
 
 interface AliasConflict {
   normalized: string;
@@ -21,6 +21,7 @@ export function ChannelsAdmin() {
   const [country, setCountry] = useState('');
   const [group, setGroup] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [editing, setEditing] = useState<AdminChannel | null>(null);
   const [form, setForm] = useState({ name: '', group: '', tvgId: '', logo: '' });
   const [aliasChannel, setAliasChannel] = useState<AdminChannel | null>(null);
@@ -40,10 +41,10 @@ export function ChannelsAdmin() {
   });
 
   const channels = useQuery({
-    queryKey: ['admin', 'channels', 'page', search, country, group, page],
+    queryKey: ['admin', 'channels', 'page', search, country, group, page, pageSize],
     placeholderData: keepPreviousData,
     queryFn: () => {
-      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE) });
+      const params = new URLSearchParams({ limit: String(pageSize), offset: String((page - 1) * pageSize) });
       if (search.trim()) params.set('q', search.trim());
       if (group) params.set('group', group);
       else if (country) {
@@ -90,7 +91,7 @@ export function ChannelsAdmin() {
 
   const items = channels.data?.items ?? [];
   const total = channels.data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const activeCountry = tree.data?.countries.find((item) => item.country === country);
   const allSelected = items.length > 0 && items.every((channel) => selected.has(channel.id));
 
@@ -333,6 +334,19 @@ export function ChannelsAdmin() {
         {!channels.isLoading && !channels.isError && !items.length ? (
           <div className="caption" style={{ padding: 16 }}><Tv size={14} /> 没有匹配的频道。</div>
         ) : null}
+      </div>
+
+      <div className="row row--between row--wrap">
+        <span className="caption">共 {total} 个频道</span>
+        <label className="row" style={{ gap: 6 }}>
+          <span className="caption">每页</span>
+          <select className="input" style={{ width: 88 }} value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={30}>30</option>
+            <option value={50}>50</option>
+          </select>
+        </label>
       </div>
 
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />

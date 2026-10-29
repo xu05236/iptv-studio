@@ -9,7 +9,7 @@ import { formatResolution, formatSpeed } from '../lib/format';
 import { Badge, Button, Card, EmptyState, Pagination, Skeleton } from '../components/ui';
 import { ChannelLogo } from '../components/ChannelLogo';
 
-const PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 10;
 
 export function Channels() {
   const [params, setParams] = useSearchParams();
@@ -17,6 +17,7 @@ export function Channels() {
   const group = params.get('group') ?? '';
   const sort = params.get('sort') === 'name' ? 'name' : 'availability';
   const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
+  const pageSize = Math.min(50, Math.max(10, Number(params.get('size') ?? String(DEFAULT_PAGE_SIZE)) || DEFAULT_PAGE_SIZE));
   const [search, setSearch] = useState(params.get('q') ?? '');
   const [debounced, setDebounced] = useState(search);
 
@@ -35,9 +36,9 @@ export function Channels() {
   }, [debounced]);
 
   const query = useQuery({
-    queryKey: ['channels', debounced, group, sort, page],
+    queryKey: ['channels', debounced, group, sort, page, pageSize],
     queryFn: () => {
-      const searchParams = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), sort });
+      const searchParams = new URLSearchParams({ page: String(page), limit: String(pageSize), sort });
       if (debounced) searchParams.set('q', debounced);
       if (group) searchParams.set('group', group);
       return api.get<ChannelsResponse>(`/api/public/channels?${searchParams.toString()}`);
@@ -48,7 +49,7 @@ export function Channels() {
   const items = query.data?.items ?? [];
   const groups = query.data?.groups ?? [];
   const total = query.data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   useEffect(() => {
     if (query.data && page > totalPages) {
@@ -125,7 +126,7 @@ export function Channels() {
         <div className="list">
           {items.map((channel) => (
             <button key={channel.id} className="list__row" onClick={() => navigate(`/channels/${encodeURIComponent(channel.id)}`)}>
-              <ChannelLogo src={channel.logo} name={channel.name} />
+              <ChannelLogo src={channel.logo} name={channel.name} tvgId={channel.tvgId} />
               <div className="grow">
                 <div className="row" style={{ gap: 6 }}>
                   <span className="list__title truncate">{channel.name}</span>
@@ -155,6 +156,19 @@ export function Channels() {
         />
       )}
 
+      <div className="row row--between row--wrap">
+        <span className="caption">共 {total} 个频道</span>
+        <label className="row" style={{ gap: 6 }}>
+          <span className="caption">每页</span>
+          <select className="input" style={{ width: 88 }} value={pageSize} onChange={(event) => updatePageSize(Number(event.target.value))}>
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={30}>30</option>
+            <option value={50}>50</option>
+          </select>
+        </label>
+      </div>
+
       <Pagination page={page} totalPages={totalPages} onChange={updatePage} />
     </div>
   );
@@ -163,6 +177,14 @@ export function Channels() {
     const nextParams = new URLSearchParams(params);
     if (next > 1) nextParams.set('page', String(next));
     else nextParams.delete('page');
+    setParams(nextParams);
+  }
+
+  function updatePageSize(next: number): void {
+    const nextParams = new URLSearchParams(params);
+    if (next === DEFAULT_PAGE_SIZE) nextParams.delete('size');
+    else nextParams.set('size', String(next));
+    nextParams.delete('page');
     setParams(nextParams);
   }
 

@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Copy, Gauge, PlayCircle, RefreshCw, Search, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../../lib/api';
 import type { RunItem } from '../../lib/types';
 import { formatDuration, formatLatency, formatResolution, formatSpeed, statusLabel, statusTone, timeAgo } from '../../lib/format';
-import { Badge, Button, Card, Field, Segmented, Sheet, Skeleton, Stat, useToast } from '../../components/ui';
+import { Badge, Button, Card, Field, Pagination, Segmented, Sheet, Skeleton, Stat, useToast } from '../../components/ui';
 
 interface ProbeLine {
   key: string;
@@ -49,6 +49,8 @@ export function Probe() {
   const [status, setStatus] = useState<'all' | 'alive' | 'suspect' | 'dead'>('all');
   const [sourceId, setSourceId] = useState('');
   const [resolution, setResolution] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number | 'all'>(10);
   const [openTester, setOpenTester] = useState(false);
   const [url, setUrl] = useState('');
   const [ua, setUa] = useState('');
@@ -56,9 +58,10 @@ export function Probe() {
   const [result, setResult] = useState<{ ok: boolean; status?: number; protocol: string; ttfbMs?: number; speedKbps?: number; resolution?: string; bandwidthKbps?: number; durationSec?: number; loop?: boolean; error?: string } | null>(null);
 
   const lines = useQuery({
-    queryKey: ['admin', 'lines', search, status, resolution, sourceId],
+    queryKey: ['admin', 'lines', search, status, resolution, sourceId, page, pageSize],
     queryFn: () => {
-      const params = new URLSearchParams({ limit: '300' });
+      const limit = pageSize === 'all' ? 5000 : pageSize;
+      const params = new URLSearchParams({ limit: String(limit), offset: String((page - 1) * limit) });
       if (search.trim()) params.set('q', search.trim());
       if (status !== 'all') params.set('status', status);
       if (sourceId) params.set('sourceId', sourceId);
@@ -72,7 +75,15 @@ export function Probe() {
     queryFn: () => api.get<{ items: Array<{ id: string; name: string }> }>('/api/admin/sources'),
   });
 
-  const visibleItems = (lines.data?.items ?? []).filter((row) => status === 'all' || row.status === status);
+  const visibleItems = lines.data?.items ?? [];
+  const totalItems = lines.data?.total ?? 0;
+  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(totalItems / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedItems = visibleItems;
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, status, sourceId, resolution, pageSize]);
 
   const runs = useQuery({
     queryKey: ['admin', 'runs', 8],
@@ -177,6 +188,20 @@ export function Probe() {
         ) : null}
       </div>
 
+      <div className="row row--between row--wrap">
+        <span className="caption">共 {totalItems} 条检测结果</span>
+        <label className="row" style={{ gap: 6 }}>
+          <span className="caption">每页</span>
+          <select className="input" style={{ width: 88 }} value={pageSize} onChange={(event) => setPageSize(event.target.value === 'all' ? 'all' : Number(event.target.value))}>
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={30}>30</option>
+            <option value={50}>50</option>
+            <option value="all">全部</option>
+          </select>
+        </label>
+      </div>
+
       {lines.isLoading ? <Skeleton height={280} radius={16} /> : null}
 
       {lines.data?.ready ? (
@@ -196,7 +221,7 @@ export function Probe() {
                 </tr>
               </thead>
               <tbody>
-                {visibleItems.map((row) => (
+                {pagedItems.map((row) => (
                   <tr key={row.key}>
                     <td>
                       <div style={{ fontWeight: 600 }}>{row.channelName}</div>
@@ -223,6 +248,7 @@ export function Probe() {
               </tbody>
             </table>
           </div>
+          <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
         </Card>
       ) : (
         <Card><div className="caption">还没有检测数据，请先运行一次采集。</div></Card>

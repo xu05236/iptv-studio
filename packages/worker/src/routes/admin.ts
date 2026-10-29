@@ -371,7 +371,8 @@ adminRoutes.get('/lines', async (c) => {
   const sourceId = c.req.query('sourceId') ?? '';
   const resolution = c.req.query('resolution') ?? '';
   const minSpeed = Number(c.req.query('minSpeed') ?? '0') || 0;
-  const limit = Math.min(Number(c.req.query('limit') ?? 200) || 200, 500);
+  const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0);
+  const limit = Math.min(Math.max(1, Number(c.req.query('limit') ?? 200) || 200), 5000);
 
   const nameByKey = new Map(catalog?.items.flatMap((item) => item.lines.map((line) => [line.key, line.name])) ?? []);
   const normalized = sourceItems.map((row) => ({
@@ -415,7 +416,7 @@ adminRoutes.get('/lines', async (c) => {
   });
 
   const meta = sourceMetaMap(await listSources(c.env));
-  const items = rows.slice(0, limit).map((row) => ({
+  const items = rows.slice(offset, offset + limit).map((row) => ({
     ...row,
     sourceName: meta.get(row.sourceId)?.name ?? row.sourceId,
     sourceSite: meta.get(row.sourceId)?.site ?? '未知来源',

@@ -106,7 +106,7 @@ export function ChannelDetail() {
 
       <Card>
         <div className="row" style={{ alignItems: 'flex-start' }}>
-          <ChannelLogo src={channel.logo} name={channel.name} size="lg" />
+          <ChannelLogo src={channel.logo} name={channel.name} size="lg" tvgId={channel.tvgId} />
           <div className="grow">
             <h1 className="title-2">{channel.name}</h1>
             <div className="row row--wrap" style={{ marginTop: 6, gap: 6 }}>
