@@ -263,7 +263,7 @@ export function ChannelDetail() {
               protocol={playing.protocol}
               lineKey={playing.key}
               codecs={relayChecks.get(playing.key)?.codecs ?? playing.codecs}
-              relayAvailable={query.data?.features?.relay ?? false}
+              relayAvailable={Boolean(relayChecks.get(playing.key)?.ok)}
               directAvailable={query.data?.features?.directPlayback ?? false}
               autoPlay
             />

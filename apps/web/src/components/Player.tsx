@@ -26,11 +26,37 @@ interface PlayerProps {
 export function Player({ url, protocol, lineKey, codecs, relayAvailable = false, directAvailable = false, autoPlay = false }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const watchdogRef = useRef<number | null>(null);
+  const loadingRef = useRef(false);
   const [mode, setMode] = useState<'direct' | 'relay'>('direct');
   const [directUrl, setDirectUrl] = useState<string | undefined>(undefined);
   const [started, setStarted] = useState(autoPlay && Boolean(url));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  const clearWatchdog = useCallback(() => {
+    if (watchdogRef.current !== null) {
+      window.clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+  }, []);
+
+  const armWatchdog = useCallback((message: string) => {
+    clearWatchdog();
+    // HLS.js retries failed manifests for a long time. Show a concrete error
+    // instead of leaving the player on "正在加载…" forever.
+    watchdogRef.current = window.setTimeout(() => {
+      if (!loadingRef.current) return;
+      setLoading(false);
+      setError(message);
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
+    }, 12_000);
+  }, [clearWatchdog]);
 
   const effectiveUrl = url ?? directUrl;
   const unsupported = protocol ? /^(rtsp|rtmp|rtmps|udp|rtp)$/i.test(protocol) : /^(rtsp|rtmp|udp|rtp):/i.test(effectiveUrl ?? '');
@@ -51,10 +77,15 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
     setError(null);
     setLoading(true);
     setStarted(true);
+    clearWatchdog();
+    if (mode === 'relay') {
+      armWatchdog('中继加载超时：源站可能拒绝了 Cloudflare 出口，或当前线路分片不可用。请换一条线路或使用订阅地址。');
+    }
 
     const source = mode === 'relay' && lineKey ? `/relay/line/${encodeURIComponent(lineKey)}` : (effectiveUrl ?? '');
     if (!source) {
       setLoading(false);
+      clearWatchdog();
       setError('出于安全考虑，页面不展示真实线路地址；请使用中继试播或订阅地址。');
       return;
     }
@@ -65,11 +96,13 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
       hls.loadSource(source);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        clearWatchdog();
         setLoading(false);
         void video.play().catch(() => undefined);
       });
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
+        clearWatchdog();
         setLoading(false);
         const status = data.response?.code;
         setError(
@@ -93,20 +126,23 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
     video.src = source;
     video.load();
     const onReady = (): void => {
+      clearWatchdog();
       setLoading(false);
       void video.play().catch(() => undefined);
     };
     const onError = (): void => {
+      clearWatchdog();
       setLoading(false);
       setError('无法播放：可能是 TS/FLV 格式，或线路需要 Referer/User-Agent 请求头。请改用中继试播，或用订阅地址在 VLC 中播放。');
     };
     video.addEventListener('loadeddata', onReady, { once: true });
     video.addEventListener('error', onError, { once: true });
-  }, [effectiveUrl, mode, lineKey, isHls, mixed, relayAvailable, codecs]);
+  }, [effectiveUrl, mode, lineKey, isHls, mixed, relayAvailable, codecs, armWatchdog, clearWatchdog]);
   useEffect(() => {
     if (!started) return;
     play();
     return () => {
+      clearWatchdog();
       hlsRef.current?.destroy();
       hlsRef.current = null;
       const video = videoRef.current;
@@ -116,7 +152,7 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
         video.load();
       }
     };
-  }, [started, play]);
+  }, [started, play, clearWatchdog]);
 
   if (unsupported) {
     return (
