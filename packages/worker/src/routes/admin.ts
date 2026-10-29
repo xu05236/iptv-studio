@@ -27,10 +27,26 @@ import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
 import { inferResolution } from '@iptv/core';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
-import { loadCatalog, loadIndex } from '../lib/catalog.js';
+import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
 import { sourceMetaMap } from '../lib/source.js';
 
 export const adminRoutes = new Hono<AppEnv>();
+
+adminRoutes.get('/epg/coverage', async (c) => {
+  const [index, guide] = await Promise.all([loadIndex(c.env), loadGuide(c.env)]);
+  if (!index) return ok({ total: 0, covered: 0, percent: 0, missing: [], missingTotal: 0 });
+  const data = (guide ?? {}) as { programmes?: Array<{ channelId: string }> };
+  const coveredIds = new Set((data.programmes ?? []).map((programme) => programme.channelId));
+  const missing = index.channels.filter((channel) => !coveredIds.has(channel.id));
+  const total = index.channels.length;
+  return ok({
+    total,
+    covered: total - missing.length,
+    percent: total ? Math.round(((total - missing.length) / total) * 100) : 0,
+    missing: missing.slice(0, 100).map((channel) => ({ id: channel.id, name: channel.name, group: channel.group })),
+    missingTotal: missing.length,
+  });
+});
 
 adminRoutes.get('/stats', async (c) => {
   const [index, sources, channels, subscriptions, feedbackOpen, runs] = await Promise.all([

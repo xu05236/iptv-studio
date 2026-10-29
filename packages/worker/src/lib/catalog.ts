@@ -37,9 +37,17 @@ export async function loadIndex(env: Env): Promise<ChannelIndex | null> {
 }
 
 export async function loadChannelShard(env: Env, channelId: string): Promise<ChannelShard | null> {
-  const bucket = await getJson<{ channels: ChannelShard[] }>(env, `state/bucket/${bucketOf(channelId)}.json`);
-  if (!bucket) return null;
-  return bucket.channels.find((item) => item.channel.id === channelId) ?? null;
+  const bucket = await getJson<{ channels: ChannelShard[] }>(env, `state/bucket/${bucketOf(channelId, 16)}.json`);
+  const found = bucket?.channels.find((item) => item.channel.id === channelId);
+  if (found) return found;
+
+  // Migration fallback: before the first publish with 16 buckets, the old
+  // 64-bucket layout is still the only complete copy.
+  if (bucketOf(channelId, 16) !== bucketOf(channelId, 64)) {
+    const legacy = await getJson<{ channels: ChannelShard[] }>(env, `state/bucket/${bucketOf(channelId, 64)}.json`);
+    return legacy?.channels.find((item) => item.channel.id === channelId) ?? null;
+  }
+  return null;
 }
 
 export async function loadGuide(env: Env): Promise<unknown> {

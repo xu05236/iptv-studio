@@ -240,10 +240,11 @@ export async function publish(
     }
   }
 
-  // KV free tier allows 1k writes/day: group channel shards into 64 buckets.
+  // KV free tier allows 1k writes/day. 16 larger buckets are a better tradeoff
+  // than 64 small ones: fewer writes, still small enough for channel details.
   const buckets = new Map<number, typeof output.shards>();
   for (const shard of output.shards) {
-    const index = bucketOf(shard.id, 64);
+    const index = bucketOf(shard.id, 16);
     const list = buckets.get(index) ?? [];
     list.push(shard);
     buckets.set(index, list);

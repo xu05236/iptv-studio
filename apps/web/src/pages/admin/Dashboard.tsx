@@ -49,6 +49,18 @@ export function Dashboard() {
     queryFn: () => api.get<{ usage: UsageSnapshot | null }>('/api/admin/usage'),
   });
 
+  const epgCoverage = useQuery({
+    queryKey: ['admin', 'epg-coverage'],
+    queryFn: () =>
+      api.get<{
+        total: number;
+        covered: number;
+        percent: number;
+        missing: Array<{ id: string; name: string; group: string }>;
+        missingTotal: number;
+      }>('/api/admin/epg/coverage'),
+  });
+
   const dispatch = useMutation({
     mutationFn: (command: 'collect' | 'export') => api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', { command }),
     onSuccess: (result) => {
@@ -122,6 +134,22 @@ export function Dashboard() {
         <Stat value={stats.sources.enabled} label={`启用源 / 共 ${stats.sources.total}`} />
         <Stat value={stats.subscriptions} label="订阅出口" />
       </div>
+
+      {epgCoverage.data ? (
+        <Card>
+          <div className="row row--between">
+            <div className="title-3">EPG 覆盖率</div>
+            <span className="caption">{epgCoverage.data.covered} / {epgCoverage.data.total} 频道</span>
+          </div>
+          <UsageBar label={`有节目单 · ${epgCoverage.data.percent}%`} used={epgCoverage.data.covered} limit={epgCoverage.data.total} />
+          <div className="caption" style={{ marginTop: 8 }}>
+            缺少节目单 {epgCoverage.data.missingTotal} 个
+            {epgCoverage.data.missing.length
+              ? ` · ${epgCoverage.data.missing.slice(0, 6).map((item) => item.name).join(' / ')}${epgCoverage.data.missingTotal > 6 ? ' …' : ''}`
+              : ''}
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid">
         {(() => {
