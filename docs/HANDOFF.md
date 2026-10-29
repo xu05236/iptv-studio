@@ -268,3 +268,10 @@ Actions 手动入口：
 - 每订阅 EPG 预压缩为 gzip：raw 2.56MB → **约 345KB**
 - Worker 仅在客户端 `Accept-Encoding: gzip` 时返回压缩文件，其他客户端回退原始 XML
 - 注意：`export` 不会重新抓 EPG；EPG 变更需要跑一次 `collect`
+## 2026-10-29 TVBox 与前台线路折叠
+
+- 新增 `/sub/<token>.tvbox`，返回 TVBox/FongMi 可用的 live 配置
+- 后台订阅页新增「TVBox」复制按钮
+- TVBox 配置包含 M3U 地址和 EPG 地址；文件由 runner 在 export/collect 时预生成，缺失时 Worker 即时生成
+- 前台频道详情默认只显示前 8 条线路（alive → suspect → dead 排序），dead 默认折叠
+- 新增「显示全部 N 条（含 dead）」/「只显示前 8 条」切换
