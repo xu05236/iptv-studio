@@ -272,6 +272,19 @@ sourceRoutes.patch('/:id', async (c) => {
     if (!validation.ok) return fail(validation.reason ?? '订阅地址不合法');
   }
   if (patch['filters'] && typeof patch['filters'] !== 'object') return fail('filters 必须是对象');
+  // A filter change must be re-applied to the full source text. Drop the
+  // conditional-request validators and the refresh timestamp so the next
+  // collect fetches the body immediately instead of reusing a 304.
+  if (patch['filters'] !== undefined && JSON.stringify(patch['filters']) !== (source.filters ?? '')) {
+    patch.etag = null;
+    patch.last_modified = null;
+    patch.last_fetch_at = null;
+  }
+  if (patch['url'] && String(patch['url']) !== (source.url ?? '')) {
+    patch.etag = null;
+    patch.last_modified = null;
+    patch.last_fetch_at = null;
+  }
   const updated = await updateSource(c.env, id, patch);
   if (!updated) return fail('没有可更新的字段');
   await audit(c.env, c.get('actor'), 'source.update', id, patch);

@@ -25,7 +25,12 @@ interface FetchResult {
   error?: string;
 }
 
-async function fetchPlaylist(url: string, etag?: string | null, lastModified?: string | null): Promise<FetchResult> {
+async function fetchPlaylist(
+  url: string,
+  etag?: string | null,
+  lastModified?: string | null,
+  conditional = true,
+): Promise<FetchResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('timeout')), 45_000);
   const baseHeaders: Record<string, string> = {
@@ -33,18 +38,17 @@ async function fetchPlaylist(url: string, etag?: string | null, lastModified?: s
     Accept: 'application/json, text/plain, application/x-mpegURL, */*',
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.6',
   };
-  const request = (conditional: boolean): Promise<Response> => {
+  const request = (useConditional: boolean): Promise<Response> => {
     const headers = { ...baseHeaders };
-    if (conditional && etag) headers['If-None-Match'] = etag;
-    if (conditional && lastModified) headers['If-Modified-Since'] = lastModified;
+    if (useConditional && etag) headers['If-None-Match'] = etag;
+    if (useConditional && lastModified) headers['If-Modified-Since'] = lastModified;
     return fetch(url, { headers, redirect: 'follow', signal: controller.signal });
   };
 
   try {
-    let response = await request(true);
-    // A 304 is only useful when we keep a local copy of the body. The runner
-    // does not cache source text, so re-fetch unconditionally to get content.
-    if (response.status === 304) response = await request(false);
+    const response = await request(conditional);
+    // A 304 means the previous parsed lines are still valid. Do not re-fetch
+    // the body just to parse the same content again.
     if (response.status === 304) return { ok: true, status: 304, notModified: true, etag, lastModified };
     if (!response.ok) return { ok: false, status: response.status, error: `HTTP ${response.status}` };
     const text = await readTextCapped(response.body, 24 * 1024 * 1024);
@@ -101,7 +105,7 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
     if (!text) return { ...base, error: `未知内置源 ${source.url}` };
     base.fetched = true;
   } else if (source.url) {
-    const fetched = await fetchPlaylist(source.url, source.etag, source.last_modified);
+    const fetched = await fetchPlaylist(source.url, source.etag, source.last_modified, !forceFetch);
     if (fetched.notModified) {
       logger.info('源未变化 (304)', { source: source.name });
       return { ...base, fetched: true, notModified: true };
