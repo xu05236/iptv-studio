@@ -61,6 +61,7 @@ interface PoolLine {
   pool: keyof PoolCounts;
   autoPool: keyof PoolCounts;
   overridden: boolean;
+  promoted?: boolean;
   reason?: string;
   status: string;
   score: number;
@@ -406,6 +407,7 @@ export function Pool() {
                       >
                         {POOLS.filter((item) => item.value).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                       </select>
+                      {line.promoted ? <div className="caption" style={{ color: 'var(--green)', marginTop: 4 }}>自动晋升</div> : null}
                       {line.overridden ? (
                         <button
                           type="button"
