@@ -14,6 +14,8 @@ import type { SourceRecord } from '../store.js';
 import type { RunLogger } from '../logger.js';
 
 const UNPROBEABLE = /^(rtsp|rtmp|rtmps|rtsp|udp|rtp):\/\//i;
+const PREMIUM_HOURS = Math.max(1, Number(process.env.PROBE_PREMIUM_HOURS ?? 168) || 168);
+const ALIVE_HOURS = Math.max(1, Number(process.env.PROBE_ALIVE_HOURS ?? 72) || 72);
 
 export function tierOf(source: SourceRecord | undefined): ProbeTier {
   return (source?.tier as ProbeTier) ?? 'normal';
@@ -38,22 +40,22 @@ export function planProbes(
   const candidates = lines.filter((line) => {
     if (UNPROBEABLE.test(line.url)) return false;
     if (line.status === 'dead' && line.failCount >= 5) return false;
-    // Top lines per channel are already validated; re-check them every 3 days
-    // instead of every daily run to save probe budget.
+    // Top lines per channel are already validated; re-check them weekly to
+    // save probe budget for new and failing lines.
     if (
       !force &&
       line.status === 'alive' &&
       premiumKeys?.has(line.key) &&
       line.lastProbeAt &&
-      now.getTime() - new Date(line.lastProbeAt).getTime() < 72 * 60 * 60 * 1000
+      now.getTime() - new Date(line.lastProbeAt).getTime() < PREMIUM_HOURS * 60 * 60 * 1000
     ) {
       return false;
     }
-    // Re-check working lines daily even when their tier TTL is longer, so the
-    // scheduled run removes lines that died before spending budget on new ones.
+    // Working lines are rechecked every 72h by default. Daily rechecks were the
+    // main source of wasted Actions minutes once the library grew.
     const aliveDue =
       line.status === 'alive' &&
-      (!line.lastProbeAt || now.getTime() - new Date(line.lastProbeAt).getTime() > 24 * 60 * 60 * 1000);
+      (!line.lastProbeAt || now.getTime() - new Date(line.lastProbeAt).getTime() > ALIVE_HOURS * 60 * 60 * 1000);
     return force || aliveDue || isDueForProbe(line, tierOf(sources.get(line.sourceId)), now);
   });
 
