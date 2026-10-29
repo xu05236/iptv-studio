@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Save, ShieldAlert } from 'lucide-react';
+import { Save, ShieldAlert, Trash2 } from 'lucide-react';
 import type { AppSettings } from '@iptv/core';
 import { api } from '../../lib/api';
 import type { SettingsResponse } from '../../lib/types';
@@ -11,6 +11,7 @@ export function SettingsPage() {
   const { show } = useToast();
   const [form, setForm] = useState<AppSettings | null>(null);
   const [epgText, setEpgText] = useState('');
+  const [newEpgUrl, setNewEpgUrl] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'settings'],
@@ -41,6 +42,22 @@ export function SettingsPage() {
   }
 
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]): void => setForm({ ...form, [key]: value });
+  const epgUrls = epgText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const writeEpgUrls = (urls: string[]): void => setEpgText(urls.join('\n'));
+  const addEpgUrl = (): void => {
+    const value = newEpgUrl.trim();
+    if (!value) return;
+    if (!/^https?:\/\//i.test(value)) {
+      show('EPG 地址必须以 http:// 或 https:// 开头', 'error');
+      return;
+    }
+    if (epgUrls.includes(value)) {
+      show('这个 EPG 源已经存在');
+      return;
+    }
+    writeEpgUrls([...epgUrls, value]);
+    setNewEpgUrl('');
+  };
 
   return (
     <div className="stack">
@@ -91,8 +108,46 @@ export function SettingsPage() {
       <Card>
         <div className="title-3">EPG 与通知</div>
         <div className="stack" style={{ marginTop: 12 }}>
-          <Field label="XMLTV 地址（每行一个）" hint="留空则不生成节目单；默认已内置 fanmingming 与 epg.pw 两个源，可自行替换/追加">
-            <textarea className="textarea" value={epgText} onChange={(event) => setEpgText(event.target.value)} placeholder="https://raw.githubusercontent.com/fanmingming/live/main/e.xml" />
+          <Field label="XMLTV 源" hint="支持添加多个源；保存后下一轮采集生效。留空则不生成节目单。">
+            <div className="stack stack--tight">
+              {epgUrls.map((url, index) => (
+                <div className="row row--wrap" key={`${url}-${index}`} style={{ gap: 6 }}>
+                  <input
+                    className="input grow"
+                    value={url}
+                    onChange={(event) => {
+                      const next = [...epgUrls];
+                      next[index] = event.target.value;
+                      writeEpgUrls(next);
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() => writeEpgUrls(epgUrls.filter((_, itemIndex) => itemIndex !== index))}
+                  >
+                    <Trash2 size={14} /> 删除
+                  </Button>
+                </div>
+              ))}
+              {!epgUrls.length ? <div className="caption">当前没有 EPG 源。</div> : null}
+              <div className="row row--wrap" style={{ gap: 6 }}>
+                <input
+                  className="input grow"
+                  placeholder="https://example.com/epg.xml 或 .xml.gz"
+                  value={newEpgUrl}
+                  onChange={(event) => setNewEpgUrl(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      addEpgUrl();
+                    }
+                  }}
+                />
+                <Button size="sm" onClick={addEpgUrl} disabled={!newEpgUrl.trim()}>添加源</Button>
+              </div>
+              <div className="caption">当前 {epgUrls.length} 个源；当前默认包含 fanmingming、epg.pw、zsdc。</div>
+            </div>
           </Field>
           <div className="list">
             <div className="list__row"><span className="grow">Telegram 日报（需在 Actions 配置 Secret）</span><Switch checked={form.notifyTelegram} onChange={(value) => set('notifyTelegram', value)} /></div>

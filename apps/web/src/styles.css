@@ -1138,6 +1138,34 @@ button {
   background: #000;
 }
 
+.player__fullscreen {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.46);
+  color: #fff;
+  backdrop-filter: blur(10px);
+}
+
+@media (max-width: 640px) {
+  .player {
+    border-radius: 12px;
+  }
+
+  .player__fullscreen {
+    top: 8px;
+    right: 8px;
+  }
+}
+
 .shot {
   display: block;
   width: 100%;

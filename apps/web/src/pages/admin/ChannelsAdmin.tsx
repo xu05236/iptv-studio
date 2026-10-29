@@ -411,7 +411,7 @@ export function ChannelsAdmin() {
           />
           {epgCoverage.isLoading ? <div className="caption">正在读取覆盖率…</div> : null}
           {epgCoverage.data?.missing.map((channel) => (
-              <div key={channel.id} className="list__row" style={{ alignItems: 'center', gap: 8 }}>
+              <div key={channel.id} className="list__row" style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="list__title truncate">{channel.name}</div>
                   <div className="caption mono">{channel.id} · {channel.group || '未分组'}</div>

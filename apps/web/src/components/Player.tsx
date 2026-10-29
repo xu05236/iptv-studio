@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { Play, RotateCcw, ShieldAlert, TriangleAlert } from 'lucide-react';
+import { Maximize2, Play, RotateCcw, ShieldAlert, TriangleAlert } from 'lucide-react';
 import { Button } from './ui';
 
 interface PlayerProps {
@@ -195,6 +195,20 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
   return (
     <div className="player">
       <video ref={videoRef} controls playsInline />
+      <button
+        type="button"
+        className="player__fullscreen"
+        aria-label="全屏播放"
+        onClick={() => {
+          const video = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+          if (!video) return;
+          if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+          else if (video.requestFullscreen) void video.requestFullscreen().catch(() => undefined);
+          else video.webkitEnterFullscreen?.();
+        }}
+      >
+        <Maximize2 size={15} />
+      </button>
       {!started || (mixed && mode === 'direct') ? (
         <div className="player__overlay">
           {mixed && mode === 'direct' ? (

@@ -191,7 +191,7 @@ export function ChannelDetail() {
                     {' · '}{line.protocol.toUpperCase()}
                     {line.lastProbeAt ? ` · 检测于 ${probeAge(line.lastProbeAt)}` : ''}
                   </div>
-                  <div className="row" style={{ marginTop: 8, gap: 6 }}>
+                  <div className="row row--wrap" style={{ marginTop: 8, gap: 6 }}>
                     <Button
                       size="sm"
                       variant={line.status === 'alive' ? 'primary' : 'default'}
