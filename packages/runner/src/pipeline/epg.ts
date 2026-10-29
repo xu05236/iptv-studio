@@ -100,6 +100,12 @@ export async function collectEpg(urls: string[], registry: ChannelRegistry, logg
     maxProgrammesPerChannel: 180,
   });
 
+  // CCTV's own API wins for channels it covers. Remove every XMLTV programme
+  // for those channels first; otherwise a slightly shifted XMLTV entry can
+  // survive next to the official one and show the wrong "now playing" title.
+  const cctvIds = new Set(cctv.programmes.map((programme) => programme.channelId));
+  data.programmes = data.programmes.filter((programme) => !cctvIds.has(programme.channelId));
+
   // CCTV data wins for the exact same start time; future days from XMLTV stay.
   if (cctv.programmes.length) {
     const known = new Set(data.channels.map((channel) => channel.id));

@@ -62,7 +62,10 @@ export function mergeEpg(sources: EpgData[], options: MergeOptions = {}): EpgDat
     for (const programme of source.programmes) {
       if (programme.start < now - lookback || programme.start > horizon) continue;
       if (options.channelIds && !options.channelIds.has(programme.channelId)) continue;
-      const key = `${programme.channelId}\u0001${programme.start}\u0001${normalizeTitle(programme.title)}`;
+      // Providers differ by a few seconds on the same programme. Bucket the
+      // start time to a minute so a channel does not get overlapping duplicates
+      // from multiple XMLTV sources.
+      const key = `${programme.channelId}\u0001${Math.floor(programme.start / 60_000)}`;
       const existing = programmes.get(key);
       if (!existing) {
         programmes.set(key, { ...programme, title: programme.title.trim() });
