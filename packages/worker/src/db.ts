@@ -333,8 +333,46 @@ export async function loadAliasMap(env: Env): Promise<Record<string, string>> {
 }
 
 export async function channelAliases(env: Env, channelId: string): Promise<string[]> {
-  const { results } = await env.DB.prepare('SELECT alias FROM aliases WHERE channel_id = ?').all<{ alias: string }>();
+  const { results } = await env.DB.prepare('SELECT alias FROM aliases WHERE channel_id = ?').bind(channelId).all<{ alias: string }>();
   return results.map((row) => row.alias);
+}
+
+export interface LineOverrideRow {
+  line_key: string;
+  pool: string;
+  channel_id: string | null;
+  reason: string | null;
+  updated_at: string;
+}
+
+export async function listLineOverrides(env: Env): Promise<LineOverrideRow[]> {
+  const { results } = await env.DB.prepare('SELECT * FROM line_overrides').all<LineOverrideRow>();
+  return results;
+}
+
+export async function upsertLineOverride(
+  env: Env,
+  lineKey: string,
+  pool: string,
+  channelId?: string | null,
+  reason?: string | null,
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO line_overrides (line_key, pool, channel_id, reason, updated_at)
+     VALUES (?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(line_key) DO UPDATE SET
+       pool = excluded.pool, channel_id = excluded.channel_id,
+       reason = excluded.reason, updated_at = datetime('now')`,
+  ).bind(lineKey, pool, channelId ?? null, reason ?? null).run();
+}
+
+export async function deleteLineOverrides(env: Env, keys: string[]): Promise<number> {
+  let removed = 0;
+  for (const key of keys) {
+    const result = await env.DB.prepare('DELETE FROM line_overrides WHERE line_key = ?').bind(key).run();
+    removed += result.meta.changes ?? 0;
+  }
+  return removed;
 }
 
 export async function mergeChannels(env: Env, fromIds: string[], intoId: string): Promise<number> {

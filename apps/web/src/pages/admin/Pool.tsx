@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { Filter, Layers3, RefreshCw } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Filter, Layers3, RefreshCw, RotateCcw } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatResolution, formatSpeed, statusLabel, statusTone } from '../../lib/format';
-import { Badge, Button, Card, EmptyState, Pagination, Skeleton } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Pagination, Skeleton, useToast } from '../../components/ui';
 import { timeAgo } from '../../lib/format';
 
 const PAGE_SIZE = 50;
@@ -59,6 +59,9 @@ interface PoolLine {
   protocol: string;
   transport: 'direct' | 'relay';
   pool: keyof PoolCounts;
+  autoPool: keyof PoolCounts;
+  overridden: boolean;
+  reason?: string;
   status: string;
   score: number;
   passCount?: number;
@@ -74,7 +77,10 @@ function poolTone(pool: string): 'green' | 'blue' | 'orange' | 'red' | undefined
 }
 
 export function Pool() {
-  const [country, setCountry] = useState('');
+  const queryClient = useQueryClient();
+  const { show } = useToast();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkPool, setBulkPool] = useState('backup');  const [country, setCountry] = useState('');
   const [group, setGroup] = useState('');
   const [channelId, setChannelId] = useState('');
   const [pool, setPool] = useState('');
@@ -114,6 +120,27 @@ export function Pool() {
   });
 
   const totalPages = Math.max(1, Math.ceil((lines.data?.total ?? 0) / PAGE_SIZE));
+
+  const override = useMutation({
+    mutationFn: ({ keys, pool }: { keys: string[]; pool: string }) =>
+      api.post<{ updated: number }>('/api/admin/pool/override', { keys, pool }),
+    onSuccess: (result) => {
+      show(`已更新 ${result.updated} 条线路`);
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const reset = useMutation({
+    mutationFn: (keys: string[]) => api.post<{ removed: number }>('/api/admin/pool/reset', { keys }),
+    onSuccess: (result) => {
+      show(`已恢复 ${result.removed} 条线路为自动池`);
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
 
   function resetPage(): void {
     setPage(1);
@@ -217,6 +244,27 @@ export function Pool() {
         <div className="caption">第 {page} / {totalPages} 页</div>
       </div>
 
+      {selected.size ? (
+        <Card>
+          <div className="row row--wrap" style={{ gap: 8, alignItems: 'center' }}>
+            <span className="caption">已选 {selected.size} 条</span>
+            <select className="input" style={{ maxWidth: 150 }} value={bulkPool} onChange={(event) => setBulkPool(event.target.value)}>
+              {POOLS.filter((item) => item.value).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+            <Button
+              loading={override.isPending}
+              onClick={() => override.mutate({ keys: [...selected], pool: bulkPool })}
+            >
+              批量移动
+            </Button>
+            <Button loading={reset.isPending} variant="glass" onClick={() => reset.mutate([...selected])}>
+              恢复自动
+            </Button>
+            <Button variant="ghost" onClick={() => setSelected(new Set())}>取消选择</Button>
+          </div>
+        </Card>
+      ) : null}
+
       {lines.isLoading ? (
         <div className="stack stack--tight">
           {Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} height={58} radius={14} />)}
@@ -227,6 +275,16 @@ export function Pool() {
             <table className="table" style={{ minWidth: 900 }}>
               <thead>
                 <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(lines.data?.items.length) && selected.size >= lines.data!.items.length}
+                      onChange={(event) => {
+                        if (event.target.checked) setSelected(new Set(lines.data?.items.map((line) => line.key) ?? []));
+                        else setSelected(new Set());
+                      }}
+                    />
+                  </th>
                   <th>频道</th>
                   <th>来源</th>
                   <th>分辨率</th>
@@ -241,6 +299,18 @@ export function Pool() {
                 {lines.data.items.map((line) => (
                   <tr key={line.key}>
                     <td>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(line.key)}
+                        onChange={(event) => {
+                          const next = new Set(selected);
+                          if (event.target.checked) next.add(line.key);
+                          else next.delete(line.key);
+                          setSelected(next);
+                        }}
+                      />
+                    </td>
+                    <td>
                       <div className="truncate" style={{ maxWidth: 180 }}>{line.channelName}</div>
                       <div className="caption">{line.country} · {line.group}</div>
                     </td>
@@ -251,7 +321,32 @@ export function Pool() {
                     <td>{formatResolution(line.resolution)}</td>
                     <td>{line.speedKbps ? formatSpeed(line.speedKbps) : '—'}</td>
                     <td><Badge tone={line.transport === 'direct' ? 'green' : 'orange'}>{line.transport === 'direct' ? '直连' : '需中继'}</Badge></td>
-                    <td><Badge tone={poolTone(line.pool)}>{POOL_LABEL[line.pool] ?? line.pool}</Badge></td>
+                    <td>
+                      <select
+                        className="input"
+                        style={{ minWidth: 105, padding: '4px 6px' }}
+                        value={line.pool}
+                        disabled={override.isPending}
+                        onChange={(event) => {
+                          const next = event.target.value;
+                          if (next === 'rejected' && !confirm('标记淘汰会从订阅中移除，确定？')) return;
+                          override.mutate({ keys: [line.key], pool: next });
+                        }}
+                      >
+                        {POOLS.filter((item) => item.value).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                      </select>
+                      {line.overridden ? (
+                        <button
+                          type="button"
+                          className="caption"
+                          title={`自动池：${POOL_LABEL[line.autoPool] ?? line.autoPool}，点击恢复`}
+                          onClick={() => reset.mutate([line.key])}
+                          style={{ display: 'block', marginTop: 4, color: 'var(--blue)' }}
+                        >
+                          <RotateCcw size={11} /> 恢复自动
+                        </button>
+                      ) : null}
+                    </td>
                     <td><Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge></td>
                     <td className="caption">{line.lastProbeAt ? `${timeAgo(line.lastProbeAt)} · ${line.passCount ?? 0} 次通过` : '未测'}</td>
                   </tr>

@@ -1,8 +1,16 @@
 import { Hono } from 'hono';
 import { compareLines, qualityOf, qualityRank, type LineEntry, type Quality } from '@iptv/core';
 import type { AppEnv, Env } from '../env.js';
-import { listChannels, listSources, loadSettings } from '../db.js';
-import { ok } from '../lib/http.js';
+import {
+  audit,
+  deleteLineOverrides,
+  listChannels,
+  listLineOverrides,
+  listSources,
+  loadSettings,
+  upsertLineOverride,
+} from '../db.js';
+import { fail, ok, readJson } from '../lib/http.js';
 import { getJson } from '../lib/store.js';
 import { countryOfGroup } from '../lib/channelCountry.js';
 
@@ -14,6 +22,9 @@ type PoolName = 'premium' | 'backup' | 'pending' | 'quarantine' | 'rejected';
 
 interface PoolLine extends LineEntry {
   pool: PoolName;
+  autoPool: PoolName;
+  overridden: boolean;
+  reason?: string;
   transport: 'direct' | 'relay';
   channelName: string;
   group: string;
@@ -22,14 +33,16 @@ interface PoolLine extends LineEntry {
 }
 
 async function loadPool(env: Env) {
-  const [state, channels, sources, settings] = await Promise.all([
+  const [state, channels, sources, settings, overrides] = await Promise.all([
     getJson<{ lines: LineEntry[] }>(env, 'state/lines.json'),
     listChannels(env),
     listSources(env),
     loadSettings(env),
+    listLineOverrides(env),
   ]);
   const channelMap = new Map(channels.map((channel) => [channel.id, channel]));
   const sourceMap = new Map(sources.map((source) => [source.id, source]));
+  const overrideMap = new Map(overrides.map((row) => [row.line_key, row]));
   const byChannel = new Map<string, LineEntry[]>();
   for (const line of state?.lines ?? []) {
     const list = byChannel.get(line.channelId) ?? [];
@@ -45,17 +58,22 @@ async function loadPool(env: Env) {
     const sorted = [...list].sort(compareLines);
     let premium = 0;
     for (const line of sorted) {
-      let pool: PoolName;
-      if (!line.lastProbeAt) pool = 'pending';
-      else if (line.status === 'dead') pool = 'rejected';
-      else if (line.status === 'suspect') pool = 'quarantine';
+      let autoPool: PoolName;
+      if (!line.lastProbeAt) autoPool = 'pending';
+      else if (line.status === 'dead') autoPool = 'rejected';
+      else if (line.status === 'suspect') autoPool = 'quarantine';
       else if (premium < Math.max(1, Math.min(PREMIUM_PER_CHANNEL, settings.maxLinesPerChannel * 2))) {
-        pool = 'premium';
+        autoPool = 'premium';
         premium++;
-      } else pool = 'backup';
+      } else autoPool = 'backup';
+      const override = overrideMap.get(line.key);
+      const pool = (override?.pool as PoolName | undefined) ?? autoPool;
       lines.push({
         ...line,
+        autoPool,
         pool,
+        overridden: Boolean(override),
+        reason: override?.reason ?? undefined,
         transport: line.url.startsWith('https:') ? 'direct' : 'relay',
         channelName: channel?.name ?? channelId,
         group,
@@ -163,10 +181,36 @@ poolRoutes.get('/lines', async (c) => {
       protocol: line.protocol,
       transport: line.transport,
       pool: line.pool,
+      autoPool: line.autoPool,
+      overridden: line.overridden,
+      reason: line.reason,
       status: line.status,
       score: line.score,
       passCount: line.passCount,
       lastProbeAt: line.lastProbeAt,
     })),
   });
+});
+
+const VALID_POOLS = new Set(['premium', 'backup', 'pending', 'quarantine', 'rejected']);
+
+poolRoutes.post('/override', async (c) => {
+  const body = (await readJson<{ keys?: unknown; pool?: unknown; reason?: unknown }>(c)) ?? {};
+  const keys = Array.isArray(body.keys) ? body.keys.filter((key): key is string => typeof key === 'string').slice(0, 200) : [];
+  const pool = typeof body.pool === 'string' ? body.pool : '';
+  if (!keys.length) return fail('keys 不能为空');
+  if (!VALID_POOLS.has(pool)) return fail('pool 不合法');
+  const reason = typeof body.reason === 'string' ? body.reason.slice(0, 200) : null;
+  for (const key of keys) await upsertLineOverride(c.env, key, pool, null, reason);
+  await audit(c.env, c.get('actor'), 'pool.override', 'bulk', { keys, pool, reason });
+  return ok({ updated: keys.length });
+});
+
+poolRoutes.post('/reset', async (c) => {
+  const body = (await readJson<{ keys?: unknown }>(c)) ?? {};
+  const keys = Array.isArray(body.keys) ? body.keys.filter((key): key is string => typeof key === 'string').slice(0, 200) : [];
+  if (!keys.length) return fail('keys 不能为空');
+  const removed = await deleteLineOverrides(c.env, keys);
+  await audit(c.env, c.get('actor'), 'pool.reset', 'bulk', { keys, removed });
+  return ok({ removed });
 });
