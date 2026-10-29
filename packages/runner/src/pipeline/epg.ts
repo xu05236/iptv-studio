@@ -88,7 +88,13 @@ export async function collectEpg(urls: string[], registry: ChannelRegistry, logg
     }
   }
 
-  const data = mergeEpg(sources, { days: 7, lookbackHours: 12 });
+  const epgDays = Math.max(1, Number(process.env.EPG_DAYS ?? 2) || 2);
+  const epgLookbackHours = Math.max(0, Number(process.env.EPG_LOOKBACK_HOURS ?? 6) || 6);
+  const data = mergeEpg(sources, {
+    days: epgDays,
+    lookbackHours: epgLookbackHours,
+    maxProgrammesPerChannel: 180,
+  });
 
   // CCTV data wins for the exact same start time; future days from XMLTV stay.
   if (cctv.programmes.length) {
