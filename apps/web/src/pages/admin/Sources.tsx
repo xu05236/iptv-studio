@@ -126,6 +126,7 @@ export function Sources() {
   const [probeResult, setProbeResult] = useState<ProbeSummary | null>(null);
   const [activeSource, setActiveSource] = useState<SourceItem | null>(null);
   const [lineResults, setLineResults] = useState<Array<{ name?: string; url: string; result: { ok: boolean; speedKbps?: number; resolution?: string; error?: string } }> | null>(null);
+  const [healthSort, setHealthSort] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'sources'],
@@ -210,7 +211,18 @@ export function Sources() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
-  const items = useMemo(() => data?.items ?? [], [data]);
+  const items = useMemo(() => {
+    const base = data?.items ?? [];
+    if (!healthSort || !health.data) return base;
+    const score = new Map(
+      health.data.items.map((item) => {
+        const total = item.points.reduce((sum, point) => sum + point.parsed, 0);
+        const alive = item.points.reduce((sum, point) => sum + point.alive, 0);
+        return [item.sourceId, total ? alive / total : 0];
+      }),
+    );
+    return [...base].sort((a, b) => (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
+  }, [data, healthSort, health.data]);
   const sites = useMemo(() => [...new Set(items.map(sourceSite))], [items]);
 
   return (
@@ -229,6 +241,9 @@ export function Sources() {
         <div className="row row--wrap">
           <span className="caption">当前采集站：</span>
           {sites.map((site) => <Badge key={site} tone="blue">{site}</Badge>)}
+          <Button size="sm" variant={healthSort ? 'primary' : 'glass'} onClick={() => setHealthSort((value) => !value)}>
+            按 7 天健康排序
+          </Button>
         </div>
       ) : null}
 

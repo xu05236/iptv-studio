@@ -353,3 +353,10 @@ Actions 手动入口：
 - 覆盖率接口支持 `q/limit/offset`，可搜索全部缺失频道，不再只返回前 100
 - EPG 映射面板支持分页加载更多
 - 截图：频道管理 → EPG 映射
+## 2026-10-29 纯代码收尾
+
+- Dashboard 增加 KV 写入预警；≥850 橙色提示，≥920 禁用采集/导出按钮
+- 新增 `GET /api/admin/backup`，可导出 settings/sources/channels/aliases/subscriptions JSON
+- 概览页新增「备份」按钮
+- 采集站支持按近 7 天健康度排序
+- EPG 覆盖率接口支持搜索和分页，映射面板可加载更多

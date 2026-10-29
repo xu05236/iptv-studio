@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowUpRight, Database, PlayCircle, RefreshCw, RadioTower, Users } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, Database, Download, PlayCircle, RefreshCw, RadioTower, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminStats, UsageSnapshot } from '../../lib/types';
 import { formatDuration, timeAgo } from '../../lib/format';
@@ -94,6 +94,26 @@ export function Dashboard() {
   const stats = data!;
   const ready = stats.index.ready;
   const aliveRatio = stats.index.totals.lines ? Math.round((stats.index.totals.alive / stats.index.totals.lines) * 100) : 0;
+  const usage = usageQuery.data?.usage;
+  const today = new Date().toISOString().slice(0, 10);
+  const kvWrites = usage?.kv.day === today ? usage.kv.writes : 0;
+  const kvBlocked = kvWrites >= 920;
+  const kvWarn = kvWrites >= 850;
+
+  const backup = useMutation({
+    mutationFn: () => api.get<unknown>('/api/admin/backup'),
+    onSuccess: (payload) => {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `iptv-studio-backup-${today}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      show('备份已导出');
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
 
   return (
     <div className="stack">
@@ -105,17 +125,27 @@ export function Dashboard() {
           </p>
         </div>
         <div className="row">
-          <Button loading={dispatch.isPending} onClick={() => dispatch.mutate('collect')}>
+          <Button loading={dispatch.isPending} disabled={kvBlocked} onClick={() => dispatch.mutate('collect')}>
             <PlayCircle size={15} /> 立即采集
           </Button>
           <Button loading={refreshUsage.isPending} onClick={() => refreshUsage.mutate()}>
             <RefreshCw size={15} /> 刷新用量
           </Button>
-          <Button loading={dispatch.isPending} onClick={() => dispatch.mutate('export')}>
+          <Button loading={dispatch.isPending} disabled={kvBlocked} onClick={() => dispatch.mutate('export')}>
             <RefreshCw size={15} /> 重建导出
+          </Button>
+          <Button loading={backup.isPending} onClick={() => backup.mutate()}>
+            <Download size={15} /> 备份
           </Button>
         </div>
       </div>
+
+      {kvWarn ? (
+        <div className="caption" style={{ color: kvBlocked ? 'var(--red)' : 'var(--orange)', padding: '0 2px' }}>
+          KV 今日已写入 {formatNumber(kvWrites)} / 1,000
+          {kvBlocked ? '，已暂停触发采集与导出，请等 UTC 00:00 重置。' : '，接近上限，请避免频繁采集。'}
+        </div>
+      ) : null}
 
       {!ready ? (
         <Card>

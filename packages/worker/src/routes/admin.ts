@@ -62,6 +62,28 @@ adminRoutes.get('/epg/coverage', async (c) => {
   });
 });
 
+adminRoutes.get('/backup', async (c) => {
+  const [sources, channels, subscriptions, settings] = await Promise.all([
+    listSources(c.env),
+    listChannels(c.env),
+    listSubscriptions(c.env),
+    loadSettings(c.env),
+  ]);
+  const { results: aliases } = await c.env.DB.prepare('SELECT alias, channel_id FROM aliases ORDER BY channel_id, alias').all<{
+    alias: string;
+    channel_id: string;
+  }>();
+  return ok({
+    exportedAt: new Date().toISOString(),
+    version: 1,
+    settings,
+    sources,
+    channels,
+    aliases,
+    subscriptions,
+  });
+});
+
 adminRoutes.get('/stats', async (c) => {
   const [index, sources, channels, subscriptions, feedbackOpen, runs] = await Promise.all([
     loadIndex(c.env),
