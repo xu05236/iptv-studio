@@ -18,10 +18,11 @@ function required(name: string): string {
 
 export function loadConfig(): RunnerConfig {
   const apiBaseUrl = required('API_BASE_URL').replace(/\/+$/, '');
+  const configuredPublicBase = process.env.PUBLIC_BASE_URL?.trim();
   return {
     apiBaseUrl,
     adminToken: required('ADMIN_TOKEN'),
-    publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? apiBaseUrl).replace(/\/+$/, ''),
+    publicBaseUrl: (configuredPublicBase || apiBaseUrl).replace(/\/+$/, ''),
     telegram: process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID
       ? { botToken: process.env.TELEGRAM_BOT_TOKEN, chatId: process.env.TELEGRAM_CHAT_ID }
       : undefined,
