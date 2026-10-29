@@ -261,3 +261,10 @@ Actions 手动入口：
 - `official-cctv` 源默认禁用，避免产生 suspect 噪声
 - CCTV 频道详情新增「官方直播」按钮，跳转 `tv.cctv.com` 对应频道页，作为稳定保底入口
 - 若要变成 IPTV 线路，需要单独的 Cloudflare Worker 中继/代理，后续再做
+## 2026-10-29 EPG 体积优化
+
+- 合并窗口：7 天 + 12h → **2 天 + 12h 回看**
+- 每频道节目上限：500 → 180 条
+- 每订阅 EPG 预压缩为 gzip：raw 2.56MB → **约 345KB**
+- Worker 仅在客户端 `Accept-Encoding: gzip` 时返回压缩文件，其他客户端回退原始 XML
+- 注意：`export` 不会重新抓 EPG；EPG 变更需要跑一次 `collect`
