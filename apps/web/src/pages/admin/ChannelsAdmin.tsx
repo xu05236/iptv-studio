@@ -31,6 +31,7 @@ export function ChannelsAdmin() {
   const [conflictsOpen, setConflictsOpen] = useState(false);
   const [epgOpen, setEpgOpen] = useState(false);
   const [epgSearch, setEpgSearch] = useState('');
+  const [epgLimit, setEpgLimit] = useState(100);
   const [epgInputs, setEpgInputs] = useState<Record<string, string>>({});
 
   const tree = useQuery({
@@ -61,15 +62,18 @@ export function ChannelsAdmin() {
   });
 
   const epgCoverage = useQuery({
-    queryKey: ['admin', 'epg-coverage'],
-    queryFn: () =>
-      api.get<{
+    queryKey: ['admin', 'epg-coverage', epgSearch, epgLimit],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: String(epgLimit) });
+      if (epgSearch.trim()) params.set('q', epgSearch.trim());
+      return api.get<{
         total: number;
         covered: number;
         percent: number;
         missing: Array<{ id: string; name: string; group: string }>;
         missingTotal: number;
-      }>('/api/admin/epg/coverage'),
+      }>(`/api/admin/epg/coverage?${params.toString()}`);
+    },
     enabled: epgOpen,
   });
 
@@ -394,13 +398,19 @@ export function ChannelsAdmin() {
         <div className="stack">
           <div className="caption">
             输入 EPG 里的显示名或数字 ID（例如 北京卫视 / 539726），绑定后下一轮采集生效。
-            {epgCoverage.data ? ` 当前缺失 ${epgCoverage.data.missingTotal} 个，显示前 100 个。` : ''}
+            {epgCoverage.data ? ` 当前缺失 ${epgCoverage.data.missingTotal} 个，已显示 ${epgCoverage.data.missing.length} 个。` : ''}
           </div>
-          <input className="input" placeholder="搜索缺失频道…" value={epgSearch} onChange={(event) => setEpgSearch(event.target.value)} />
+          <input
+            className="input"
+            placeholder="搜索缺失频道…"
+            value={epgSearch}
+            onChange={(event) => {
+              setEpgSearch(event.target.value);
+              setEpgLimit(100);
+            }}
+          />
           {epgCoverage.isLoading ? <div className="caption">正在读取覆盖率…</div> : null}
-          {epgCoverage.data?.missing
-            .filter((channel) => !epgSearch.trim() || `${channel.name} ${channel.id}`.toLowerCase().includes(epgSearch.trim().toLowerCase()))
-            .map((channel) => (
+          {epgCoverage.data?.missing.map((channel) => (
               <div key={channel.id} className="list__row" style={{ alignItems: 'center', gap: 8 }}>
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="list__title truncate">{channel.name}</div>
@@ -423,6 +433,11 @@ export function ChannelsAdmin() {
                 </Button>
               </div>
             ))}
+          {epgCoverage.data && epgCoverage.data.missing.length < epgCoverage.data.missingTotal ? (
+            <Button variant="glass" onClick={() => setEpgLimit((value) => value + 100)}>
+              加载更多（还有 {epgCoverage.data.missingTotal - epgCoverage.data.missing.length} 个）
+            </Button>
+          ) : null}
           {epgCoverage.data && !epgCoverage.data.missing.length ? <div className="caption">所有频道都有节目单。</div> : null}
         </div>
       </Sheet>

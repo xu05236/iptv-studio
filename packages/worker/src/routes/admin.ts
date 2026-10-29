@@ -34,7 +34,7 @@ export const adminRoutes = new Hono<AppEnv>();
 
 adminRoutes.get('/epg/coverage', async (c) => {
   const [index, guide] = await Promise.all([loadIndex(c.env), loadGuide(c.env)]);
-  if (!index) return ok({ total: 0, covered: 0, percent: 0, missing: [], missingTotal: 0 });
+  if (!index) return ok({ total: 0, covered: 0, percent: 0, missing: [], missingTotal: 0, filteredTotal: 0, offset: 0, limit: 100 });
   const data = (guide ?? {}) as { channels?: Record<string, unknown> };
   const coveredIds = new Set(
     Object.entries(data.channels ?? {})
@@ -42,13 +42,23 @@ adminRoutes.get('/epg/coverage', async (c) => {
       .map(([channelId]) => channelId),
   );
   const missing = index.channels.filter((channel) => !coveredIds.has(channel.id));
+  const q = (c.req.query('q') ?? '').trim().toLowerCase();
+  const filtered = q
+    ? missing.filter((channel) => `${channel.name} ${channel.id} ${channel.group}`.toLowerCase().includes(q))
+    : missing;
+  const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0);
+  const limit = Math.min(200, Math.max(1, Number(c.req.query('limit') ?? 100) || 100));
   const total = index.channels.length;
   return ok({
     total,
     covered: total - missing.length,
     percent: total ? Math.round(((total - missing.length) / total) * 100) : 0,
-    missing: missing.slice(0, 100).map((channel) => ({ id: channel.id, name: channel.name, group: channel.group })),
-    missingTotal: missing.length,
+    missing: filtered.slice(offset, offset + limit).map((channel) => ({ id: channel.id, name: channel.name, group: channel.group })),
+    missingTotal: filtered.length,
+    filteredTotal: filtered.length,
+    allMissing: missing.length,
+    offset,
+    limit,
   });
 });
 
