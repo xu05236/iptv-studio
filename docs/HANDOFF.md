@@ -275,3 +275,10 @@ Actions 手动入口：
 - TVBox 配置包含 M3U 地址和 EPG 地址；文件由 runner 在 export/collect 时预生成，缺失时 Worker 即时生成
 - 前台频道详情默认只显示前 8 条线路（alive → suspect → dead 排序），dead 默认折叠
 - 新增「显示全部 N 条（含 dead）」/「只显示前 8 条」切换
+## 2026-10-29 源健康与别名冲突
+
+- 新增 `GET /api/admin/sources/health?days=7`，读取已有 `source_stats` 日表
+- 采集站页展示每个源近 7 天「可用 / 解析」和百分比，失败显示红色
+- 新增 `GET /api/admin/channels/alias-conflicts`：同一归一化别名指向多个频道时返回冲突
+- 频道管理页新增「别名冲突」按钮与审查 Sheet，当前检测到 23 组
+- 冲突只展示，不自动修改；合并仍需人工确认
