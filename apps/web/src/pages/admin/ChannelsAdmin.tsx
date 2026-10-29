@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Eraser, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
+import { AlertTriangle, Eraser, Link2, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminChannel } from '../../lib/types';
 import { formatResolution, formatSpeed } from '../../lib/format';
@@ -29,6 +29,9 @@ export function ChannelsAdmin() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState('');
   const [conflictsOpen, setConflictsOpen] = useState(false);
+  const [epgOpen, setEpgOpen] = useState(false);
+  const [epgSearch, setEpgSearch] = useState('');
+  const [epgInputs, setEpgInputs] = useState<Record<string, string>>({});
 
   const tree = useQuery({
     queryKey: ['admin', 'channels', 'tree'],
@@ -55,6 +58,30 @@ export function ChannelsAdmin() {
     queryKey: ['admin', 'channels', 'alias-conflicts'],
     queryFn: () => api.get<{ items: AliasConflict[]; total: number }>('/api/admin/channels/alias-conflicts'),
     enabled: conflictsOpen,
+  });
+
+  const epgCoverage = useQuery({
+    queryKey: ['admin', 'epg-coverage'],
+    queryFn: () =>
+      api.get<{
+        total: number;
+        covered: number;
+        percent: number;
+        missing: Array<{ id: string; name: string; group: string }>;
+        missingTotal: number;
+      }>('/api/admin/epg/coverage'),
+    enabled: epgOpen,
+  });
+
+  const bindEpg = useMutation({
+    mutationFn: ({ channelId, alias }: { channelId: string; alias: string }) =>
+      api.post(`/api/admin/channels/${encodeURIComponent(channelId)}/aliases`, { alias }),
+    onSuccess: (_result, variables) => {
+      show(`已为 ${variables.channelId} 绑定 EPG 名称：${variables.alias}`);
+      setEpgInputs((current) => ({ ...current, [variables.channelId]: '' }));
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'epg-coverage'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
   });
 
   const items = channels.data?.items ?? [];
@@ -169,6 +196,9 @@ export function ChannelsAdmin() {
           </Button>
           <Button onClick={() => setConflictsOpen(true)}>
             <AlertTriangle size={15} /> 别名冲突
+          </Button>
+          <Button onClick={() => setEpgOpen(true)}>
+            <Link2 size={15} /> EPG 映射
           </Button>
           <Button loading={reclassify.isPending} onClick={() => reclassify.mutate()}>
             <Wand2 size={15} /> 修复分类
@@ -358,6 +388,42 @@ export function ChannelsAdmin() {
           ) : !conflicts.isLoading ? (
             <div className="caption">没有发现归一化别名冲突。</div>
           ) : null}
+        </div>
+      </Sheet>
+      <Sheet open={epgOpen} onClose={() => setEpgOpen(false)} title="EPG 缺失映射" subtitle={epgCoverage.data ? `${epgCoverage.data.covered} / ${epgCoverage.data.total} 个频道有节目单` : undefined}>
+        <div className="stack">
+          <div className="caption">
+            输入 EPG 里的显示名或数字 ID（例如 北京卫视 / 539726），绑定后下一轮采集生效。
+            {epgCoverage.data ? ` 当前缺失 ${epgCoverage.data.missingTotal} 个，显示前 100 个。` : ''}
+          </div>
+          <input className="input" placeholder="搜索缺失频道…" value={epgSearch} onChange={(event) => setEpgSearch(event.target.value)} />
+          {epgCoverage.isLoading ? <div className="caption">正在读取覆盖率…</div> : null}
+          {epgCoverage.data?.missing
+            .filter((channel) => !epgSearch.trim() || `${channel.name} ${channel.id}`.toLowerCase().includes(epgSearch.trim().toLowerCase()))
+            .map((channel) => (
+              <div key={channel.id} className="list__row" style={{ alignItems: 'center', gap: 8 }}>
+                <div className="grow" style={{ minWidth: 0 }}>
+                  <div className="list__title truncate">{channel.name}</div>
+                  <div className="caption mono">{channel.id} · {channel.group || '未分组'}</div>
+                </div>
+                <input
+                  className="input"
+                  style={{ maxWidth: 190 }}
+                  placeholder="EPG 名称 / ID"
+                  value={epgInputs[channel.id] ?? ''}
+                  onChange={(event) => setEpgInputs((current) => ({ ...current, [channel.id]: event.target.value }))}
+                />
+                <Button
+                  size="sm"
+                  loading={bindEpg.isPending}
+                  disabled={!(epgInputs[channel.id] ?? '').trim()}
+                  onClick={() => bindEpg.mutate({ channelId: channel.id, alias: (epgInputs[channel.id] ?? '').trim() })}
+                >
+                  绑定
+                </Button>
+              </div>
+            ))}
+          {epgCoverage.data && !epgCoverage.data.missing.length ? <div className="caption">所有频道都有节目单。</div> : null}
         </div>
       </Sheet>
     </div>

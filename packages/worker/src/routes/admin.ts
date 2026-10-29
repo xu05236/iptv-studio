@@ -123,6 +123,16 @@ adminRoutes.post('/runs/dispatch', async (c) => {
   const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string }>(c)) ?? {};
   const command = body.command === 'export' ? 'export' : body.command === 'epg' ? 'epg' : 'collect';
   const force = Boolean(body.force);
+
+  // Hard guard against accidentally crossing the daily KV write quota.
+  const usage = await getJson<{ kv?: { day?: string; writes?: number } }>(c.env, 'state/usage.json');
+  const today = new Date().toISOString().slice(0, 10);
+  const kvWrites = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
+  if (kvWrites >= 920) {
+    await audit(c.env, c.get('actor'), 'run.dispatch_blocked', 'kv-quota', { kvWrites });
+    return fail(`KV 今日已写入 ${kvWrites}/1000，已暂停触发采集/导出，避免发布失败。请等 UTC 00:00 额度重置。`, 429, 'kv_quota');
+  }
+
   // GitHub rejects any input that is not declared in the workflow file, so only
   // send the keys collect.yml actually defines.
   const result = await dispatchWorkflow(c.env, {
@@ -133,7 +143,7 @@ adminRoutes.post('/runs/dispatch', async (c) => {
   });
   await audit(c.env, c.get('actor'), 'run.dispatch', 'github', result);
   if (!result.ok) return fail(result.message, 400, 'dispatch_failed');
-  return ok(result, 202);
+  return ok({ ...result, kvWrites, warning: kvWrites >= 850 ? `KV 今日已写入 ${kvWrites}/1000，接近上限` : undefined }, 202);
 });
 
 /** Runner callbacks: persist the run summary (artifacts already live in R2). */
