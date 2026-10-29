@@ -12,17 +12,31 @@ export interface MergeOptions {
   maxProgrammesPerChannel?: number;
 }
 
+export interface MatchOptions {
+  /** provider channel id -> a known standard channel name */
+  idMap?: Record<string, string>;
+}
+
 /**
  * Map provider channel ids/names onto our canonical channel ids. Providers use
  * `CCTV1`, `cctv-1`, `CCTV-1 综合`, `湖南卫视` … the registry handles all of it.
  */
-export function matchEpg(data: EpgData, registry: ChannelRegistry): EpgData {
+export function matchEpg(data: EpgData, registry: ChannelRegistry, options: MatchOptions = {}): EpgData {
   const idMap = new Map<string, string>();
   const channels: EpgChannel[] = [];
   const seen = new Set<string>();
 
   for (const channel of data.channels) {
-    const resolved = registry.resolve(channel.names[0] ?? channel.id, { tvgId: channel.id });
+    // Providers often expose multiple display names (Chinese + English +
+    // abbreviations). Try all of them, plus an explicit provider id map, and
+    // prefer an existing channel over a newly generated x- identity.
+    const candidates = [options.idMap?.[channel.id], ...channel.names, channel.id].filter(Boolean) as string[];
+    let resolved = registry.resolve(candidates[0] ?? channel.id, { tvgId: channel.id });
+    for (const candidate of candidates.slice(1)) {
+      const next = registry.resolve(candidate, { tvgId: channel.id });
+      if (resolved.created && !next.created) resolved = next;
+      else if (resolved.created === next.created && next.confidence > resolved.confidence) resolved = next;
+    }
     idMap.set(channel.id, resolved.id);
     if (!seen.has(resolved.id)) {
       seen.add(resolved.id);

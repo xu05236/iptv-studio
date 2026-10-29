@@ -2,6 +2,7 @@ import { gunzipSync } from 'node:zlib';
 import {
   buildXmltv,
   cctvApiCode,
+  EPGPW_ID_MAP,
   mapPool,
   matchEpg,
   mergeEpg,
@@ -82,7 +83,9 @@ export async function collectEpg(urls: string[], registry: ChannelRegistry, logg
       const xml = buffer[0] === 0x1f && buffer[1] === 0x8b
         ? gunzipSync(buffer).toString('utf8')
         : buffer.toString('utf8');
-      const parsed = matchEpg(parseXmltv(xml), registry);
+      const parsed = matchEpg(parseXmltv(xml), registry, {
+        idMap: url.includes('epg.pw') ? EPGPW_ID_MAP : undefined,
+      });
       logger.info('EPG 解析完成', { url, channels: parsed.channels.length, programmes: parsed.programmes.length });
       sources.push(parsed);
     } catch (error) {
