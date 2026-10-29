@@ -126,6 +126,7 @@ export function Dashboard() {
       <div className="grid">
         {(() => {
           const snapshot = usageQuery.data?.usage ?? null;
+          const yesterday = snapshot?.history?.at(-2);
           return (
             <>
               <Card>
@@ -156,7 +157,10 @@ export function Dashboard() {
                     <UsageBar label="今日写入" used={snapshot.kv.writes} limit={1000} />
                     <UsageBar label="今日读取" used={snapshot.kv.reads} limit={100000} />
                     <UsageBar label="存储占用" used={snapshot.kv.storageBytes} limit={1024 ** 3} format={formatBytes} />
-                    <div className="caption" style={{ marginTop: 8 }}>免费额度每日 UTC 00:00（北京时间 08:00）重置</div>
+                    <div className="caption" style={{ marginTop: 8 }}>
+                      免费额度每日 UTC 00:00（北京时间 08:00）重置
+                      {yesterday ? ` · 昨日（${yesterday.date}）写 ${formatNumber(yesterday.kvWrites)}` : ''}
+                    </div>
                   </>
                 ) : (
                   <div className="caption" style={{ marginTop: 10 }}>等待用量工作流采集</div>
@@ -174,6 +178,7 @@ export function Dashboard() {
                     <UsageBar label="今日读取行数" used={snapshot.d1.rowsRead} limit={5000000} />
                     <div className="caption" style={{ marginTop: 8 }}>
                       写入已用 {Math.round((snapshot.d1.rowsWritten / 100000) * 100)}% · 免费额度每日 UTC 00:00 重置
+                      {yesterday ? ` · 昨日（${yesterday.date}）写 ${formatNumber(yesterday.d1Writes)}` : ''}
                     </div>
                   </>
                 ) : (

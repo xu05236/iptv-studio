@@ -62,7 +62,7 @@ app.post('/api/admin/usage', async (c) => {
 
 app.post('/api/admin/usage/refresh', async (c) => {
   const result = await dispatchWorkflow(c.env, {}, 'usage.yml');
-  return ok(result, result.ok ? 202 : 400);
+  return ok({ ...result, message: result.ok ? '已触发用量刷新' : result.message }, result.ok ? 202 : 400);
 });
 
 app.route('/api/public', publicRoutes);
