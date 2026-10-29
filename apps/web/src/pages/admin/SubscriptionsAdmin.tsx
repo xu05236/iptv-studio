@@ -184,6 +184,7 @@ export function SubscriptionsAdmin() {
                   </Button>
                 ))}
                 <Button size="sm" onClick={() => navigator.clipboard.writeText(item.links.epg).then(() => show('已复制 EPG 地址'))}>EPG</Button>
+                <Button size="sm" onClick={() => navigator.clipboard.writeText(item.links.tvbox).then(() => show('已复制 TVBox 配置'))}>TVBox</Button>
               </div>
             </div>
 

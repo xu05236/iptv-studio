@@ -29,6 +29,7 @@ function links(c: { req: { url: string }; env: { PUBLIC_BASE_URL?: string } }, r
   }
   out['epg'] = `${base}/epg/${row.token}.xml`;
   out['diyp'] = `${base}/sub/${row.token}.json?format=diyp`;
+  out['tvbox'] = `${base}/sub/${row.token}.tvbox`;
   return out;
 }
 

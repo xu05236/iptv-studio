@@ -95,6 +95,22 @@ export async function publishSubscriptions(
       written++;
     }
 
+    // TVBox live config: one entry pointing at the M3U subscription.
+    const tvbox = {
+      name: 'IPTV Studio',
+      epg: sub.includeEpg ? `${publicBaseUrl}/epg/${sub.token}.xml` : undefined,
+      lives: [
+        {
+          name: sub.name,
+          type: 0,
+          url: `${publicBaseUrl}/sub/${sub.token}.m3u`,
+          playerType: 1,
+        },
+      ],
+    };
+    await store.put(`out/sub-${sub.id}.tvbox`, JSON.stringify(tvbox), 'application/json; charset=utf-8');
+    written++;
+
     // Per-subscription EPG: players should not download the full 6MB guide.
     if (epg && sub.includeEpg) {
       const ids = new Set(selected.map((item) => item.channel.id));

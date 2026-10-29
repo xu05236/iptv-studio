@@ -34,6 +34,7 @@ export function ChannelDetail() {
   const [tab, setTab] = useState<'lines' | 'epg'>('lines');
   const [playing, setPlaying] = useState<ChannelDetailResponse['lines'][number] | null>(null);
   const [shotOk, setShotOk] = useState(true);
+  const [showAllLines, setShowAllLines] = useState(false);
 
   const query = useQuery({
     queryKey: ['channel', id],
@@ -83,9 +84,16 @@ export function ChannelDetail() {
   };
   const codecsOf = (line: (typeof lines)[number]): string => (relayChecks.get(line.key)?.codecs ?? line.codecs ?? '').toLowerCase();
   const isHevc = (line: (typeof lines)[number]): boolean => /hvc1|hev1|hvc/.test(codecsOf(line));
+  const statusRank = (line: (typeof lines)[number]): number => (line.status === 'alive' ? 0 : line.status === 'suspect' ? 1 : 2);
   const orderedLines = [...lines].sort(
-    (a, b) => checkRank(a.key) - checkRank(b.key) || (isHevc(a) ? 1 : 0) - (isHevc(b) ? 1 : 0),
+    (a, b) =>
+      statusRank(a) - statusRank(b) ||
+      checkRank(a.key) - checkRank(b.key) ||
+      (isHevc(a) ? 1 : 0) - (isHevc(b) ? 1 : 0) ||
+      (b.score ?? 0) - (a.score ?? 0),
   );
+  const healthyLines = orderedLines.filter((line) => line.status !== 'dead');
+  const visibleLines = showAllLines ? orderedLines : (healthyLines.length ? healthyLines : orderedLines).slice(0, 8);
   const checkedLines = lines.filter((line) => relayChecks.has(line.key));
   const relayBlocked = checkedLines.length > 0 && checkedLines.every((line) => !relayChecks.get(line.key)?.ok);
   const directPlayback = query.data.features?.directPlayback ?? false;
@@ -156,9 +164,9 @@ export function ChannelDetail() {
               </p>
             ) : null}
             <p className="caption" style={{ padding: '0 4px 8px' }}>
-              状态来自 GitHub Actions 探测节点；中继标签是 Cloudflare 实测。源站限制出口 IP 时会显示「中继不可用」。
+              状态来自 GitHub Actions 探测节点；中继标签是 Cloudflare 实测。默认只显示前 8 条优质线路，dead 线路已折叠。
             </p>
-            {orderedLines.map((line, index) => (
+            {visibleLines.map((line, index) => (
               <div key={line.key} className="list__row" style={{ alignItems: 'flex-start' }}>
                 <div className="logo logo--fallback" style={{ fontSize: 12 }}>#{index + 1}</div>
                 <div className="grow" style={{ minWidth: 0 }}>
@@ -203,6 +211,15 @@ export function ChannelDetail() {
                 </div>
               </div>
             ))}
+            {!showAllLines && orderedLines.length > visibleLines.length ? (
+              <Button size="sm" variant="glass" onClick={() => setShowAllLines(true)}>
+                显示全部 {orderedLines.length} 条（含 dead）
+              </Button>
+            ) : showAllLines && orderedLines.length > 8 ? (
+              <Button size="sm" variant="glass" onClick={() => setShowAllLines(false)}>
+                只显示前 8 条
+              </Button>
+            ) : null}
           </div>
         ) : (
           <EmptyState icon={<Radio size={22} />} title="暂无线路" description="该频道刚被识别，等待下一轮采集与测速。" />

@@ -24,7 +24,26 @@ function parseFile(file: string): { token: string; format?: PlaylistFormat } | n
  * strong ETag and edge caching.
  */
 artifactRoutes.get('/sub/:file', async (c) => {
-  const parsed = parseFile(c.req.param('file'));
+  const file = c.req.param('file');
+  const tvbox = /^([a-z0-9]{8,64})\.tvbox$/i.exec(file);
+  if (tvbox) {
+    const row = await getSubscriptionByToken(c.env, tvbox[1]!);
+    if (!row || row.enabled !== 1) return fail('订阅不存在或已停用', 404);
+    const prebuilt = `out/sub-${row.id}.tvbox`;
+    const response = await serveArtifact(c, prebuilt, {
+      contentType: 'application/json; charset=utf-8',
+      filename: `${encodeURIComponent(row.name)}.tvbox`,
+      maxAge: 60,
+      sMaxAge: 300,
+    });
+    if (response) return response;
+    const url = `${baseUrl(c)}/sub/${row.token}.m3u`;
+    const epg = row.include_epg === 1 ? `${baseUrl(c)}/epg/${row.token}.xml` : undefined;
+    return new Response(JSON.stringify({ name: 'IPTV Studio', epg, lives: [{ name: row.name, type: 0, url, playerType: 1 }] }), {
+      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+    });
+  }
+  const parsed = parseFile(file);
   if (!parsed) return fail('订阅地址格式不正确', 404);
 
   const row = await getSubscriptionByToken(c.env, parsed.token);
