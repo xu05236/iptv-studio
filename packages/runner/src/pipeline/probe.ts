@@ -20,6 +20,13 @@ const UNPROBEABLE = /^(rtsp|rtmp|rtmps|rtsp|udp|rtp):\/\//i;
 const PREMIUM_HOURS = Math.max(1, Number(process.env.PROBE_PREMIUM_HOURS ?? 168) || 168);
 const ALIVE_HOURS = Math.max(1, Number(process.env.PROBE_ALIVE_HOURS ?? 360) || 360);
 const PER_CHANNEL_CAP = Math.max(1, Number(process.env.PROBE_PER_CHANNEL ?? 24) || 24);
+const MAX_INTERVAL_HOURS = 30 * 24;
+
+/** Each successful recheck extends the interval by 3 days, capped at 30 days. */
+function adaptiveHours(line: LineEntry, baseHours: number): number {
+  const passes = Math.max(1, line.passCount ?? 1);
+  return Math.min(MAX_INTERVAL_HOURS, baseHours + (passes - 1) * 3 * 24);
+}
 
 /** Heuristic used before spending a probe on a line. */
 function preProbeRank(line: LineEntry, sources: Map<string, SourceRecord>): number {
@@ -54,23 +61,17 @@ export function planProbes(
   const candidates = lines.filter((line) => {
     if (UNPROBEABLE.test(line.url)) return false;
     if (line.status === 'dead' && line.failCount >= 5) return false;
-    // Top lines per channel are already validated; re-check them weekly to
-    // save probe budget for new and failing lines.
-    if (
-      !force &&
-      line.status === 'alive' &&
-      premiumKeys?.has(line.key) &&
-      line.lastProbeAt &&
-      now.getTime() - new Date(line.lastProbeAt).getTime() < PREMIUM_HOURS * 60 * 60 * 1000
-    ) {
-      return false;
+
+    if (line.status === 'alive') {
+      const baseHours = premiumKeys?.has(line.key) ? PREMIUM_HOURS : ALIVE_HOURS;
+      const interval = adaptiveHours(line, baseHours);
+      if (!force && line.lastProbeAt && now.getTime() - new Date(line.lastProbeAt).getTime() < interval * 60 * 60 * 1000) {
+        return false;
+      }
+      return true;
     }
-    // Working lines are rechecked every 72h by default. Daily rechecks were the
-    // main source of wasted Actions minutes once the library grew.
-    const aliveDue =
-      line.status === 'alive' &&
-      (!line.lastProbeAt || now.getTime() - new Date(line.lastProbeAt).getTime() > ALIVE_HOURS * 60 * 60 * 1000);
-    return force || aliveDue || isDueForProbe(line, tierOf(sources.get(line.sourceId)), now);
+
+    return force || isDueForProbe(line, tierOf(sources.get(line.sourceId)), now);
   });
 
   const weight = (line: LineEntry): number => {
@@ -140,6 +141,7 @@ export async function runProbes(
     } else {
       line.status = next.status;
       line.failCount = next.failCount;
+      line.passCount = next.passCount;
       line.reviveAt = next.reviveAt;
       line.lastProbeAt = result.checkedAt;
       summary.probed++;

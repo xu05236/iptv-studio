@@ -112,6 +112,8 @@ export interface LineEntry {
   logo?: string;
   status: LineStatus;
   failCount: number;
+  /** consecutive successful probes; drives the adaptive recheck interval */
+  passCount?: number;
   resolution?: string;
   width?: number;
   height?: number;

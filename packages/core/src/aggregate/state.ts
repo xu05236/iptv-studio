@@ -3,6 +3,7 @@ import type { AppSettings, LineEntry } from '../types.js';
 export interface StatusTransition {
   status: LineEntry['status'];
   failCount: number;
+  passCount?: number;
   reviveAt?: string;
   /** probe was inconclusive (e.g. RTSP from an HTTP runtime) */
   skipped?: boolean;
@@ -23,16 +24,24 @@ export function isInconclusive(result: { ok: boolean; error?: string }): boolean
  * what keeps flapping lines from being lost forever.
  */
 export function transition(
-  previous: Pick<LineEntry, 'status' | 'failCount' | 'reviveAt'>,
+  previous: Pick<LineEntry, 'status' | 'failCount' | 'passCount' | 'reviveAt'>,
   result: { ok: boolean; error?: string },
   options: { reviveDays?: number; now?: Date } = {},
 ): StatusTransition {
   if (isInconclusive(result)) {
-    return { status: previous.status, failCount: previous.failCount, reviveAt: previous.reviveAt, skipped: true };
+    return {
+      status: previous.status,
+      failCount: previous.failCount,
+      passCount: previous.passCount,
+      reviveAt: previous.reviveAt,
+      skipped: true,
+    };
   }
 
   const now = options.now ?? new Date();
-  if (result.ok) return { status: 'alive', failCount: 0 };
+  if (result.ok) {
+    return { status: 'alive', failCount: 0, passCount: (previous.passCount ?? 0) + 1 };
+  }
 
   const failCount = Math.min(99, previous.failCount + 1);
   if (failCount >= 3) {
@@ -40,10 +49,11 @@ export function transition(
     return {
       status: 'dead',
       failCount,
+      passCount: 0,
       reviveAt: new Date(now.getTime() + days * 86_400_000).toISOString(),
     };
   }
-  return { status: 'suspect', failCount };
+  return { status: 'suspect', failCount, passCount: 0 };
 }
 
 /**
