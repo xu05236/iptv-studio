@@ -254,3 +254,10 @@ Actions 手动入口：
   - 建议顺序：先 B 后 A
 
 > 用户提出新想法，以上两项暂不执行，等新需求明确后再排期。
+## 2026-10-29 · CCTV 官方保底与频道排序
+
+- 前台频道新增排序：`可用优先`（默认，0 可用排最后）和 `名称排序`（CCTV1/CCTV2/CCTV10 自然顺序）
+- CCTV 官方 CDN 验证：本机带 Referer 可播，但 GitHub Actions 出口超时；官方流还带请求方 IP/hash，不能做静态源
+- `official-cctv` 源默认禁用，避免产生 suspect 噪声
+- CCTV 频道详情新增「官方直播」按钮，跳转 `tv.cctv.com` 对应频道页，作为稳定保底入口
+- 若要变成 IPTV 线路，需要单独的 Cloudflare Worker 中继/代理，后续再做

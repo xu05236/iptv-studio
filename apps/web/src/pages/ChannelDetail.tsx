@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Play, Radio, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Play, Radio, TriangleAlert } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ChannelDetailResponse } from '../lib/types';
 import { formatClock, formatLatency, formatResolution, formatSpeed, statusLabel, statusTone } from '../lib/format';
@@ -105,6 +105,16 @@ export function ChannelDetail() {
               <Badge>{channel.group}</Badge>
               {channel.tvgId ? <Badge tone="blue">{channel.tvgId}</Badge> : null}
               <Badge tone={alive.length ? 'green' : 'red'}>{alive.length} / {lines.length} 可用</Badge>
+              {/^cctv\d+/i.test(channel.id) ? (
+                <a
+                  className="btn btn--sm"
+                  href={`https://tv.cctv.com/live/${channel.id.replace(/-4k$/, '4k')}/`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <ExternalLink size={14} /> 官方直播
+                </a>
+              ) : null}
             </div>
           </div>
         </div>
