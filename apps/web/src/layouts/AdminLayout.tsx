@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   ClipboardList,
   Gauge,
+  Layers3,
   ListVideo,
   LogOut,
   RadioTower,
@@ -18,6 +19,7 @@ import { UsageAlert } from '../components/UsageAlert';
 const LINKS = [
   { to: '/admin', label: '概览', icon: Gauge, end: true },
   { to: '/admin/sources', label: '采集站', icon: RadioTower },
+  { to: '/admin/pool', label: '线路池', icon: Layers3 },
   { to: '/admin/channels', label: '频道', icon: Tv },
   { to: '/admin/probe', label: '检测中心', icon: SlidersHorizontal },
   { to: '/admin/subscriptions', label: '订阅与导出', icon: Users },

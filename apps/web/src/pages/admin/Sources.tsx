@@ -315,6 +315,11 @@ export function Sources() {
                   {source.entry_count} 条 · {source.alive_count} 可用 · 信誉 {Math.round(source.reputation)} · 更新 {timeAgo(source.last_ok_at)} · 每 {source.refresh_hours ?? 24}h
                   {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
                 </div>
+                {source.progress ? (
+                  <div className="caption" style={{ marginTop: 2 }}>
+                    池内 {source.progress.total} · 已测 {source.progress.tested} · 可用 {source.progress.alive} · 待测 {source.progress.pending} · 待复测 {source.progress.quarantine} · 淘汰 {source.progress.rejected}
+                  </div>
+                ) : null}
                 {source.url ? <div className="caption mono truncate" style={{ marginTop: 2 }}>{source.url}</div> : null}
                 {source.last_error ? <div className="caption" style={{ color: 'var(--red)', marginTop: 4 }}>{source.last_error}</div> : null}
               </div>

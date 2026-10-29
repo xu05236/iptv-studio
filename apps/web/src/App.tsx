@@ -8,6 +8,7 @@ import { ChannelDetail } from './pages/ChannelDetail';
 import { Login } from './pages/admin/Login';
 import { Dashboard } from './pages/admin/Dashboard';
 import { Sources } from './pages/admin/Sources';
+import { Pool } from './pages/admin/Pool';
 import { ChannelsAdmin } from './pages/admin/ChannelsAdmin';
 import { Probe } from './pages/admin/Probe';
 import { SubscriptionsAdmin } from './pages/admin/SubscriptionsAdmin';
@@ -34,6 +35,7 @@ export function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="sources" element={<Sources />} />
+        <Route path="pool" element={<Pool />} />
         <Route path="channels" element={<ChannelsAdmin />} />
         <Route path="probe" element={<Probe />} />
         <Route path="subscriptions" element={<SubscriptionsAdmin />} />

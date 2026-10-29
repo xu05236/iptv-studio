@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { mapPool, normalizeUrlForDedupe, parseSource, probeStream, splitUrlHeaders, validateRemoteUrl, type ParsedSource, type SourceFilters } from '@iptv/core';
+import { mapPool, normalizeUrlForDedupe, parseSource, probeStream, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   deleteSource,
@@ -12,6 +12,7 @@ import {
 import { fail, isoNow, ok, parseJsonField, randomId, readJson } from '../lib/http.js';
 import { fetchSourceText } from '../lib/fetcher.js';
 import { getText, putText } from '../lib/r2.js';
+import { getJson } from '../lib/store.js';
 
 export const sourceRoutes = new Hono<AppEnv>();
 
@@ -32,13 +33,28 @@ interface CreateSourceInput {
 }
 
 sourceRoutes.get('/', async (c) => {
-  const sources = await listSources(c.env);
+  const [sources, state] = await Promise.all([
+    listSources(c.env),
+    getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json'),
+  ]);
+  const progress = new Map<string, { total: number; tested: number; alive: number; pending: number; quarantine: number; rejected: number }>();
+  for (const line of state?.lines ?? []) {
+    const item = progress.get(line.sourceId) ?? { total: 0, tested: 0, alive: 0, pending: 0, quarantine: 0, rejected: 0 };
+    item.total++;
+    if (line.lastProbeAt) item.tested++;
+    else item.pending++;
+    if (line.status === 'alive') item.alive++;
+    else if (line.status === 'suspect') item.quarantine++;
+    else if (line.status === 'dead') item.rejected++;
+    progress.set(line.sourceId, item);
+  }
   return ok({
     items: sources.map((source) => ({
       ...source,
       tags: parseJsonField<string[]>(source.tags, []),
       filters: parseJsonField<SourceFilters>(source.filters, {}),
       enabled: source.enabled === 1,
+      progress: progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, quarantine: 0, rejected: 0 },
     })),
   });
 });
