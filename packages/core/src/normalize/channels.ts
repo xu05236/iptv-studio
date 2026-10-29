@@ -1,6 +1,7 @@
 import type { ChannelGroup, ChannelSeed } from '../types.js';
 import { cleanLabel, diceCoefficient, normalizeChannelName, stripNoise, toSimplified } from '../util/text.js';
 import { hashId } from '../util/hash.js';
+import { EXTRA_ALIASES } from './extraAliases.js';
 
 /** [id, name, group, tvgId, extra aliases] */
 type Row = [string, string, string, string?, string[]?];
@@ -213,7 +214,7 @@ export const BUILTIN_CHANNELS: ChannelSeed[] = ROWS.map(([id, name, group, tvgId
   name,
   group,
   tvgId: tvgId ?? name,
-  aliases,
+  aliases: [...new Set([...(aliases ?? []), ...(EXTRA_ALIASES[id] ?? [])])],
 }));
 
 const GROUP_ALIASES: Array<[RegExp, ChannelGroup]> = [
