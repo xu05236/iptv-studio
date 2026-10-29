@@ -425,3 +425,11 @@ Actions 手动入口：
   - `group_title` / 频道 `name` / `tvgId`
   - 不硬编码“央视→CCTV1”等示例层级
 - 原 08:30 验证计划改为“手动触发后验证”
+## 2026-10-29 线路池 Phase 1
+
+- 源列表新增进度：总数 / 已测 / 可用 / 待测 / 待复测 / 淘汰
+- 新增 `GET /api/admin/pool/tree`：沿用现有国家/分组/频道结构
+- 新增 `GET /api/admin/pool/lines`：分页 + 分组/频道/池/分辨率/速度/直连中继/关键词筛选
+- 新增后台「线路池」页面（只读）
+- 池类型当前按状态推导：每频道前 12 条为 premium，其余 alive 为 backup，未测 pending，suspect 待复测，dead 淘汰
+- 本轮只读，不改线路状态，不产生 KV 写入
