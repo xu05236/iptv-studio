@@ -79,6 +79,21 @@ export function Dashboard() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const backup = useMutation({
+    mutationFn: () => api.get<unknown>('/api/admin/backup'),
+    onSuccess: (payload) => {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `iptv-studio-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      show('备份已导出');
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   if (isLoading) {
     return (
       <div className="stack">
@@ -99,21 +114,6 @@ export function Dashboard() {
   const kvWrites = usage?.kv.day === today ? usage.kv.writes : 0;
   const kvBlocked = kvWrites >= 920;
   const kvWarn = kvWrites >= 850;
-
-  const backup = useMutation({
-    mutationFn: () => api.get<unknown>('/api/admin/backup'),
-    onSuccess: (payload) => {
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `iptv-studio-backup-${today}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
-      show('备份已导出');
-    },
-    onError: (error: Error) => show(error.message, 'error'),
-  });
 
   return (
     <div className="stack">
