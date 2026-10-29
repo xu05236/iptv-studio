@@ -442,3 +442,10 @@ Actions 手动入口：
 - 测试：把一条 quarantine 线路移到 backup，再恢复自动，接口均成功
 - 修复 `channelAliases` 查询漏绑定 channelId 的旧 bug
 - 自动采集仍关闭；本阶段只写 D1，不消耗 KV
+## 2026-10-29 线路池导出
+
+- 新增 `POST /api/admin/pool/export`：按当前筛选或勾选 keys 生成 M3U
+- 线路池页面新增「导出当前筛选」按钮
+- 池视图按 URL 去重，避免同一线路被多个源重复计入精品池
+- 验证：CCTV1 精品池去重后 5 条，导出 M3U 200
+- 订阅绑定 `line_keys` / `pool_mode` 尚未实现，留到下阶段
