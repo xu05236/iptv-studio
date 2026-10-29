@@ -323,7 +323,9 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
         });
         return {
           sourceId: source.id,
-          fetched: Boolean(item?.fetched),
+          // A refresh-interval skip or a 304 means the existing content is
+          // still valid; it must not count as a fetch failure.
+          fetched: Boolean(item?.fetched || item?.notModified),
           parsed: sourceLines.length,
           alive: aliveLines.length,
           dead: sourceLines.filter((line) => line.status === 'dead').length,
