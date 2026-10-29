@@ -433,3 +433,12 @@ Actions 手动入口：
 - 新增后台「线路池」页面（只读）
 - 池类型当前按状态推导：每频道前 12 条为 premium，其余 alive 为 backup，未测 pending，suspect 待复测，dead 淘汰
 - 本轮只读，不改线路状态，不产生 KV 写入
+## 2026-10-29 线路池 Phase 2
+
+- D1 新增 `line_overrides`，人工池决策不重写线路状态
+- 池 API 现在返回 `pool`（最终）、`autoPool`（自动推导）、`overridden`、`reason`
+- 新增 `POST /api/admin/pool/override` 和 `POST /api/admin/pool/reset`
+- 后台线路池支持单条/批量移动、标记淘汰、恢复自动
+- 测试：把一条 quarantine 线路移到 backup，再恢复自动，接口均成功
+- 修复 `channelAliases` 查询漏绑定 channelId 的旧 bug
+- 自动采集仍关闭；本阶段只写 D1，不消耗 KV
