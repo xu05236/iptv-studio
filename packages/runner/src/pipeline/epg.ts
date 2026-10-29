@@ -1,3 +1,4 @@
+import { gunzipSync } from 'node:zlib';
 import {
   buildXmltv,
   cctvApiCode,
@@ -77,7 +78,10 @@ export async function collectEpg(urls: string[], registry: ChannelRegistry, logg
         logger.warn('EPG 抓取失败', { url, status: response.status });
         continue;
       }
-      const xml = await response.text();
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const xml = buffer[0] === 0x1f && buffer[1] === 0x8b
+        ? gunzipSync(buffer).toString('utf8')
+        : buffer.toString('utf8');
       const parsed = matchEpg(parseXmltv(xml), registry);
       logger.info('EPG 解析完成', { url, channels: parsed.channels.length, programmes: parsed.programmes.length });
       sources.push(parsed);
