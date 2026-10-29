@@ -26,6 +26,7 @@ interface PoolLine extends LineEntry {
   pool: PoolName;
   autoPool: PoolName;
   overridden: boolean;
+  promoted?: boolean;
   reason?: string;
   transport: 'direct' | 'relay';
   channelName: string;
@@ -95,6 +96,26 @@ async function loadPool(env: Env) {
   }
 
   const counts = new Map<string, Record<PoolName, number>>();
+  const premiumTarget = Math.max(1, Math.min(PREMIUM_PER_CHANNEL, settings.maxLinesPerChannel * 2));
+  const byChannelLines = new Map<string, PoolLine[]>();
+  for (const line of lines) {
+    const list = byChannelLines.get(line.channelId) ?? [];
+    list.push(line);
+    byChannelLines.set(line.channelId, list);
+  }
+  for (const channelLines of byChannelLines.values()) {
+    let premium = channelLines.filter((line) => line.pool === 'premium').length;
+    if (premium >= premiumTarget) continue;
+    const candidates = channelLines
+      .filter((line) => line.pool === 'backup' && !line.overridden)
+      .sort(compareLines);
+    for (const line of candidates) {
+      if (premium >= premiumTarget) break;
+      line.pool = 'premium';
+      line.promoted = true;
+      premium++;
+    }
+  }
   for (const line of lines) {
     const item = counts.get(line.channelId) ?? { premium: 0, backup: 0, pending: 0, quarantine: 0, rejected: 0 };
     item[line.pool]++;
@@ -194,6 +215,7 @@ poolRoutes.get('/lines', async (c) => {
       pool: line.pool,
       autoPool: line.autoPool,
       overridden: line.overridden,
+      promoted: line.promoted,
       reason: line.reason,
       status: line.status,
       score: line.score,
