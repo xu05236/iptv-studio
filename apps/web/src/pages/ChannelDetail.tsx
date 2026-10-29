@@ -265,6 +265,7 @@ export function ChannelDetail() {
               codecs={relayChecks.get(playing.key)?.codecs ?? playing.codecs}
               relayAvailable={Boolean(relayChecks.get(playing.key)?.ok)}
               directAvailable={query.data?.features?.directPlayback ?? false}
+              directKind={relayChecks.get(playing.key)?.direct}
               autoPlay
             />
             <div className="row row--wrap">

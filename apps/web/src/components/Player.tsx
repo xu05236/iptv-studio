@@ -10,6 +10,7 @@ interface PlayerProps {
   codecs?: string;
   relayAvailable?: boolean;
   directAvailable?: boolean;
+  directKind?: 'https' | 'http' | 'unsupported';
   autoPlay?: boolean;
 }
 
@@ -23,7 +24,7 @@ interface PlayerProps {
  *  - HLS without CORS: hls.js network error.
  * The optional line relay fixes the last two by proxying through the Worker.
  */
-export function Player({ url, protocol, lineKey, codecs, relayAvailable = false, directAvailable = false, autoPlay = false }: PlayerProps) {
+export function Player({ url, protocol, lineKey, codecs, relayAvailable = false, directAvailable = false, directKind, autoPlay = false }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const watchdogRef = useRef<number | null>(null);
@@ -57,6 +58,22 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
       hlsRef.current = null;
     }, 12_000);
   }, [clearWatchdog]);
+
+  const requestDirect = useCallback(async () => {
+    if (!lineKey) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/public/lines/${encodeURIComponent(lineKey)}/direct`);
+      const data = (await response.json()) as { url?: string; error?: string };
+      if (!response.ok || !data.url) throw new Error(data.error ?? '直连地址不可用');
+      setDirectUrl(data.url);
+      setMode('direct');
+      setStarted(true);
+    } catch (requestError) {
+      setLoading(false);
+      setError(requestError instanceof Error ? requestError.message : '直连地址不可用');
+    }
+  }, [lineKey]);
 
   const effectiveUrl = url ?? directUrl;
   const unsupported = protocol ? /^(rtsp|rtmp|rtmps|udp|rtp)$/i.test(protocol) : /^(rtsp|rtmp|udp|rtp):/i.test(effectiveUrl ?? '');
@@ -105,6 +122,13 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
         clearWatchdog();
         setLoading(false);
         const status = data.response?.code;
+        // The Worker egress is blocked by many Chinese CDNs. If the line is
+        // HTTPS, the viewer's own IP can fetch it directly instead.
+        if (mode === 'relay' && (status === 403 || status === 502) && directAvailable && directKind === 'https') {
+          setError(null);
+          void requestDirect();
+          return;
+        }
         setError(
           data.type === Hls.ErrorTypes.NETWORK_ERROR
             ? status === 403 || status === 502
@@ -137,7 +161,7 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
     };
     video.addEventListener('loadeddata', onReady, { once: true });
     video.addEventListener('error', onError, { once: true });
-  }, [effectiveUrl, mode, lineKey, isHls, mixed, relayAvailable, codecs, armWatchdog, clearWatchdog]);
+  }, [effectiveUrl, mode, lineKey, isHls, mixed, relayAvailable, directAvailable, directKind, codecs, armWatchdog, clearWatchdog, requestDirect]);
   useEffect(() => {
     if (!started) return;
     play();
@@ -168,22 +192,6 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
     );
   }
 
-  const requestDirect = useCallback(async () => {
-    if (!lineKey) return;
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/public/lines/${encodeURIComponent(lineKey)}/direct`);
-      const data = (await response.json()) as { url?: string; error?: string };
-      if (!response.ok || !data.url) throw new Error(data.error ?? '直连地址不可用');
-      setDirectUrl(data.url);
-      setMode('direct');
-      setStarted(true);
-    } catch (requestError) {
-      setLoading(false);
-      setError(requestError instanceof Error ? requestError.message : '直连地址不可用');
-    }
-  }, [lineKey]);
-
   return (
     <div className="player">
       <video ref={videoRef} controls playsInline />
@@ -199,6 +207,11 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
             <span style={{ fontSize: 12, opacity: 0.8 }}>点下方按钮开始试播</span>
           )}
           <div className="row" style={{ gap: 8 }}>
+            {directAvailable && lineKey && !url && !mixed && directKind !== 'http' ? (
+              <Button variant="glass" size="lg" loading={loading} onClick={() => void requestDirect()}>
+                <Play size={18} /> 直连试播
+              </Button>
+            ) : null}
             {relayAvailable && lineKey && (mixed || mode === 'direct') ? (
               <Button
                 variant="glass"
@@ -209,11 +222,6 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
                 }}
               >
                 <Play size={18} /> 中继试播
-              </Button>
-            ) : null}
-            {directAvailable && lineKey && !url && !mixed ? (
-              <Button variant="glass" size="lg" loading={loading} onClick={() => void requestDirect()}>
-                <Play size={18} /> 直连试播
               </Button>
             ) : null}
             {!mixed && url ? (
