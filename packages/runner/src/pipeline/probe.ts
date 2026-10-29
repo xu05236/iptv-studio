@@ -1,7 +1,10 @@
 import {
+  inferResolution,
   isDueForProbe,
   mapPool,
   probeStream,
+  qualityOf,
+  qualityRank,
   scoreLine,
   sleep,
   transition,
@@ -15,7 +18,18 @@ import type { RunLogger } from '../logger.js';
 
 const UNPROBEABLE = /^(rtsp|rtmp|rtmps|rtsp|udp|rtp):\/\//i;
 const PREMIUM_HOURS = Math.max(1, Number(process.env.PROBE_PREMIUM_HOURS ?? 168) || 168);
-const ALIVE_HOURS = Math.max(1, Number(process.env.PROBE_ALIVE_HOURS ?? 72) || 72);
+const ALIVE_HOURS = Math.max(1, Number(process.env.PROBE_ALIVE_HOURS ?? 360) || 360);
+const PER_CHANNEL_CAP = Math.max(1, Number(process.env.PROBE_PER_CHANNEL ?? 24) || 24);
+
+/** Heuristic used before spending a probe on a line. */
+function preProbeRank(line: LineEntry, sources: Map<string, SourceRecord>): number {
+  const source = sources.get(line.sourceId);
+  const quality = qualityRank(qualityOf({ resolution: line.resolution ?? inferResolution(line.name), height: line.height }));
+  const sourceReputation = source?.reputation ?? 50;
+  const prior = Math.min(100, line.score ?? 0);
+  const fresh = line.lastProbeAt ? 0 : 8;
+  return fresh + quality * 10 + Math.min(30, sourceReputation / 4) + Math.min(20, prior / 5);
+}
 
 export function tierOf(source: SourceRecord | undefined): ProbeTier {
   return (source?.tier as ProbeTier) ?? 'normal';
@@ -60,23 +74,32 @@ export function planProbes(
   });
 
   const weight = (line: LineEntry): number => {
-    if (!line.lastProbeAt) return 3;
-    if (line.status === 'alive') return 0;
+    if (!line.lastProbeAt) return 0;
     if (line.status === 'suspect') return 1;
+    if (line.status === 'alive') return 2;
     // New lines beat dead-line revival: dead lines rarely come back, and new
     // channels are what the daily run is trying to discover.
     if (line.status === 'dead') return 4;
     return 3;
   };
 
-  candidates.sort((a, b) => {
-    const byWeight = weight(a) - weight(b);
-    if (byWeight !== 0) return byWeight;
-    // within a bucket prefer lines that have never worked over ones that already failed
-    return (a.failCount ?? 0) - (b.failCount ?? 0);
-  });
+  // Quality-first pre-filter: for a channel with 100 candidates only the best
+  // 16 (by resolution, source reputation, prior score and freshness) are
+  // allowed into this round. The rest stay in state and rotate in later.
+  const grouped = new Map<string, LineEntry[]>();
+  for (const line of candidates) {
+    const list = grouped.get(line.channelId) ?? [];
+    list.push(line);
+    grouped.set(line.channelId, list);
+  }
+  const selected: LineEntry[] = [];
+  for (const list of grouped.values()) {
+    list.sort((a, b) => preProbeRank(b, sources) - preProbeRank(a, sources));
+    selected.push(...list.slice(0, force ? list.length : PER_CHANNEL_CAP));
+  }
+  selected.sort((a, b) => weight(a) - weight(b) || preProbeRank(b, sources) - preProbeRank(a, sources));
 
-  return candidates.slice(0, Math.max(0, budget));
+  return selected.slice(0, Math.max(0, budget));
 }
 
 export interface ProbeSummary {
