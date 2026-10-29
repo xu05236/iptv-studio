@@ -311,3 +311,11 @@ Actions 手动入口：
 - 每订阅 EPG gzip 后仍约 **345 KB**
 - YSP 静态源的 `playseek` 参数被 GitHub Pages 忽略，当前不能做回看；需要 ysp-live 网关才有真实 7 天时移
 - 如果以后部署 ysp-live/ysp-live-go，可作为独立回看源接入
+## 2026-10-29 EPG 准确性修复
+
+- 问题：多 XMLTV 源存在几秒到几分钟的 start 偏差，CCTV 官方 EPG 只覆盖完全相同的 start，导致旧节目残留并显示错误的“正在播出”
+- 修复：
+  - CCTV 官方覆盖的频道，先删除所有 XMLTV 节目，再写入官方节目单
+  - XMLTV 同频道节目按 start 分钟去重，避免多源重复/重叠
+- 验证 CCTV1：11:47 非遗里的中国-MV，11:53 秘境之眼，12:00 新闻30分，与官方接口一致
+- EPG 体积仍约 345KB gzip
