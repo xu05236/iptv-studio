@@ -35,10 +35,10 @@ export const adminRoutes = new Hono<AppEnv>();
 adminRoutes.get('/epg/coverage', async (c) => {
   const [index, guide] = await Promise.all([loadIndex(c.env), loadGuide(c.env)]);
   if (!index) return ok({ total: 0, covered: 0, percent: 0, missing: [], missingTotal: 0 });
-  const data = (guide ?? {}) as Record<string, unknown>;
+  const data = (guide ?? {}) as { channels?: Record<string, unknown> };
   const coveredIds = new Set(
-    Object.entries(data)
-      .filter(([channelId, programmes]) => channelId !== 'generatedAt' && Array.isArray(programmes) && programmes.length > 0)
+    Object.entries(data.channels ?? {})
+      .filter(([, programmes]) => Array.isArray(programmes) && programmes.length > 0)
       .map(([channelId]) => channelId),
   );
   const missing = index.channels.filter((channel) => !coveredIds.has(channel.id));
