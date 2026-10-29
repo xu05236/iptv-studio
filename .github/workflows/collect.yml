@@ -1,9 +1,8 @@
 name: Collect & Probe
 
 on:
-  schedule:
-    # 00:30 UTC = 08:30 Asia/Shanghai, after the KV/D1 UTC reset at 08:00.
-    - cron: '30 0 * * *'
+  # Automatic collection is intentionally disabled. Run manually when the KV
+  # budget and the current test plan allow it.
   workflow_dispatch:
     inputs:
       command:
