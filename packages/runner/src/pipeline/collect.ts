@@ -1,6 +1,7 @@
 import { filterSourceEntries, parseSource, readTextCapped, type ParsedSource, type RawEntry, type SourceFilters } from '@iptv/core';
 import type { ArtifactStore, SourceRecord } from '../store.js';
 import type { RunLogger } from '../logger.js';
+import { builtinPlaylist } from '../data/cctvOfficial.js';
 
 export interface CollectedSource {
   source: SourceRecord;
@@ -95,6 +96,10 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
       logger.warn('上传源内容缺失', { source: source.name, key: source.r2_key });
       return { ...base, error: 'R2 内容缺失' };
     }
+  } else if (source.url?.startsWith('builtin://')) {
+    text = builtinPlaylist(source.url);
+    if (!text) return { ...base, error: `未知内置源 ${source.url}` };
+    base.fetched = true;
   } else if (source.url) {
     const fetched = await fetchPlaylist(source.url, source.etag, source.last_modified);
     if (fetched.notModified) {

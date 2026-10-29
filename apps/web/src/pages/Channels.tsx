@@ -15,6 +15,7 @@ export function Channels() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const group = params.get('group') ?? '';
+  const sort = params.get('sort') === 'name' ? 'name' : 'availability';
   const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
   const [search, setSearch] = useState(params.get('q') ?? '');
   const [debounced, setDebounced] = useState(search);
@@ -34,9 +35,9 @@ export function Channels() {
   }, [debounced]);
 
   const query = useQuery({
-    queryKey: ['channels', debounced, group, page],
+    queryKey: ['channels', debounced, group, sort, page],
     queryFn: () => {
-      const searchParams = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
+      const searchParams = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), sort });
       if (debounced) searchParams.set('q', debounced);
       if (group) searchParams.set('group', group);
       return api.get<ChannelsResponse>(`/api/public/channels?${searchParams.toString()}`);
@@ -95,6 +96,16 @@ export function Channels() {
             <span style={{ opacity: 0.7 }}>{item.channels}</span>
           </button>
         ))}
+      </div>
+
+      <div className="row" style={{ gap: 6 }}>
+        <span className="caption" style={{ marginRight: 2 }}>排序</span>
+        <button className={clsx('chip', sort === 'availability' && 'chip--active')} onClick={() => updateSort('availability')}>
+          可用优先
+        </button>
+        <button className={clsx('chip', sort === 'name' && 'chip--active')} onClick={() => updateSort('name')}>
+          名称排序
+        </button>
       </div>
 
       {query.isError ? (
@@ -159,6 +170,14 @@ export function Channels() {
     const paramsNext = new URLSearchParams(params);
     if (next) paramsNext.set('group', next);
     else paramsNext.delete('group');
+    paramsNext.delete('page');
+    setParams(paramsNext, { replace: true });
+  }
+
+  function updateSort(next: 'availability' | 'name'): void {
+    const paramsNext = new URLSearchParams(params);
+    if (next === 'name') paramsNext.set('sort', 'name');
+    else paramsNext.delete('sort');
     paramsNext.delete('page');
     setParams(paramsNext, { replace: true });
   }

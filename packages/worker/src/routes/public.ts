@@ -62,12 +62,19 @@ publicRoutes.get('/channels', async (c) => {
 
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
   const group = c.req.query('group');
+  const sort = c.req.query('sort') === 'name' ? 'name' : 'availability';
   const page = intParam(c.req.query('page'), 1, 1, 10_000);
   const limit = intParam(c.req.query('limit'), 60, 1, 500);
 
   let rows = index.channels;
   if (group && group !== '全部') rows = rows.filter((item) => item.group === group);
   if (q) rows = rows.filter((item) => item.name.toLowerCase().includes(q) || item.id.includes(q) || (item.tvgId ?? '').toLowerCase().includes(q));
+
+  const byName = (a: { name: string }, b: { name: string }) =>
+    a.name.localeCompare(b.name, 'zh-CN', { numeric: true, sensitivity: 'base' });
+  rows = [...rows].sort((a, b) =>
+    sort === 'name' ? byName(a, b) : b.alive - a.alive || byName(a, b),
+  );
 
   const start = (page - 1) * limit;
   return ok(
@@ -76,6 +83,7 @@ publicRoutes.get('/channels', async (c) => {
       total: rows.length,
       page,
       limit,
+      sort,
       groups: index.groups,
       ready: true,
     },
