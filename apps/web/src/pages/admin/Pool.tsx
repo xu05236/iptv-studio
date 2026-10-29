@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Filter, Layers3, RefreshCw, RotateCcw } from 'lucide-react';
-import { api } from '../../lib/api';
+import { Download, Filter, Layers3, RefreshCw, RotateCcw } from 'lucide-react';
+import { api, getToken } from '../../lib/api';
 import { formatResolution, formatSpeed, statusLabel, statusTone } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Pagination, Skeleton, useToast } from '../../components/ui';
 import { timeAgo } from '../../lib/format';
@@ -142,6 +142,45 @@ export function Pool() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const exportPool = useMutation({
+    mutationFn: async () => {
+      const token = getToken();
+      const response = await fetch('/api/admin/pool/export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          country,
+          group,
+          channelId,
+          pool,
+          transport,
+          resolution,
+          minSpeed,
+          q: search.trim(),
+          keys: selected.size ? [...selected] : undefined,
+        }),
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error ?? `导出失败 HTTP ${response.status}`);
+      }
+      const text = await response.text();
+      const blob = new Blob([text], { type: 'audio/x-mpegurl;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `line-pool-${new Date().toISOString().slice(0, 10)}.m3u`;
+      link.click();
+      URL.revokeObjectURL(url);
+      return selected.size || text.split('\n').filter((line) => line.startsWith('#EXTINF')).length;
+    },
+    onSuccess: (count) => show(`已导出 ${count} 条线路`),
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   function resetPage(): void {
     setPage(1);
   }
@@ -174,6 +213,9 @@ export function Pool() {
         </div>
         <Button loading={tree.isFetching || lines.isFetching} onClick={() => { void tree.refetch(); void lines.refetch(); }}>
           <RefreshCw size={15} /> 刷新
+        </Button>
+        <Button loading={exportPool.isPending} onClick={() => exportPool.mutate()}>
+          <Download size={15} /> 导出当前筛选
         </Button>
       </div>
 

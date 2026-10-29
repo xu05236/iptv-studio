@@ -30,6 +30,8 @@ interface PoolLine extends LineEntry {
   group: string;
   country: string;
   sourceName: string;
+  tvgId?: string;
+  logo?: string;
 }
 
 async function loadPool(env: Env) {
@@ -79,6 +81,8 @@ async function loadPool(env: Env) {
         group,
         country,
         sourceName: sourceMap.get(line.sourceId)?.name ?? line.sourceId,
+        tvgId: channel?.tvg_id ?? undefined,
+        logo: channel?.logo ?? undefined,
       });
     }
   }
@@ -213,4 +217,62 @@ poolRoutes.post('/reset', async (c) => {
   const removed = await deleteLineOverrides(c.env, keys);
   await audit(c.env, c.get('actor'), 'pool.reset', 'bulk', { keys, removed });
   return ok({ removed });
+});
+
+function escapeM3u(value: string): string {
+  return value.replace(/"/g, '&quot;').replace(/[\r\n]+/g, ' ');
+}
+
+poolRoutes.post('/export', async (c) => {
+  const body = (await readJson<Record<string, unknown>>(c)) ?? {};
+  const { lines } = await loadPool(c.env);
+  const keys = Array.isArray(body.keys)
+    ? body.keys.filter((key): key is string => typeof key === 'string').slice(0, 500)
+    : [];
+  const country = String(body.country ?? '');
+  const group = String(body.group ?? '');
+  const channelId = String(body.channelId ?? '');
+  const pool = String(body.pool ?? '');
+  const transport = String(body.transport ?? '');
+  const resolution = String(body.resolution ?? '');
+  const minSpeed = Math.max(0, Number(body.minSpeed ?? 0) || 0);
+  const q = String(body.q ?? '').trim().toLowerCase();
+  const minRank = resolution ? qualityRank(resolution as Quality) : -1;
+  const keySet = new Set(keys);
+
+  const selected = lines.filter((line) => {
+    if (keySet.size && !keySet.has(line.key)) return false;
+    if (country && line.country !== country) return false;
+    if (group && line.group !== group) return false;
+    if (channelId && line.channelId !== channelId) return false;
+    if (pool && line.pool !== pool) return false;
+    if (transport && line.transport !== transport) return false;
+    if (minSpeed && (line.speedKbps ?? 0) < minSpeed) return false;
+    if (minRank >= 0 && qualityRank(qualityOf(line)) < minRank) return false;
+    if (q && !`${line.channelName} ${line.name} ${line.sourceName} ${line.url}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  if (!selected.length) return fail('筛选结果为空，无法导出', 422);
+  selected.sort((a, b) => a.channelName.localeCompare(b.channelName, 'zh-CN') || compareLines(a, b));
+
+  const out = ['#EXTM3U'];
+  for (const line of selected) {
+    const attrs = [
+      line.tvgId ? `tvg-id="${escapeM3u(line.tvgId)}"` : '',
+      `tvg-name="${escapeM3u(line.channelName)}"`,
+      line.logo ? `tvg-logo="${escapeM3u(line.logo)}"` : '',
+      `group-title="${escapeM3u(line.group)}"`,
+    ].filter(Boolean);
+    out.push(`#EXTINF:-1 ${attrs.join(' ')},${line.channelName} · ${line.sourceName}`);
+    if (line.headers?.userAgent) out.push(`#EXTVLCOPT:http-user-agent=${line.headers.userAgent}`);
+    if (line.headers?.referer) out.push(`#EXTVLCOPT:http-referrer=${line.headers.referer}`);
+    out.push(line.url);
+  }
+  return new Response(out.join('\n'), {
+    headers: {
+      'content-type': 'audio/x-mpegurl; charset=utf-8',
+      'content-disposition': `attachment; filename="line-pool-${new Date().toISOString().slice(0, 10)}.m3u"`,
+      'cache-control': 'no-store',
+    },
+  });
 });
