@@ -958,7 +958,7 @@ Actions 手动入口：
 - `fetch`：抓取启用的源 → 归一化/去重/墓碑/留存 → 写 `state/lines.json` → 同步源信誉；不测速、不发布
 - `probe`：读 `state/lines.json` → 轻量预筛 → 完整测速/分辨率 → 写回 lines + pool；不抓源、不发布
 - `publish`：读 lines → 抓 EPG → 构建 catalog/index/分片 → 发布 KV/R2 → 订阅 → 频道同步 → 差异/通知；不抓源、不测速
-- `collect`：仍是一键全流程（未改成串联三个命令，行为保持不变）
+- `collect`：串联 fetch/probe/publish 三个核心函数，仍然只有一条运行报告/日志
 - `liveness`：原 `probe` 轻量测活改名，避免和完整探测阶段冲突
 - `probe-lines`：检测中心选中线路探测，保持不变
 - `export` / `epg` 不变
@@ -984,4 +984,23 @@ Actions 手动入口：
 
 ## 后续
 
-- `collect` 目前仍是旧的合并实现；三个阶段是独立命令，逻辑有重复。下一步可以让 collect 改为依次调用 fetch/probe/publish（但会产生 3 条运行报告，需要先定语义）
+- collect 已改为串联三个阶段（见下节）
+- 独立阶段与 collect 共用 fetchPhase/probePhase/publishPhase，不再有重复实现
+
+---
+
+# 2026-10-30 下午 · collect 改为串联三阶段
+
+## 实现
+
+- `runCollectCombined()`：`fetchPhase → probePhase(cooldown=true) → syncSourceStats → publishPhase('fetch')`
+- 一条运行报告、一份日志，行为与旧 collect 对齐
+- 新增 `runExport()`：读 lines → ffprobe → `publishPhase('guide')`，不再抓 EPG
+- 旧的合并 collect 代码已删除，阶段逻辑只保留一份
+
+## 验证
+
+- dispatch `collect` budget=100：run `41009967629` success
+- 只新增了一条报告 `run-mvujr98t-jj53`（partial，少量探测失败，probed=100）
+- index `05:30:38Z` → `05:47:04Z`，导出 2723 行 / 787 可用
+- 72 个测试通过
