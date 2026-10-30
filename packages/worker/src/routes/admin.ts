@@ -28,6 +28,7 @@ import { inferResolution } from '@iptv/core';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
+import { nextAutoCollectAt, parseCollectTimes } from '../lib/schedule.js';
 import { sourceMetaMap } from '../lib/source.js';
 
 export const adminRoutes = new Hono<AppEnv>();
@@ -301,14 +302,36 @@ adminRoutes.put('/settings', async (c) => {
     'logoBaseUrl', 'maxLinesPerChannel', 'maxLinesPerSource', 'compensate', 'keepSuspect', 'deadReviveDays',
     'probeBudget', 'concurrency', 'probeTimeoutMs', 'probeAliveHours', 'probePremiumHours', 'probePerChannel',
     'ffprobeLimit', 'publishCooldownMs', 'lineRetentionDays', 'warmupBytes', 'sampleMs', 'epgUrls', 'regionSuffix',
+    'autoCollectEnabled', 'autoCollectTimes', 'autoCollectBudget',
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback',
   ];
   const clean: Partial<AppSettings> = {};
   for (const key of allowed) {
     if (key in patch) (clean as Record<string, unknown>)[key] = patch[key];
   }
+  if (clean.autoCollectTimes !== undefined) {
+    const times = parseCollectTimes(clean.autoCollectTimes);
+    if (!times.length) return fail('自动采集时间格式应为 HH:mm，多个用逗号分隔（北京时间）');
+    clean.autoCollectTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
+  }
+  if (clean.autoCollectBudget !== undefined) clean.autoCollectBudget = Math.max(1, Number(clean.autoCollectBudget) || 1200);
   const settings = await saveSettings(c.env, clean);
   return ok({ settings });
+});
+
+adminRoutes.get('/schedule', async (c) => {
+  const settings = await loadSettings(c.env);
+  const state = await getJson<{ lastRunAt?: string; lastScheduledAt?: string; result?: string }>(c.env, 'state/schedule.json');
+  const nextAt = nextAutoCollectAt(settings);
+  return ok({
+    enabled: settings.autoCollectEnabled,
+    times: settings.autoCollectTimes,
+    budget: settings.autoCollectBudget,
+    lastRunAt: state?.lastRunAt ?? null,
+    lastScheduledAt: state?.lastScheduledAt ?? null,
+    result: state?.result ?? null,
+    nextAt: nextAt ? new Date(nextAt).toISOString() : null,
+  });
 });
 
 adminRoutes.get('/feedback', async (c) => {

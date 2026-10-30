@@ -12,6 +12,7 @@ import { artifactRoutes } from './routes/artifacts.js';
 import { poolRoutes } from './routes/pool.js';
 import { relayRoutes } from './routes/relay.js';
 import { runCron } from './cron.js';
+import { runAutoCollect } from './lib/schedule.js';
 import { dispatchWorkflow } from './lib/github.js';
 
 const app = new Hono<AppEnv>();
@@ -88,7 +89,8 @@ app.onError((error, c) => {
 
 export default {
   fetch: app.fetch,
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runCron(env));
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    if (controller.cron === '17 */6 * * *') ctx.waitUntil(runCron(env));
+    else ctx.waitUntil(runAutoCollect(env));
   },
 } satisfies ExportedHandler<Env>;

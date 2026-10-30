@@ -18,6 +18,11 @@ export function SettingsPage() {
     queryFn: () => api.get<SettingsResponse>('/api/admin/settings'),
   });
 
+  const schedule = useQuery({
+    queryKey: ['admin', 'schedule'],
+    queryFn: () => api.get<{ enabled: boolean; times: string; budget: number; nextAt: string | null; lastRunAt: string | null; result: string | null }>('/api/admin/schedule'),
+  });
+
   useEffect(() => {
     if (data?.settings) {
       setForm(data.settings);
@@ -33,6 +38,7 @@ export function SettingsPage() {
     onSuccess: () => {
       show('设置已保存');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'schedule'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
@@ -112,6 +118,24 @@ export function SettingsPage() {
           <Field label="失效线路复活天数" hint="连续 3 次失败判定失效，到期后允许复测一次">
             <input className="input" inputMode="numeric" value={form.deadReviveDays} onChange={(event) => set('deadReviveDays', Number(event.target.value))} />
           </Field>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="title-3">自动采集</div>
+        <div className="stack" style={{ marginTop: 12 }}>
+          <div className="list">
+            <div className="list__row"><span className="grow">启用自动采集（默认关闭）</span><Switch checked={form.autoCollectEnabled ?? false} onChange={(value) => set('autoCollectEnabled', value)} /></div>
+          </div>
+          <div className="row">
+            <div className="grow"><Field label="每天运行时刻（北京时间）" hint="HH:mm，多个用逗号分隔，例如 08:30 或 08:30, 20:30；建议在 08:00 额度重置后"><input className="input" value={form.autoCollectTimes ?? '08:30'} onChange={(event) => set('autoCollectTimes', event.target.value)} /></Field></div>
+            <div className="grow"><Field label="自动采集预算（条）" hint="独立于手动触发；建议先 1200"><input className="input" inputMode="numeric" value={form.autoCollectBudget ?? 1200} onChange={(event) => set('autoCollectBudget', Number(event.target.value))} /></Field></div>
+          </div>
+          <div className="caption">
+            保护：KV 写入 ≥920 或已有采集在跑时自动跳过；时区固定北京时间（UTC+8）。
+            {schedule.data?.nextAt ? ` 下次：${new Date(schedule.data.nextAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` : ' 当前未启用。'}
+            {schedule.data?.lastRunAt ? ` · 上次：${new Date(schedule.data.lastRunAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（${schedule.data.result ?? '未知'}）` : ''}
+          </div>
         </div>
       </Card>
 

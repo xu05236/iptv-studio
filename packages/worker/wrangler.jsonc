@@ -33,7 +33,7 @@
     }
   ],
   "triggers": {
-    "crons": ["17 */6 * * *"]
+    "crons": ["*/5 * * * *", "17 */6 * * *"]
   },
   "vars": {
     "ENVIRONMENT": "production",
