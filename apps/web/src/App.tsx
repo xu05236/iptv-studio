@@ -15,6 +15,7 @@ import { Probe } from './pages/admin/Probe';
 import { SubscriptionsAdmin } from './pages/admin/SubscriptionsAdmin';
 import { Runs } from './pages/admin/Runs';
 import { SettingsPage } from './pages/admin/Settings';
+import { Rules } from './pages/admin/Rules';
 
 export function App() {
   return (
@@ -43,6 +44,7 @@ export function App() {
         <Route path="subscriptions" element={<SubscriptionsAdmin />} />
         <Route path="runs" element={<Runs />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="rules" element={<Rules />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

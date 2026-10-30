@@ -3,6 +3,7 @@ import {
   ClipboardList,
   Gauge,
   Layers3,
+  ListFilter,
   ListVideo,
   LogOut,
   RadioTower,
@@ -24,6 +25,7 @@ const LINKS = [
   { to: '/admin/probe', label: '检测中心', icon: SlidersHorizontal },
   { to: '/admin/subscriptions', label: '订阅与导出', icon: Users },
   { to: '/admin/runs', label: '运行与日志', icon: ClipboardList },
+  { to: '/admin/rules', label: '规则', icon: ListFilter },
   { to: '/admin/settings', label: '设置', icon: Settings },
 ];
 
