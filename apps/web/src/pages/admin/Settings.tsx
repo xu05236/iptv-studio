@@ -5,6 +5,7 @@ import type { AppSettings } from '@iptv/core';
 import { api } from '../../lib/api';
 import type { SettingsResponse } from '../../lib/types';
 import { Button, Card, Field, Skeleton, Switch, useToast } from '../../components/ui';
+import { RulesGuide } from '../../components/RulesGuide';
 
 /** Rough measurements from the 2026-10-30 1200-budget run (probe ~2 min / 302 MB). */
 const BUDGET_TIERS = [
@@ -84,20 +85,30 @@ export function SettingsPage() {
       </div>
 
       <Card>
+        <details>
+          <summary className="title-3" style={{ cursor: 'pointer' }}>规则说明（信誉分 / 线路池 / 预算）</summary>
+          <div style={{ marginTop: 12 }}>
+            <RulesGuide scope="admin" />
+          </div>
+        </details>
+      </Card>
+
+      <Card>
         <div className="title-3">基础</div>
         <div className="stack" style={{ marginTop: 12 }}>
           <Field label="台标基础地址" hint="订阅自带 tvg-logo 优先；缺失时按 tvg-id 拼接。旧 fanmingming 地址会自动改用 jsDelivr 镜像，前台还会多源回退。">
             <input className="input" value={form.logoBaseUrl} onChange={(event) => set('logoBaseUrl', event.target.value)} />
           </Field>
           <div className="row">
-            <div className="grow"><Field label="每频道最多线路"><input className="input" inputMode="numeric" value={form.maxLinesPerChannel} onChange={(event) => set('maxLinesPerChannel', Number(event.target.value))} /></Field></div>
-            <div className="grow"><Field label="同源最多线路"><input className="input" inputMode="numeric" value={form.maxLinesPerSource} onChange={(event) => set('maxLinesPerSource', Number(event.target.value))} /></Field></div>
+            <div className="grow"><Field label="每频道最多线路" hint="每个频道最多导出几条线路；多余线路留在池里备选"><input className="input" inputMode="numeric" value={form.maxLinesPerChannel} onChange={(event) => set('maxLinesPerChannel', Number(event.target.value))} /></Field></div>
+            <div className="grow"><Field label="同源最多线路" hint="同一采集站在一个频道最多几条，避免单个源刷屏"><input className="input" inputMode="numeric" value={form.maxLinesPerSource} onChange={(event) => set('maxLinesPerSource', Number(event.target.value))} /></Field></div>
           </div>
           <div className="list">
-            <div className="list__row"><span className="grow">线路名带地区/运营商后缀</span><Switch checked={form.regionSuffix} onChange={(value) => set('regionSuffix', value)} /></div>
-            <div className="list__row"><span className="grow">补偿机制（频道无可用时回填可疑线路）</span><Switch checked={form.compensate} onChange={(value) => set('compensate', value)} /></div>
-            <div className="list__row"><span className="grow">允许可疑线路作为兜底</span><Switch checked={form.keepSuspect} onChange={(value) => set('keepSuspect', value)} /></div>
+            <div className="list__row"><span className="grow" title="开启后线路名会带上地区/运营商，便于区分同名频道">线路名带地区/运营商后缀</span><Switch checked={form.regionSuffix} onChange={(value) => set('regionSuffix', value)} /></div>
+            <div className="list__row"><span className="grow" title="频道没有任何可用线路时，是否回填可疑线路避免订阅空白">补偿机制（频道无可用时回填可疑线路）</span><Switch checked={form.compensate} onChange={(value) => set('compensate', value)} /></div>
+            <div className="list__row"><span className="grow" title="允许可疑线路参与导出；关闭后只导出确认可用的线路">允许可疑线路作为兜底</span><Switch checked={form.keepSuspect} onChange={(value) => set('keepSuspect', value)} /></div>
           </div>
+          <div className="caption">补偿只在频道没有可用线路时生效；兜底线路会降低稳定性，建议只在覆盖优先时开启。</div>
         </div>
       </Card>
 
@@ -106,7 +117,7 @@ export function SettingsPage() {
         <div className="stack" style={{ marginTop: 12 }}>
           <div className="row">
             <div className="grow"><Field label="采集预算（条）" hint="手动/定时触发未显式指定时使用；按未测 / 到期复检自动折算"><input className="input" inputMode="numeric" value={form.probeBudget} onChange={(event) => set('probeBudget', Number(event.target.value))} /></Field></div>
-            <div className="grow"><Field label="并发数"><input className="input" inputMode="numeric" value={form.concurrency} onChange={(event) => set('concurrency', Number(event.target.value))} /></Field></div>
+            <div className="grow"><Field label="并发数" hint="同时探测的线路数；越高越快，但过高容易误判或被源站限速"><input className="input" inputMode="numeric" value={form.concurrency} onChange={(event) => set('concurrency', Number(event.target.value))} /></Field></div>
           </div>
           <div className="table-wrap" style={{ marginTop: 4 }}>
             <table className="table" style={{ minWidth: 640 }}>
@@ -212,14 +223,14 @@ export function SettingsPage() {
                 />
                 <Button size="sm" onClick={addEpgUrl} disabled={!newEpgUrl.trim()}>添加源</Button>
               </div>
-              <div className="caption">当前 {epgUrls.length} 个源；当前默认包含 fanmingming、epg.pw、zsdc。</div>
+              <div className="caption">当前 {epgUrls.length} 个源；默认包含 fanmingming 与 epg.pw。</div>
             </div>
           </Field>
           <div className="list">
             <div className="list__row"><span className="grow">Telegram 日报（需在 Actions 配置 Secret）</span><Switch checked={form.notifyTelegram} onChange={(value) => set('notifyTelegram', value)} /></div>
             <div className="list__row"><span className="grow">每日截帧验证（需 runner 支持 ffmpeg）</span><Switch checked={form.screenshots} onChange={(value) => set('screenshots', value)} /></div>
           </div>
-          <Field label="快照保留天数">
+          <Field label="快照保留天数" hint="历史 catalog/index/订阅快照和日志、截图的保留天数，超过后由清理 cron 删除">
             <input className="input" inputMode="numeric" value={form.retentionDays} onChange={(event) => set('retentionDays', Number(event.target.value))} />
           </Field>
         </div>

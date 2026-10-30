@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 import type { SourceItem } from '../../lib/types';
 import { timeAgo } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Field, Segmented, Sheet, Switch, useToast } from '../../components/ui';
+import { ReputationBadge } from '../../components/ReputationBadge';
 
 interface SourceHealthPoint {
   day: string;
@@ -313,11 +314,7 @@ export function Sources() {
                   {source.status === 'degraded' ? <Badge tone="red">抓取异常</Badge> : null}
                 </div>
                 <div className="caption" style={{ marginTop: 4 }}>
-                  {source.entry_count} 条 · {source.alive_count} 可用 · 信誉 {Math.round(source.reputation)}
-                  <Badge tone={source.reputation >= 80 ? 'green' : source.reputation >= 50 ? 'blue' : 'orange'}>
-                    {source.reputation >= 80 ? '优质' : source.reputation >= 50 ? '正常' : '降权'}
-                  </Badge>
-                  · 更新 {timeAgo(source.last_ok_at)} · 每 {source.refresh_hours ?? 24}h
+                  {source.entry_count} 条 · {source.alive_count} 可用 · <ReputationBadge score={source.reputation} /> · 更新 {timeAgo(source.last_ok_at)} · 每 {source.refresh_hours ?? 24}h
                   {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
                 </div>
                 {source.progress ? (

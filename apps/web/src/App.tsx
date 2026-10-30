@@ -5,6 +5,7 @@ import { AdminLayout } from './layouts/AdminLayout';
 import { Home } from './pages/Home';
 import { Channels } from './pages/Channels';
 import { ChannelDetail } from './pages/ChannelDetail';
+import { Help } from './pages/Help';
 import { Login } from './pages/admin/Login';
 import { Dashboard } from './pages/admin/Dashboard';
 import { Sources } from './pages/admin/Sources';
@@ -22,6 +23,7 @@ export function App() {
         <Route path="/" element={<Home />} />
         <Route path="/channels" element={<Channels />} />
         <Route path="/channels/:id" element={<ChannelDetail />} />
+        <Route path="/help" element={<Help />} />
       </Route>
 
       <Route path="/admin/login" element={<Login />} />

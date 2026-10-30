@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import type { RunItem } from '../../lib/types';
 import { formatDuration, formatLatency, formatResolution, formatSpeed, statusLabel, statusTone, timeAgo } from '../../lib/format';
 import { Badge, Button, Card, Field, Pagination, Segmented, Sheet, Skeleton, Stat, useToast } from '../../components/ui';
+import { ReputationBadge } from '../../components/ReputationBadge';
 
 interface ProbeLine {
   key: string;
@@ -290,9 +291,7 @@ export function Probe() {
                       <div className="caption" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span>{row.group} · {row.sourceName ?? row.sourceId}{row.sourceSite ? ` · ${row.sourceSite}` : ''}</span>
                         {row.sourceReputation !== undefined ? (
-                          <Badge tone={row.sourceTier === 'high' ? 'green' : row.sourceTier === 'low' ? 'orange' : 'blue'}>
-                            信誉 {Math.round(row.sourceReputation)}
-                          </Badge>
+                          <ReputationBadge score={row.sourceReputation} />
                         ) : null}
                       </div>
                     </td>

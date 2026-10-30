@@ -4,6 +4,7 @@ import { Ban, Download, Filter, Layers3, RefreshCw, RotateCcw, Trash2 } from 'lu
 import { api, getToken } from '../../lib/api';
 import { formatResolution, formatSpeed, statusLabel, statusTone } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Pagination, Sheet, Skeleton, useToast } from '../../components/ui';
+import { ReputationBadge } from '../../components/ReputationBadge';
 import { timeAgo } from '../../lib/format';
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -548,9 +549,7 @@ export function Pool() {
                     <td>
                       <div className="row" style={{ gap: 6 }}>
                         <span className="truncate" style={{ maxWidth: 120 }}>{line.sourceName}</span>
-                        <Badge tone={line.sourceTier === 'high' ? 'green' : line.sourceTier === 'low' ? 'orange' : 'blue'}>
-                          信誉 {Math.round(line.sourceReputation)}
-                        </Badge>
+                        <ReputationBadge score={line.sourceReputation} />
                       </div>
                       <div className="caption truncate" style={{ maxWidth: 170 }}>{line.name}</div>
                       {line.retained ? <Badge tone="orange">源已移除，保留中</Badge> : null}

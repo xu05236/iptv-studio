@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { House, Radio, SlidersHorizontal, Tv } from 'lucide-react';
+import { HelpCircle, House, Radio, SlidersHorizontal, Tv } from 'lucide-react';
 import clsx from 'clsx';
 import { ThemeToggle } from '../components/ThemeToggle';
 
 const TABS = [
   { to: '/', label: '首页', icon: House },
   { to: '/channels', label: '频道', icon: Tv },
+  { to: '/help', label: '说明', icon: HelpCircle },
   { to: '/admin', label: '管理', icon: SlidersHorizontal },
 ];
 
@@ -36,6 +37,9 @@ export function PortalLayout() {
           </NavLink>
           <NavLink to="/channels" className={({ isActive }) => clsx('topnav__link', isActive && 'topnav__link--active')}>
             频道
+          </NavLink>
+          <NavLink to="/help" className={({ isActive }) => clsx('topnav__link', isActive && 'topnav__link--active')}>
+            说明
           </NavLink>
           <NavLink to="/admin" className={({ isActive }) => clsx('topnav__link', isActive && 'topnav__link--active')}>
             管理后台
