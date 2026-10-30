@@ -459,6 +459,7 @@ async function publishPhase(
     rules: remote.rules,
     epg: epg.data,
     disabledChannelIds: new Set(remote.channels.filter((row) => row.enabled === false || row.enabled === 0).map((row) => row.id)),
+    logoProxyBase: `${config.publicBaseUrl.replace(/\/+$/, '')}/api/public/logo`,
   });
   const logKey = await writeLog(store, runId, logger);
   const poolSnapshot = buildPoolSnapshot({

@@ -95,6 +95,7 @@ export async function publishSubscriptions(
     for (const format of ['m3u', 'txt', 'json', 'diyp'] as PlaylistFormat[]) {
       const channels = toExportChannels(selected, {
         logoBaseUrl: settings.logoBaseUrl,
+        logoProxyBase: `${publicBaseUrl.replace(/\/+$/, '')}/api/public/logo`,
         showRegionSuffix: sub.showRegionSuffix,
       });
       const body = buildPlaylist(channels, format, {

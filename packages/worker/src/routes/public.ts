@@ -14,6 +14,78 @@ publicRoutes.use('*', cors());
 
 const CACHE_30 = { 'cache-control': 'public, max-age=30, s-maxage=60' } as const;
 
+const LOGO_PROVIDERS = [
+  'https://cdn.jsdelivr.net/gh/fanmingming/live@main/tv/',
+  'https://fastly.jsdelivr.net/gh/fanmingming/live@main/tv/',
+  'https://gcore.jsdelivr.net/gh/fanmingming/live@main/tv/',
+  'https://testingcf.jsdelivr.net/gh/fanmingming/live@main/tv/',
+  'https://ghproxy.net/https://raw.githubusercontent.com/fanmingming/live/main/tv/',
+  'https://gh-proxy.com/https://raw.githubusercontent.com/fanmingming/live/main/tv/',
+  'https://cdn.jsdelivr.net/gh/8u8m/live-fanmingming@main/tv/',
+  'https://cdn.jsdelivr.net/gh/bxtww/live@main/tv/',
+  'https://cdn.jsdelivr.net/gh/bonnie180/live-m3u8@main/tv/',
+  'https://cdn.jsdelivr.net/gh/vircloud/TVLogo@main/',
+  'https://raw.githubusercontent.com/fanmingming/live/main/tv/',
+];
+
+/**
+ * Stable logo URL for subscriptions/players: /api/public/logo/CCTV1.png.
+ * Tries the same mirrors as the front-end, stores the winning bytes in the
+ * Cloudflare cache, and caches 404s briefly so missing ids are cheap.
+ */
+publicRoutes.get('/logo/:file', async (c) => {
+  const file = c.req.param('file');
+  const id = file.replace(/\.png$/i, '');
+  if (!/^[A-Za-z0-9._+-]{1,64}$/.test(id)) return fail('台标 ID 不合法', 400);
+
+  const cacheKey = new Request(new URL(`/api/public/logo/${file}`, c.req.url).toString(), { method: 'GET' });
+  const cache = caches.default;
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  for (const base of LOGO_PROVIDERS) {
+    const url = `${base}${encodeURIComponent(id)}.png`;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5_000);
+      let upstream: Response;
+      try {
+        upstream = await fetch(url, {
+          signal: controller.signal,
+          redirect: 'follow',
+          headers: { 'user-agent': 'iptv-studio-logo/1.0' },
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!upstream.ok) continue;
+      const type = upstream.headers.get('content-type') ?? '';
+      if (!type.startsWith('image/')) continue;
+      const bytes = await upstream.arrayBuffer();
+      if (!bytes.byteLength || bytes.byteLength > 2 * 1024 * 1024) continue;
+      const response = new Response(bytes, {
+        status: 200,
+        headers: {
+          'content-type': type || 'image/png',
+          'cache-control': 'public, max-age=604800, immutable',
+          'access-control-allow-origin': '*',
+        },
+      });
+      c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()));
+      return response;
+    } catch {
+      // Try the next mirror.
+    }
+  }
+
+  const miss = new Response('台标不存在', {
+    status: 404,
+    headers: { 'cache-control': 'public, max-age=3600', 'access-control-allow-origin': '*' },
+  });
+  c.executionCtx.waitUntil(cache.put(cacheKey, miss.clone()));
+  return miss;
+});
+
 publicRoutes.get('/overview', async (c) => {
   const [index, runs, openFeedback, settings] = await Promise.all([
     loadIndex(c.env),

@@ -10,6 +10,8 @@ export { buildTXT, buildJSON, buildDIYP } from './txt.js';
 
 export interface ToExportOptions {
   logoBaseUrl?: string | null;
+  /** Public Worker proxy base, e.g. https://host/api/logo. */
+  logoProxyBase?: string | null;
   showRegionSuffix?: boolean;
 }
 
@@ -23,7 +25,7 @@ export function toExportChannels(
     name: channel.name,
     group: channel.group,
     tvgId: channel.tvgId,
-    logo: channelLogo(channel, options.logoBaseUrl),
+    logo: channelLogo(channel, options.logoBaseUrl, options.logoProxyBase),
     number: channel.number,
     lines: lines.map<ExportLine>((line) => ({
       url: line.url,

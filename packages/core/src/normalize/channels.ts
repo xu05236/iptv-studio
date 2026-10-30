@@ -410,7 +410,18 @@ export class ChannelRegistry {
 }
 
 /** Build a logo URL only when the channel has no explicit logo. */
-export function channelLogo(channel: { logo?: string | null; tvgId?: string | null; name: string }, baseUrl?: string | null): string | undefined {
+export function channelLogo(
+  channel: { logo?: string | null; tvgId?: string | null; name: string },
+  baseUrl?: string | null,
+  proxyBase?: string | null,
+): string | undefined {
+  if (channel.logo && !/live\.fanmingming\.com/i.test(channel.logo)) {
+    // Custom/uploaded logo: keep the operator's explicit choice.
+    return channel.logo;
+  }
+  if (proxyBase && channel.tvgId) {
+    return `${proxyBase.replace(/\/+$/, '')}/${encodeURIComponent(channel.tvgId)}.png`;
+  }
   if (channel.logo) {
     // Old data may still point at the retired fanmingming host.
     return channel.logo.replace(

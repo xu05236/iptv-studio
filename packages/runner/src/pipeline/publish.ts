@@ -32,6 +32,8 @@ export interface BuildInput {
   rules: Rule[];
   epg: EpgData;
   disabledChannelIds?: Set<string>;
+  /** Public Worker logo proxy base, e.g. https://host/api/logo. */
+  logoProxyBase?: string;
 }
 
 export interface CatalogItem {
@@ -98,7 +100,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
       name: seed.name,
       group: seed.group,
       tvgId: seed.tvgId,
-      logo: channelLogo({ logo: seed.logo, tvgId: seed.tvgId, name: seed.name }, input.settings.logoBaseUrl),
+      logo: channelLogo({ logo: seed.logo, tvgId: seed.tvgId, name: seed.name }, input.settings.logoBaseUrl, input.logoProxyBase),
       aliases: seed.aliases,
     };
     const applied = applyRules(channel, lines, compiled);
@@ -184,7 +186,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
       name: seed.name,
       group: seed.group,
       tvgId: seed.tvgId,
-      logo: channelLogo({ logo: seed.logo, tvgId: seed.tvgId, name: seed.name }, input.settings.logoBaseUrl),
+      logo: channelLogo({ logo: seed.logo, tvgId: seed.tvgId, name: seed.name }, input.settings.logoBaseUrl, input.logoProxyBase),
     })),
     totalLines,
     aliveLines,
