@@ -1192,3 +1192,51 @@ Actions 手动入口：
 - 每日测活：**开**，每天 20:30
 - 导出：2782 行 / 868 可用
 - 最近 publish：`06:57:17Z`
+
+---
+
+# 2026-10-30 晚 · 混合节奏与分批探测
+
+## 最终节奏
+
+- **抓源**：每 7 天一次（新增源建议手动触发）
+- **分批探测**：每 2 小时一批，每批 1200；阶段 `pending → quarantine（TTL 到期）→ rejected（复活到期且 failCount<5）`
+- **每日发布**：08:30，只更新 EPG/catalog/订阅，不探测
+- **每日 collect / 每日测活**：关闭，保留手动应急
+- 配额保护：KV 写入 ≥920 或已有任务在跑时，调度器自动跳过
+
+## 分批规则细节
+
+- pending：`!lastProbeAt && status=unknown`
+- 轻量预筛失败的线路转为 suspect，6 小时内不重复测活
+- quarantine：suspect + 测活重试窗口已过 + 72h TTL 到期
+- rejected：dead + `failCount<5` + reviveAt 已到
+- rtsp/rtmp/udp 无法 HTTP 探测，排除出统计和候选
+- 每批先轻量预筛，再做完整测速；单批结束写 lines/pool/pool-stats
+- 全部阶段为 0 时自动停，不再空跑
+
+## 实测
+
+- 池子初始：pending 935 / quarantine 1592 / rejected 922（任务板口径按到期）
+- 4 次手动分批 + 1 次空闲：probed 523 → 59 → 24 → 5 → 0
+- 最终任务板：pending 0 / quarantine 0 / rejected 0
+- pool-stats：total 4642，alive 729，dead 1642
+- KV 写入约 404/1000
+- index 未变化（分批探测不发布，符合预期）
+- 当前自动配置：probe/fetch/publish 开，collect/liveness 关
+
+## 任务板现状
+
+- 概览页「检测任务」：阶段数量、预计批数、上移/下移、暂停/恢复、立即跑一批
+- 抓源/发布：显示下次时间，可立即触发
+- **还没有**：全局任务来源标签、当前任务进度条、预计完成时间、手动任务插队
+
+## 下一步
+
+- 全局任务队列：
+  - 任务来源 `schedule/manual/detection/source/cli`
+  - 状态 queued/running/paused/done/failed
+  - 手动任务优先级最高，插到队列第一
+  - 新增源创建高优先级 fetch
+  - runner 上报进度，Worker 估算 ETA
+- 完成后更新 `/help` 与管理后台规则说明
