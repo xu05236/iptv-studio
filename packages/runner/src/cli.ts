@@ -309,6 +309,13 @@ function poolSnapshotFor(remote: RemoteConfig, lines: LineEntry[], generatedAt: 
   });
 }
 
+const LIVENESS_RETRY_MS = 6 * 3_600_000;
+
+function livenessReady(line: LineEntry, now: number): boolean {
+  if (!line.lastLivenessAt) return true;
+  return now - Date.parse(line.lastLivenessAt) >= LIVENESS_RETRY_MS;
+}
+
 /** Small summary consumed by the Worker scheduler; avoids parsing lines.json. */
 function poolStatsFor(remote: RemoteConfig, lines: LineEntry[]) {
   const channelIds = new Set(remote.channels.map((channel) => channel.id));
@@ -318,10 +325,12 @@ function poolStatsFor(remote: RemoteConfig, lines: LineEntry[]) {
   return {
     generatedAt: new Date().toISOString(),
     total: valid.length,
-    pending: valid.filter((line) => !line.lastProbeAt).length,
+    // A liveness-prefilter failure becomes suspect without lastProbeAt; it must
+    // not stay in pending forever.
+    pending: valid.filter((line) => !line.lastProbeAt && line.status === 'unknown').length,
     // Only lines whose TTL is due; otherwise the scheduler would keep dispatching
     // batches that immediately go idle.
-    quarantine: valid.filter((line) => line.status === 'suspect' && isDueForProbe(line, 'normal', nowDate)).length,
+    quarantine: valid.filter((line) => line.status === 'suspect' && livenessReady(line, now) && isDueForProbe(line, 'normal', nowDate)).length,
     rejected: valid.filter((line) => line.status === 'dead' && line.failCount < 5 && (!line.reviveAt || Date.parse(line.reviveAt) <= now)).length,
     alive: valid.filter((line) => line.status === 'alive').length,
     dead: valid.filter((line) => line.status === 'dead').length,
@@ -658,9 +667,10 @@ function parsePhaseOrder(value: string): Array<'pending' | 'quarantine' | 'rejec
 }
 
 function phaseMatches(line: LineEntry, phase: 'pending' | 'quarantine' | 'rejected', now: number, forced: boolean): boolean {
-  if (phase === 'pending') return !line.lastProbeAt;
+  if (phase === 'pending') return !line.lastProbeAt && line.status === 'unknown';
   if (phase === 'quarantine') {
     if (line.status !== 'suspect') return false;
+    if (!livenessReady(line, now)) return false;
     return forced || isDueForProbe(line, 'normal', new Date(now));
   }
   if (line.status !== 'dead') return false;
