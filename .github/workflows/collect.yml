@@ -59,15 +59,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PROBE_BUDGET: ${{ github.event.inputs.budget || vars.PROBE_BUDGET || '6000' }}
-          PROBE_CONCURRENCY: ${{ vars.PROBE_CONCURRENCY || '64' }}
-          PROBE_ALIVE_HOURS: ${{ vars.PROBE_ALIVE_HOURS || '360' }}
-          PROBE_PREMIUM_HOURS: ${{ vars.PROBE_PREMIUM_HOURS || '168' }}
-          PROBE_PER_CHANNEL: ${{ vars.PROBE_PER_CHANNEL || '24' }}
-          LINE_RETENTION_DAYS: ${{ vars.LINE_RETENTION_DAYS || '30' }}
           PROBE_FORCE: ${{ github.event.inputs.force || 'false' }}
           SOURCE_ID: ${{ github.event.inputs.source_id || '' }}
-          PUBLISH_COOLDOWN_MS: '60000'
-          FFPROBE_LIMIT: ${{ vars.FFPROBE_LIMIT || '150' }}
           TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}
         run: |
           if [ "${{ github.event.inputs.command || 'collect' }}" = "export" ]; then

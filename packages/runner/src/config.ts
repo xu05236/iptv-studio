@@ -27,7 +27,7 @@ export function loadConfig(): RunnerConfig {
       ? { botToken: process.env.TELEGRAM_BOT_TOKEN, chatId: process.env.TELEGRAM_CHAT_ID }
       : undefined,
     probeBudget: Number(process.env.PROBE_BUDGET ?? '0') || 0,
-    concurrency: Number(process.env.PROBE_CONCURRENCY ?? '0') || 48,
+    concurrency: Number(process.env.PROBE_CONCURRENCY ?? '0') || 0,
     dryRun: process.argv.includes('--dry-run'),
   };
 }

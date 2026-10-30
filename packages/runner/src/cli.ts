@@ -55,6 +55,14 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/** Workflow inputs override admin settings; the settings are the default. */
+function envNumber(name: string): number | undefined {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
+}
+
 function mean(values: number[]): number {
   if (!values.length) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -280,7 +288,7 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       const targetSources = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
       if (sourceId && !targetSources.length) throw new Error(`采集站不存在或已停用：${sourceId}`);
       const collected = await collectAll(targetSources, store, logger);
-      const retentionDays = Math.max(0, Number(process.env.LINE_RETENTION_DAYS ?? '30') || 30);
+      const retentionDays = Math.max(0, envNumber('LINE_RETENTION_DAYS') ?? settings.lineRetentionDays ?? 30);
       const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso(), tombstones, retentionDays);
       // normalize() already keeps previous lines for sources that were skipped,
       // returned 304 or failed; merging them again would duplicate state.
@@ -329,12 +337,12 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
         throw new Error(`探测异常：可用线路 ${aliveBefore} → ${aliveAfter}，已放弃发布以保护现有订阅（请降低并发或稍后重试）`);
       }
 
-      const ffprobeLimit = Number(process.env.FFPROBE_LIMIT ?? '150') || 0;
+      const ffprobeLimit = Math.max(0, envNumber('FFPROBE_LIMIT') ?? settings.ffprobeLimit ?? 150);
       if (ffprobeLimit > 0) await enrichResolutions(sourceId ? lines.filter((line) => line.sourceId === sourceId) : lines, ffprobeLimit, logger);
 
       // Mass probing can get the runner IP briefly rate-limited by Cloudflare
       // edges. Cool down before the upload burst so publishing starts clean.
-      const cooldown = Number(process.env.PUBLISH_COOLDOWN_MS ?? '60000') || 0;
+      const cooldown = Math.max(0, envNumber('PUBLISH_COOLDOWN_MS') ?? settings.publishCooldownMs ?? 60_000);
       if (cooldown > 0) {
         logger.info('发布前冷却', { seconds: Math.round(cooldown / 1000) });
         await new Promise((resolve) => setTimeout(resolve, cooldown));
@@ -462,7 +470,7 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
     // ---- export only: rebuild artifacts from persisted state (no probing) ----
     lines = (previousState?.lines ?? []).filter((line) => !tombstones.has(canonicalPoolUrl(line.url)));
     logger.info('仅导出模式', { lines: lines.length });
-    const exportFfprobeLimit = Number(process.env.FFPROBE_LIMIT ?? '150') || 0;
+    const exportFfprobeLimit = Math.max(0, envNumber('FFPROBE_LIMIT') ?? settings.ffprobeLimit ?? 150);
     if (exportFfprobeLimit > 0) await enrichResolutions(lines, exportFfprobeLimit, logger);
     const previousGuide = await store.getJson<StoredGuide>('state/guide.json');
     const exportEpg = epgFromGuide(previousGuide);

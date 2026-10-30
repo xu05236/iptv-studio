@@ -17,9 +17,6 @@ import type { SourceRecord } from '../store.js';
 import type { RunLogger } from '../logger.js';
 
 const UNPROBEABLE = /^(rtsp|rtmp|rtmps|rtsp|udp|rtp):\/\//i;
-const PREMIUM_HOURS = Math.max(1, Number(process.env.PROBE_PREMIUM_HOURS ?? 168) || 168);
-const ALIVE_HOURS = Math.max(1, Number(process.env.PROBE_ALIVE_HOURS ?? 360) || 360);
-const PER_CHANNEL_CAP = Math.max(1, Number(process.env.PROBE_PER_CHANNEL ?? 24) || 24);
 const MAX_INTERVAL_HOURS = 30 * 24;
 
 /** Each successful recheck extends the interval by 3 days, capped at 30 days. */
@@ -58,12 +55,15 @@ export function planProbes(
   force = false,
   premiumKeys?: Set<string>,
 ): LineEntry[] {
+  const premiumHours = Math.max(1, settings.probePremiumHours || 168);
+  const aliveHours = Math.max(1, settings.probeAliveHours || 360);
+  const perChannelCap = Math.max(1, settings.probePerChannel || 24);
   const candidates = lines.filter((line) => {
     if (UNPROBEABLE.test(line.url)) return false;
     if (line.status === 'dead' && line.failCount >= 5) return false;
 
     if (line.status === 'alive') {
-      const baseHours = premiumKeys?.has(line.key) ? PREMIUM_HOURS : ALIVE_HOURS;
+      const baseHours = premiumKeys?.has(line.key) ? premiumHours : aliveHours;
       const interval = adaptiveHours(line, baseHours);
       if (!force && line.lastProbeAt && now.getTime() - new Date(line.lastProbeAt).getTime() < interval * 60 * 60 * 1000) {
         return false;
@@ -96,7 +96,7 @@ export function planProbes(
   const selected: LineEntry[] = [];
   for (const list of grouped.values()) {
     list.sort((a, b) => preProbeRank(b, sources) - preProbeRank(a, sources));
-    selected.push(...list.slice(0, force ? list.length : PER_CHANNEL_CAP));
+    selected.push(...list.slice(0, force ? list.length : perChannelCap));
   }
   selected.sort((a, b) => weight(a) - weight(b) || preProbeRank(b, sources) - preProbeRank(a, sources));
 

@@ -274,6 +274,18 @@ export interface AppSettings {
   probeBudget: number;
   concurrency: number;
   probeTimeoutMs: number;
+  /** Recheck interval for alive backup lines (hours). */
+  probeAliveHours: number;
+  /** Recheck interval for premium lines (hours). */
+  probePremiumHours: number;
+  /** Max candidates per channel in one probe round. */
+  probePerChannel: number;
+  /** ffprobe resolution enrichment budget per run. */
+  ffprobeLimit: number;
+  /** Sleep before publishing, ms. */
+  publishCooldownMs: number;
+  /** Days to keep tested lines after their source stops advertising them. */
+  lineRetentionDays: number;
   warmupBytes: number;
   sampleMs: number;
   epgUrls: string[];
@@ -302,6 +314,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   probeBudget: 12_000,
   concurrency: 64,
   probeTimeoutMs: 9_000,
+  probeAliveHours: 360,
+  probePremiumHours: 168,
+  probePerChannel: 24,
+  ffprobeLimit: 150,
+  publishCooldownMs: 60_000,
+  lineRetentionDays: 30,
   warmupBytes: 512 * 1024,
   sampleMs: 1_500,
   epgUrls: DEFAULT_EPG_URLS,

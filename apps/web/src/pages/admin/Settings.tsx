@@ -91,13 +91,23 @@ export function SettingsPage() {
         <div className="title-3">采集与测速</div>
         <div className="stack" style={{ marginTop: 12 }}>
           <div className="row">
-            <div className="grow"><Field label="每日测速预算（条）" hint="按未测 / 到期复检自动折算"><input className="input" inputMode="numeric" value={form.probeBudget} onChange={(event) => set('probeBudget', Number(event.target.value))} /></Field></div>
+            <div className="grow"><Field label="默认测速预算（条）" hint="触发时未显式指定预算时使用；按未测 / 到期复检自动折算"><input className="input" inputMode="numeric" value={form.probeBudget} onChange={(event) => set('probeBudget', Number(event.target.value))} /></Field></div>
             <div className="grow"><Field label="并发数"><input className="input" inputMode="numeric" value={form.concurrency} onChange={(event) => set('concurrency', Number(event.target.value))} /></Field></div>
+          </div>
+          <div className="row">
+            <div className="grow"><Field label="可用线路复测间隔（小时）" hint="每次探测通过自动 +3 天，上限 30 天"><input className="input" inputMode="numeric" value={form.probeAliveHours ?? 360} onChange={(event) => set('probeAliveHours', Number(event.target.value))} /></Field></div>
+            <div className="grow"><Field label="精品线路复测间隔（小时）" hint="默认 168 小时（7 天）"><input className="input" inputMode="numeric" value={form.probePremiumHours ?? 168} onChange={(event) => set('probePremiumHours', Number(event.target.value))} /></Field></div>
+            <div className="grow"><Field label="每频道每轮最多探测" hint="防止单个大频道吃掉整轮预算"><input className="input" inputMode="numeric" value={form.probePerChannel ?? 24} onChange={(event) => set('probePerChannel', Number(event.target.value))} /></Field></div>
           </div>
           <div className="row">
             <div className="grow"><Field label="超时 (ms)"><input className="input" inputMode="numeric" value={form.probeTimeoutMs} onChange={(event) => set('probeTimeoutMs', Number(event.target.value))} /></Field></div>
             <div className="grow"><Field label="预热丢弃字节"><input className="input" inputMode="numeric" value={form.warmupBytes} onChange={(event) => set('warmupBytes', Number(event.target.value))} /></Field></div>
             <div className="grow"><Field label="采样时长 (ms)"><input className="input" inputMode="numeric" value={form.sampleMs} onChange={(event) => set('sampleMs', Number(event.target.value))} /></Field></div>
+          </div>
+          <div className="row">
+            <div className="grow"><Field label="ffprobe 每轮补全条数" hint="只补 alive 且缺分辨率的线路；0 = 关闭"><input className="input" inputMode="numeric" value={form.ffprobeLimit ?? 150} onChange={(event) => set('ffprobeLimit', Number(event.target.value))} /></Field></div>
+            <div className="grow"><Field label="发布前冷却（秒）" hint="批量探测后等待一段时间再上传，避免边缘限速"><input className="input" inputMode="numeric" value={Math.round((form.publishCooldownMs ?? 60_000) / 1000)} onChange={(event) => set('publishCooldownMs', Math.max(0, Number(event.target.value) || 0) * 1000)} /></Field></div>
+            <div className="grow"><Field label="线路留存天数" hint="源刷新不再列出后，已测线路仍保留的天数"><input className="input" inputMode="numeric" value={form.lineRetentionDays ?? 30} onChange={(event) => set('lineRetentionDays', Number(event.target.value))} /></Field></div>
           </div>
           <Field label="失效线路复活天数" hint="连续 3 次失败判定失效，到期后允许复测一次">
             <input className="input" inputMode="numeric" value={form.deadReviveDays} onChange={(event) => set('deadReviveDays', Number(event.target.value))} />
