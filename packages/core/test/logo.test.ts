@@ -22,6 +22,8 @@ describe('channelLogo', () => {
       .toBe('https://host/api/public/logo/CCTV1.png');
     expect(channelLogo({ logo: 'https://live.fanmingming.com/tv/CCTV1.png', tvgId: 'CCTV1', name: 'CCTV1' }, null, 'https://host/api/public/logo'))
       .toBe('https://host/api/public/logo/CCTV1.png');
+    expect(channelLogo({ logo: 'https://cdn.jsdelivr.net/gh/fanmingming/live@main/tv/CCTV1.png', tvgId: 'CCTV1', name: 'CCTV1' }, null, 'https://host/api/public/logo'))
+      .toBe('https://host/api/public/logo/CCTV1.png');
     expect(channelLogo({ logo: 'https://example.com/custom.png', tvgId: 'CCTV1', name: 'CCTV1' }, null, 'https://host/api/public/logo'))
       .toBe('https://example.com/custom.png');
   });

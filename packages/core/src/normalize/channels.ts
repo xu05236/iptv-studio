@@ -409,18 +409,22 @@ export class ChannelRegistry {
   }
 }
 
+/** Generated logo URLs from the known packs can be replaced by the proxy. */
+const GENERATED_LOGO = /(fanmingming|live-fanmingming|bxtww\/live|bonnie180\/live-m3u8|vircloud\/TVLogo|live\.fanmingming)/i;
+
 /** Build a logo URL only when the channel has no explicit logo. */
 export function channelLogo(
   channel: { logo?: string | null; tvgId?: string | null; name: string },
   baseUrl?: string | null,
   proxyBase?: string | null,
 ): string | undefined {
-  if (channel.logo && !/live\.fanmingming\.com/i.test(channel.logo)) {
+  const generated = Boolean(channel.logo && GENERATED_LOGO.test(channel.logo));
+  if (proxyBase && channel.tvgId && (!channel.logo || generated)) {
+    return `${proxyBase.replace(/\/+$/, '')}/${encodeURIComponent(channel.tvgId)}.png`;
+  }
+  if (channel.logo && !generated) {
     // Custom/uploaded logo: keep the operator's explicit choice.
     return channel.logo;
-  }
-  if (proxyBase && channel.tvgId) {
-    return `${proxyBase.replace(/\/+$/, '')}/${encodeURIComponent(channel.tvgId)}.png`;
   }
   if (channel.logo) {
     // Old data may still point at the retired fanmingming host.
