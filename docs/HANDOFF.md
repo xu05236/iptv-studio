@@ -1061,3 +1061,35 @@ Actions 手动入口：
 - `/help` 返回 200
 - web bundle 已包含「信誉分 0–100」「.../100」「规则说明（信誉分」「这里解释频道线路怎么来的」
 - 73 个测试通过
+
+---
+
+# 2026-10-30 下午 · 修复台标只显示首字
+
+## 根因
+
+1. `buildRegistry` 用 D1 频道行覆盖内置频道；D1 的 `tvg_id/logo` 大量为 NULL，把内置 `tvgId` 也覆盖掉了
+2. `buildArtifacts` 的 index/catalog/shards 只复制 `channel.logo` 原值，没有调用 `channelLogo()` 生成 URL
+3. 默认 `logoBaseUrl` 的 `live.fanmingming.com` 已不可用
+4. 前台 `ChannelLogo` 拿不到 `src`/`tvgId`，只能显示首字
+
+## 修复
+
+- `buildRegistry`：`tvg_id ?? 内置 tvgId`、`logo ?? 内置 logo`，不再让 NULL 列覆盖内置值
+- `buildArtifacts`：channel/index/summary 统一用 `channelLogo(channel, settings.logoBaseUrl)` 生成 logo
+- `channelLogo()`：显式旧 fanmingming 地址自动改写到 jsDelivr；默认 base 也走 jsDelivr
+- 前台原有 raw / jsDelivr / gcore 多源回退保留
+
+## 验证
+
+- 重新 publish（run `41012991618` success，index `06:16:08Z`）
+- `/api/public/channels` 已返回 `tvgId` 和 logo，例如：
+  - `CCTV12` → `https://cdn.jsdelivr.net/gh/fanmingming/live@main/tv/CCTV12.png`
+  - 实测该 URL `200 image/png 13627` 字节
+- 新增 `channelLogo` 单测（旧域名改写、显式 logo 保留、无 tvg-id 返回 undefined）
+- 76 个测试通过
+
+## 说明
+
+- 台标覆盖依赖 fanmingming 台标包；个别地方台/自定义频道没有对应 `tvgId` 时仍会回退首字
+- D1 频道行会在下次 publish 的 `sync/channels` 中补上 `tvg_id/logo`（upsert 使用 COALESCE）
