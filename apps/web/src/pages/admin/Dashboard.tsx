@@ -160,6 +160,16 @@ export function Dashboard() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const savePhasePlan = useMutation({
+    mutationFn: (patch: { probePhaseOrder?: string; probePausedPhases?: string }) =>
+      api.put<{ settings: unknown }>('/api/admin/settings', patch),
+    onSuccess: () => {
+      show('分批阶段已更新');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'tasks'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const refreshUsage = useMutation({
     mutationFn: () => api.post<{ ok: boolean; message: string }>('/api/admin/usage/refresh'),
     onSuccess: async (result) => {
@@ -209,6 +219,25 @@ export function Dashboard() {
   const recentTasks = taskItems
     .filter((task) => task.status === 'done' || task.status === 'failed' || task.status === 'cancelled')
     .slice(0, 5);
+
+  const movePhase = (index: number, delta: number): void => {
+    const board = tasks.data;
+    if (!board) return;
+    const ids = board.phases.map((phase) => phase.id);
+    const target = index + delta;
+    if (target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+    savePhasePlan.mutate({ probePhaseOrder: ids.join(',') });
+  };
+
+  const togglePhase = (id: TaskPhase['id']): void => {
+    const board = tasks.data;
+    if (!board) return;
+    const paused = new Set(board.phases.filter((phase) => phase.paused).map((phase) => phase.id));
+    if (paused.has(id)) paused.delete(id);
+    else paused.add(id);
+    savePhasePlan.mutate({ probePausedPhases: [...paused].join(',') });
+  };
 
   if (isLoading) {
     return (
@@ -406,6 +435,34 @@ export function Dashboard() {
                 立即发布
               </Button>
             </div>
+
+            <details style={{ marginTop: 8 }}>
+              <summary className="caption" style={{ cursor: 'pointer' }}>分批阶段设置（顺序 / 暂停）</summary>
+              <div className="list">
+                {tasks.data.phases.map((phase, index) => (
+                  <div className="list__row" key={phase.id}>
+                    <div className="grow">
+                      <div className="row" style={{ gap: 6 }}>
+                        <span>{phase.label}</span>
+                        {phase.paused ? <Badge tone="orange">已暂停</Badge> : null}
+                      </div>
+                      <div className="caption">{formatNumber(phase.count)} 条 · 约 {phase.estimatedBatches} 批</div>
+                    </div>
+                    <div className="row" style={{ gap: 4 }}>
+                      <Button size="sm" variant="ghost" disabled={index === 0 || savePhasePlan.isPending} onClick={() => movePhase(index, -1)} title="提升阶段">
+                        <ArrowUp size={14} />
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={index === tasks.data!.phases.length - 1 || savePhasePlan.isPending} onClick={() => movePhase(index, 1)} title="延后阶段">
+                        <ArrowDown size={14} />
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={savePhasePlan.isPending} onClick={() => togglePhase(phase.id)} title={phase.paused ? '恢复阶段' : '暂停阶段'}>
+                        {phase.paused ? <Play size={14} /> : <Pause size={14} />}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
           </>
         ) : (
           <Skeleton height={90} radius={12} />
