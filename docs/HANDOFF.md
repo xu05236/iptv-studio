@@ -601,3 +601,13 @@ Actions 手动入口：
 - 下一轮 collect 验证：源清理后 run 为 success、per-sub EPG 恢复 2.5 天
 - 当前 per-sub EPG 是 export 后的 24h 版本，下次 collect 会恢复完整
 - P2：墓碑自动清理、collect/probe/publish 拆分、pool 轻量测活、`premium_backup` 模式
+
+## 候选任务（2026-10-30，均不耗采集额度，等用户选择）
+
+1. `premium_backup` 订阅模式：精品优先、备用兜底渲染（目前只有 custom）
+2. 墓碑自动过期清理：dead 线路按天数自动删除，下轮发布生效
+3. EPG 映射批量导入/按分组：补 484 个缺节目单的 alive 频道，只写 D1
+4. 清理旧 64 桶 key：48 次 KV delete，释放存储（16 桶已完整）
+5. 前端体验：频道详情、订阅页、移动端
+
+> 用户决定：暂不提高预算、暂不跑 collect；先做上面这些不耗额度的任务。
