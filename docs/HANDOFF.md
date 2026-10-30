@@ -1429,3 +1429,18 @@ P2-4：任务阶段 UI（阶段顺序/暂停），然后是 P2-5 大功能、P2-
 - 代价：每次 publish 多 5 次 KV 写（4 个归档 + manifest）
 
 下一步：P2-5-4 非 HLS 分辨率。
+
+---
+
+# 2026-10-30 晚 · P2-5-4 非 HLS 分辨率
+
+- 之前 RTMP/RTSP 被两层过滤掉：HTTP probe 不处理，ffprobe 只收 `https?:`
+- `enrichResolutions` 现在：
+  - HTTP/HLS：仍只处理 alive 且缺分辨率
+  - RTMP/RTMPS/RTSP：不再要求 alive，直接 ffprobe
+  - ffprobe 成功 → 写 width/height/resolution，并标记 alive、failCount=0、刷新 lastProbeAt
+- 依赖 runner 环境有 ffprobe（Actions 已安装 ffmpeg）；本地 Windows 未装则跳过
+- 说明：HTTP TS 也由 ffprobe 覆盖；没有实现纯 TS PMT/SPS 手工解析
+- 91 个测试通过
+
+下一步：P2-5-3 多地区探测。
