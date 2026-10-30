@@ -1386,3 +1386,16 @@ Actions 手动入口：
 ## 下一步
 
 P2-4：任务阶段 UI（阶段顺序/暂停），然后是 P2-5 大功能、P2-2 EPG。
+
+---
+
+# 2026-10-30 晚 · P2-4 阶段控制 UI
+
+- 概览「检测任务」底部新增可折叠「分批阶段设置（顺序 / 暂停）」
+- 每个阶段可上移/下移，调整 `probePhaseOrder`
+- 可暂停/恢复单个阶段，写入 `probePausedPhases`
+- 调度器 `runProbeWatch` 已按暂停阶段跳过；runner 按顺序选阶段
+- 验证：设置 `quarantine,pending,rejected` + 暂停 `rejected` 后，任务板顺序/暂停状态正确；随后恢复默认
+- web bundle 已包含「分批阶段设置」
+
+下一步：P2-5 大功能，最后 P2-2 EPG 剩余频道。
