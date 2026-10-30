@@ -299,7 +299,8 @@ adminRoutes.put('/settings', async (c) => {
   if (!patch) return fail('请求体不合法');
   const allowed: Array<keyof AppSettings> = [
     'logoBaseUrl', 'maxLinesPerChannel', 'maxLinesPerSource', 'compensate', 'keepSuspect', 'deadReviveDays',
-    'probeBudget', 'concurrency', 'probeTimeoutMs', 'warmupBytes', 'sampleMs', 'epgUrls', 'regionSuffix',
+    'probeBudget', 'concurrency', 'probeTimeoutMs', 'probeAliveHours', 'probePremiumHours', 'probePerChannel',
+    'ffprobeLimit', 'publishCooldownMs', 'lineRetentionDays', 'warmupBytes', 'sampleMs', 'epgUrls', 'regionSuffix',
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback',
   ];
   const clean: Partial<AppSettings> = {};
