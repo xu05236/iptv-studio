@@ -57,11 +57,15 @@ artifactRoutes.get('/sub/:file', async (c) => {
     config.format = parsed.format;
   }
 
-  // Fast path: the runner pre-renders every subscription (zero CPU here).
+  // Pool-driven subscriptions are rendered live so manual pool moves apply
+  // immediately; a prebuilt file from an older run would shadow that.
+  const poolDriven = !config.lineKeys?.length && (config.poolMode === 'premium' || config.poolMode === 'premium_backup');
+
+  // Fast path: the runner pre-renders catalog subscriptions (zero CPU here).
   const prebuilt = config.format === 'diyp'
     ? `out/sub-${config.id}.diyp`
     : `out/sub-${config.id}.${extensionFor(config.format)}`;
-  const prebuiltResponse = await serveArtifact(c, prebuilt, {
+  const prebuiltResponse = poolDriven ? null : await serveArtifact(c, prebuilt, {
     contentType: contentTypeFor(config.format),
     filename: `${encodeURIComponent(config.name)}.${extensionFor(config.format)}`,
     maxAge: 60,
@@ -83,10 +87,13 @@ artifactRoutes.get('/sub/:file', async (c) => {
   }
 
   // Self-heal: persist the rendered playlist so the next request is a static
-  // KV read instead of a full catalog parse.
-  c.executionCtx.waitUntil(
-    putArtifact(c.env, prebuilt, rendered.body, contentTypeFor(config.format)).catch(() => undefined),
-  );
+  // KV read instead of a full catalog parse. Pool subscriptions are skipped:
+  // their content changes with overrides, so the snapshot must stay live.
+  if (!poolDriven) {
+    c.executionCtx.waitUntil(
+      putArtifact(c.env, prebuilt, rendered.body, contentTypeFor(config.format)).catch(() => undefined),
+    );
+  }
 
   const response = new Response(rendered.body, {
     status: 200,

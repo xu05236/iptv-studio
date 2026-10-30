@@ -1,6 +1,7 @@
 import {
   BUILTIN_CHANNELS,
   ChannelRegistry,
+  buildPoolSnapshot,
   classifyGroup,
   compareLines,
   diffCatalogs,
@@ -320,12 +321,19 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       });
 
       const logKey = await writeLog(store, runId, logger);
+      const poolSnapshot = buildPoolSnapshot({
+        lines,
+        channels: registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: seed.group, tvgId: seed.tvgId, logo: seed.logo })),
+        maxLinesPerChannel: settings.maxLinesPerChannel,
+        generatedAt: output.catalog.generatedAt,
+      });
       await publish(store, output, {
         lines,
         epgXml: epg.xml || undefined,
         log: logger.toJSONL(),
         runId,
         generatedAt: output.catalog.generatedAt,
+        poolSnapshot,
       }, logger);
       await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, epg.data, logger);
 
@@ -436,7 +444,13 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       disabledChannelIds: new Set(remote.channels.filter((row) => row.enabled === false || row.enabled === 0).map((row) => row.id)),
     });
     const logKey = await writeLog(store, runId, logger);
-    await publish(store, output, { lines, log: logger.toJSONL(), runId, generatedAt: output.catalog.generatedAt }, logger);
+    const poolSnapshot = buildPoolSnapshot({
+      lines,
+      channels: registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: seed.group, tvgId: seed.tvgId, logo: seed.logo })),
+      maxLinesPerChannel: settings.maxLinesPerChannel,
+      generatedAt: output.catalog.generatedAt,
+    });
+    await publish(store, output, { lines, log: logger.toJSONL(), runId, generatedAt: output.catalog.generatedAt, poolSnapshot }, logger);
     // Do not rebuild the per-subscription XMLTV from the compact 24h guide:
     // that truncated players' schedules from 2.5 days to one day. Leaving the
     // existing files alone keeps the full guide written by the last collect.

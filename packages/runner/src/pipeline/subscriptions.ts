@@ -21,6 +21,7 @@ interface SubscriptionRow {
   excludeGroups: string[];
   channelIds: string[];
   line_keys?: string;
+  pool_mode?: string;
   min_resolution: string;
   min_speed_kbps: number;
   protocols: string[];
@@ -59,6 +60,11 @@ export async function publishSubscriptions(
     }
     if (customKeys.length) {
       logger.info('自定义订阅由 Worker 按 line_keys 动态渲染', { id: sub.id });
+      continue;
+    }
+    const poolMode = sub.pool_mode ?? 'premium';
+    if (poolMode === 'premium' || poolMode === 'premium_backup') {
+      logger.info('池驱动订阅由 Worker 按 state/pool.json 动态渲染', { id: sub.id, mode: poolMode });
       continue;
     }
     const selected = catalog.items

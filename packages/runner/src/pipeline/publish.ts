@@ -13,6 +13,7 @@ import {
   type ChannelSummary,
   type EpgData,
   type LineEntry,
+  type PoolSnapshot,
   type Rule,
 } from '@iptv/core';
 import type { ArtifactStore } from '../store.js';
@@ -186,7 +187,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
 export async function publish(
   store: ArtifactStore,
   output: BuildOutput,
-  options: { lines: LineEntry[]; epgXml?: string; log: string; runId: string; generatedAt: string },
+  options: { lines: LineEntry[]; epgXml?: string; log: string; runId: string; generatedAt: string; poolSnapshot?: PoolSnapshot },
   logger: RunLogger,
 ): Promise<{ objects: number }> {
   let objects = 0;
@@ -207,6 +208,12 @@ export async function publish(
   }
   await store.put('state/guide.json', JSON.stringify(output.guide), json);
   await store.put('state/now.json', JSON.stringify({ generatedAt: options.generatedAt, channels: output.now }), json);
+  // Subscriptions render from this compact snapshot (tested-alive lines only):
+  // it keeps the Worker's hot path small and carries channel metadata for M3U.
+  if (options.poolSnapshot) {
+    await store.put('state/pool.json', JSON.stringify(options.poolSnapshot), json);
+    objects++;
+  }
   const probeItems = output.shards.flatMap((shard) =>
     shard.data.lines.map((line) => ({
       key: line.key,

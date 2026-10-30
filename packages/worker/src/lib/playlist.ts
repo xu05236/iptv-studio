@@ -1,19 +1,21 @@
 import {
   buildPlaylist,
+  compareLines,
   hashId,
   selectLines,
   toExportChannels,
   type ChannelConfig,
   type LineEntry,
   type PlaylistFormat,
+  type PoolSnapshot,
   type Quality,
   type SubscriptionSpec,
 } from '@iptv/core';
 import type { Env } from '../env.js';
-import { listChannels, type SubscriptionRow } from '../db.js';
+import { listChannels, listLineOverrides, type LineOverrideRow, type SubscriptionRow } from '../db.js';
 import { getJson } from './store.js';
 import { parseJsonField } from './http.js';
-import { loadCatalog, type ExportCatalog } from './catalog.js';
+import { loadCatalog, loadPoolSnapshot, type ExportCatalog } from './catalog.js';
 
 export interface SubscriptionConfig extends SubscriptionSpec {
   updatedAt?: string;
@@ -98,6 +100,78 @@ export function playlistEtag(catalog: ExportCatalog, config: SubscriptionConfig)
   return `W/"${catalog.runId}-${fingerprint}"`;
 }
 
+/**
+ * Render a pool-driven subscription from the compact pool snapshot.
+ * Manual pool moves (line_overrides) win over the automatic classification, so
+ * moving a line to backup/rejected takes effect on the next request without
+ * waiting for a collect.
+ */
+export function buildFromPool(
+  snapshot: PoolSnapshot,
+  overrides: LineOverrideRow[],
+  config: SubscriptionConfig,
+  options: { logoBaseUrl?: string | null; epgUrl?: string | null } = {},
+): { body: string; channels: number; lines: number } {
+  const overrideMap = new Map(overrides.map((row) => [row.line_key, row.pool]));
+  const rows: Array<{ channel: ChannelConfig; lines: LineEntry[] }> = [];
+
+  for (const entry of Object.values(snapshot.channels)) {
+    const channel: ChannelConfig = {
+      id: entry.channel.id,
+      name: entry.channel.name,
+      group: entry.channel.group,
+      tvgId: entry.channel.tvgId ?? undefined,
+      logo: entry.channel.logo ?? undefined,
+      aliases: [],
+    };
+    if (!channelMatches(channel, config)) continue;
+
+    const premium: LineEntry[] = [];
+    const backup: LineEntry[] = [];
+    const add = (line: LineEntry, autoPool: 'premium' | 'backup' | 'candidate'): void => {
+      const pool = overrideMap.get(line.key) ?? autoPool;
+      if (pool === 'premium') premium.push(line);
+      else if (pool === 'backup') backup.push(line);
+    };
+    for (const line of entry.premium) add(line, 'premium');
+    for (const line of entry.backup) add(line, 'backup');
+    for (const line of entry.candidate) add(line, 'candidate');
+
+    const candidates = config.poolMode === 'premium_backup' ? [...premium, ...backup] : premium;
+    if (!candidates.length) continue;
+    candidates.sort(compareLines);
+    const lines = selectLines(candidates, {
+      maxLines: config.maxLinesPerChannel,
+      maxPerSource: 3,
+      minQuality: config.minResolution,
+      minSpeedKbps: config.minSpeedKbps,
+      protocols: config.protocols.length ? config.protocols : undefined,
+      compensate: false,
+      keepSuspect: false,
+    });
+    if (!lines.length) continue;
+    rows.push({ channel, lines });
+  }
+
+  const exportChannels = toExportChannels(rows, {
+    logoBaseUrl: options.logoBaseUrl ?? null,
+    showRegionSuffix: config.showRegionSuffix,
+  });
+  const body = buildPlaylist(exportChannels, config.format, {
+    epgUrl: options.epgUrl ?? undefined,
+    showRegionSuffix: config.showRegionSuffix,
+    headerComment: `iptv-studio · ${config.name}`,
+  });
+  return { body, channels: exportChannels.length, lines: exportChannels.reduce((sum, channel) => sum + channel.lines.length, 0) };
+}
+
+/** Pool renders change whenever the snapshot or a manual override changes. */
+export function poolEtag(snapshot: PoolSnapshot, overrides: LineOverrideRow[], config: SubscriptionConfig): string {
+  const overrideVersion = overrides.reduce((max, row) => (row.updated_at > max ? row.updated_at : max), '');
+  const fingerprint = hashId(`${snapshot.generatedAt}:${overrideVersion}:${config.updatedAt ?? ''}:${config.poolMode}`, 16);
+  return `W/"pool-${fingerprint}"`;
+}
+
 export async function renderSubscription(
   env: Env,
   config: SubscriptionConfig,
@@ -146,6 +220,19 @@ export async function renderSubscription(
       lines: exportChannels.reduce((sum, channel) => sum + channel.lines.length, 0),
     };
   }
+
+  // Pool-driven subscriptions render from the tested-alive snapshot; the
+  // catalog remains the fallback until the first publish writes pool.json.
+  const poolMode = config.poolMode ?? 'premium';
+  if (poolMode === 'premium' || poolMode === 'premium_backup') {
+    const snapshot = await loadPoolSnapshot(env);
+    if (snapshot) {
+      const overrides = await listLineOverrides(env);
+      const rendered = buildFromPool(snapshot, overrides, config, { epgUrl });
+      return { ...rendered, etag: poolEtag(snapshot, overrides, config) };
+    }
+  }
+
   const catalog = await loadCatalog(env);
   if (!catalog) return null;
   const rendered = buildFromCatalog(catalog, config, { logoBaseUrl: undefined, epgUrl });

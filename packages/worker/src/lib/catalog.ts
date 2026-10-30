@@ -1,4 +1,4 @@
-import type { ChannelIndex, ChannelConfig, LineEntry } from '@iptv/core';
+import type { ChannelIndex, ChannelConfig, LineEntry, PoolSnapshot } from '@iptv/core';
 import { bucketOf } from '@iptv/core';
 import type { Env } from '../env.js';
 import { getJson } from './store.js';
@@ -52,4 +52,9 @@ export async function loadChannelShard(env: Env, channelId: string): Promise<Cha
 
 export async function loadGuide(env: Env): Promise<unknown> {
   return getJson<unknown>(env, 'state/guide.json');
+}
+
+/** Compact tested-alive lines written by the runner, used by pool subscriptions. */
+export async function loadPoolSnapshot(env: Env): Promise<PoolSnapshot | null> {
+  return getJson<PoolSnapshot>(env, 'state/pool.json');
 }
