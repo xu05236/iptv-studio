@@ -1,8 +1,9 @@
 import type { AppSettings } from '@iptv/core';
 import type { Env } from '../env.js';
 import { audit, loadSettings } from '../db.js';
-import { dispatchWorkflow, workflowRunStatus } from './github.js';
+import { workflowRunStatus } from './github.js';
 import { getJson } from './store.js';
+import { createTask, dispatchNext } from './tasks.js';
 
 /** Beijing is UTC+8 with no DST; the scheduler stores local HH:mm and matches in UTC. */
 const BEIJING_OFFSET_MS = 8 * 3_600_000;
@@ -130,8 +131,10 @@ export async function runScheduler(env: Env): Promise<void> {
   }
   if (!due.length) {
     const at = Date.now();
-    if (await runFetchWatch(env, settings, at)) return;
-    await runProbeWatch(env, settings, at);
+    let enqueued = false;
+    if (await runFetchWatch(env, settings, at)) enqueued = true;
+    if (await runProbeWatch(env, settings, at)) enqueued = true;
+    if (enqueued) await dispatchNext(env);
     return;
   }
 
@@ -154,9 +157,8 @@ export async function runScheduler(env: Env): Promise<void> {
     running = Array.isArray(runs) && runs.some((run) => run.status === 'queued' || run.status === 'in_progress');
   }
 
-  let dispatched = false;
+  let enqueued = false;
   for (const { config, scheduledAt } of due) {
-    if (dispatched) break;
     if (writes >= 920) {
       await record(config, scheduledAt, 'skipped: KV quota');
       continue;
@@ -166,24 +168,21 @@ export async function runScheduler(env: Env): Promise<void> {
       continue;
     }
     const budget = Math.max(1, Number(settings.probeBudget) || 1200);
-    const result = await dispatchWorkflow(env, {
-      command: config.command,
-      force: 'false',
-      budget: String(budget),
+    const task = await createTask(env, {
+      type: config.command,
+      source: 'schedule',
+      priority: 50,
+      payload: { budget: String(budget) },
     });
-    await record(config, scheduledAt, result.ok ? 'dispatched' : `failed: ${result.message}`);
-    await audit(env, 'scheduler', `schedule.${config.command}`, 'github', {
-      scheduledAt: new Date(scheduledAt).toISOString(),
-      budget,
-      ...result,
-    });
-    dispatched = result.ok;
+    await record(config, scheduledAt, 'queued');
+    await audit(env, 'scheduler', `schedule.${config.command}`, task.id);
+    enqueued = true;
   }
 
-  if (dispatched) return;
   const at = Date.now();
-  if (await runFetchWatch(env, settings, at)) return;
-  await runProbeWatch(env, settings, at);
+  if (await runFetchWatch(env, settings, at)) enqueued = true;
+  if (await runProbeWatch(env, settings, at)) enqueued = true;
+  if (enqueued) await dispatchNext(env);
 }
 
 interface IntervalState {
@@ -228,13 +227,13 @@ async function runFetchWatch(env: Env, settings: AppSettings, now: number): Prom
     await recordInterval(env, 'state/fetch-schedule.json', now, now + 30 * 60_000, `skipped: ${guard}`);
     return false;
   }
-  const result = await dispatchWorkflow(env, { command: 'fetch', force: 'false' });
-  await recordInterval(env, 'state/fetch-schedule.json', now, now + intervalMs, result.ok ? 'dispatched' : `failed: ${result.message}`);
-  await audit(env, 'scheduler', 'schedule.fetch', 'github', { ...result });
-  return result.ok;
+  const task = await createTask(env, { type: 'fetch', source: 'schedule', priority: 50, payload: {} });
+  await recordInterval(env, 'state/fetch-schedule.json', now, now + intervalMs, 'queued');
+  await audit(env, 'scheduler', 'schedule.fetch', task.id);
+  return true;
 }
 
-/** Batched probe scheduler: dispatch only while unpaused phases still have work. */
+/** Batched probe scheduler: enqueue only while unpaused phases still have work. */
 async function runProbeWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
   if (!settings.autoProbeEnabled) return false;
   const stats = await getJson<Record<string, number>>(env, 'state/pool-stats.json');
@@ -250,8 +249,15 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
     await recordInterval(env, 'state/probe-schedule.json', now, now + 15 * 60_000, `skipped: ${guard}`);
     return false;
   }
-  const result = await dispatchWorkflow(env, { command: 'probe-batch', force: 'false' });
-  await recordInterval(env, 'state/probe-schedule.json', now, now + intervalMs, result.ok ? 'dispatched' : `failed: ${result.message}`);
-  await audit(env, 'scheduler', 'schedule.probe-batch', 'github', { ...result });
-  return result.ok;
+  const task = await createTask(env, {
+    type: 'probe-batch',
+    source: 'schedule',
+    priority: 50,
+    payload: {},
+    total: Math.max(0, Number(settings.probeBatchSize) || 1200),
+    unit: 'lines',
+  });
+  await recordInterval(env, 'state/probe-schedule.json', now, now + intervalMs, 'queued');
+  await audit(env, 'scheduler', 'schedule.probe-batch', task.id);
+  return true;
 }

@@ -113,7 +113,7 @@ export function Probe() {
 
   const dispatch = useMutation({
     mutationFn: (input: { command: 'collect' | 'export' | 'epg' | 'probe-lines'; force?: boolean; sourceId?: string; lineKeys?: string[] }) =>
-      api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', input),
+      api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', { ...input, source: 'detection' }),
     onSuccess: (res) => show(res.message),
     onError: (error: Error) => show(error.message, 'error'),
   });

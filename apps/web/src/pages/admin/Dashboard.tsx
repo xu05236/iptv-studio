@@ -44,15 +44,61 @@ interface TaskPhase {
   paused: boolean;
 }
 
+interface TaskItem {
+  id: string;
+  type: string;
+  source: 'schedule' | 'manual' | 'detection' | 'source' | 'cli';
+  status: 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+  priority: number;
+  payload: Record<string, string>;
+  progress: { done: number; total: number; unit: string };
+  message?: string;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+const TASK_SOURCE_LABEL: Record<TaskItem['source'], string> = {
+  schedule: '定时',
+  manual: '手动',
+  detection: '检测中心',
+  source: '新增源',
+  cli: 'CLI',
+};
+
+const TASK_TYPE_LABEL: Record<string, string> = {
+  collect: '全量采集',
+  fetch: '抓源',
+  'probe-batch': '分批探测',
+  'probe-lines': '指定线路探测',
+  publish: '发布',
+  liveness: '池内测活',
+  export: '重建导出',
+  epg: '更新 EPG',
+};
+
 interface TaskBoard {
   batchSize: number;
   intervalHours: number;
   phases: TaskPhase[];
+  items?: TaskItem[];
   schedules: {
     probe: { enabled: boolean; nextAt: string | null; lastRunAt: string | null; result: string | null };
     fetch: { enabled: boolean; intervalDays: number; nextAt: string | null; lastRunAt: string | null; result: string | null };
     publish: { enabled: boolean; times: string; nextAt: string | null; lastRunAt: string | null; result: string | null };
   };
+}
+
+function taskEta(task: TaskItem): string {
+  if (!task.startedAt) return '等待开始';
+  const elapsedSec = Math.max(1, (Date.now() - Date.parse(task.startedAt)) / 1000);
+  const { done, total } = task.progress;
+  if (total > 0 && done > 0) {
+    const remaining = Math.max(0, total - done);
+    const etaSec = remaining / (done / elapsedSec);
+    return etaSec > 0 ? `预计剩余 ${Math.max(1, Math.ceil(etaSec / 60))} 分钟` : '即将完成';
+  }
+  return `已运行 ${Math.max(0, Math.floor(elapsedSec / 60))} 分钟`;
 }
 
 export function Dashboard() {
@@ -94,20 +140,19 @@ export function Dashboard() {
     queryFn: () => api.get<TaskBoard>('/api/admin/tasks'),
   });
 
-  const saveTaskPlan = useMutation({
-    mutationFn: (patch: { probePhaseOrder?: string; probePausedPhases?: string }) =>
-      api.put<{ settings: unknown }>('/api/admin/settings', patch),
-    onSuccess: () => {
-      show('检测任务已更新');
+  const runTask = useMutation({
+    mutationFn: (body: { command: 'probe-batch' | 'fetch' | 'publish'; phase?: string }) =>
+      api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', body),
+    onSuccess: (result) => {
+      show(result.message);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'tasks'] });
-      void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
 
-  const runTask = useMutation({
-    mutationFn: (body: { command: 'probe-batch' | 'fetch' | 'publish'; phase?: string }) =>
-      api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', body),
+  const taskAction = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: string }) =>
+      api.patch<{ message: string }>(`/api/admin/tasks/${id}`, { action }),
     onSuccess: (result) => {
       show(result.message);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'tasks'] });
@@ -156,24 +201,14 @@ export function Dashboard() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
-  const movePhase = (index: number, delta: number): void => {
-    const board = tasks.data;
-    if (!board) return;
-    const ids = board.phases.map((phase) => phase.id);
-    const target = index + delta;
-    if (target < 0 || target >= ids.length) return;
-    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
-    saveTaskPlan.mutate({ probePhaseOrder: ids.join(',') });
-  };
-
-  const togglePhase = (id: TaskPhase['id']): void => {
-    const board = tasks.data;
-    if (!board) return;
-    const paused = new Set(board.phases.filter((phase) => phase.paused).map((phase) => phase.id));
-    if (paused.has(id)) paused.delete(id);
-    else paused.add(id);
-    saveTaskPlan.mutate({ probePausedPhases: [...paused].join(',') });
-  };
+  const taskItems = tasks.data?.items ?? [];
+  const runningTask = taskItems.find((task) => task.status === 'running');
+  const queuedTasks = taskItems
+    .filter((task) => task.status === 'queued' || task.status === 'paused')
+    .sort((a, b) => b.priority - a.priority || a.createdAt.localeCompare(b.createdAt));
+  const recentTasks = taskItems
+    .filter((task) => task.status === 'done' || task.status === 'failed' || task.status === 'cancelled')
+    .slice(0, 5);
 
   if (isLoading) {
     return (
@@ -272,50 +307,100 @@ export function Dashboard() {
         </div>
         {tasks.data ? (
           <>
-            <div className="list" style={{ marginTop: 10 }}>
-              {tasks.data.phases.map((phase, index) => (
-                <div className="list__row" key={phase.id}>
+            {runningTask ? (
+              <div className="list" style={{ marginTop: 10 }}>
+                <div className="list__row" style={{ background: 'rgba(52, 199, 89, 0.08)' }}>
                   <div className="grow">
-                    <div className="row" style={{ gap: 6 }}>
-                      <span style={{ fontWeight: 600 }}>{phase.label}</span>
-                      {phase.paused ? <Badge tone="orange">已暂停</Badge> : null}
+                    <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                      <Badge tone="blue">{TASK_SOURCE_LABEL[runningTask.source]}</Badge>
+                      <span style={{ fontWeight: 600 }}>{TASK_TYPE_LABEL[runningTask.type] ?? runningTask.type}</span>
+                      <Badge tone="green">运行中</Badge>
+                    </div>
+                    <div className="caption" style={{ marginTop: 2 }}>
+                      {runningTask.message ?? '执行中'} · {taskEta(runningTask)}
+                      {runningTask.progress.total > 0 ? ` · ${runningTask.progress.done}/${runningTask.progress.total} ${runningTask.progress.unit}` : ''}
+                    </div>
+                    {runningTask.progress.total > 0 ? (
+                      <div className="meter" style={{ marginTop: 6 }}>
+                        <div className="meter__fill" style={{ width: `${Math.min(100, Math.max(1, (runningTask.progress.done / runningTask.progress.total) * 100))}%`, background: 'var(--green)' }} />
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="caption" style={{ marginTop: 10 }}>当前没有运行中的任务</div>
+            )}
+
+            <div className="caption" style={{ marginTop: 10 }}>排队中 · 手动/检测中心优先</div>
+            <div className="list">
+              {queuedTasks.map((task, index) => (
+                <div className="list__row" key={task.id}>
+                  <div className="grow">
+                    <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                      <Badge tone={task.source === 'manual' || task.source === 'detection' ? 'blue' : task.source === 'source' ? 'green' : 'default'}>
+                        {TASK_SOURCE_LABEL[task.source]}
+                      </Badge>
+                      <span style={{ fontWeight: 600 }}>{TASK_TYPE_LABEL[task.type] ?? task.type}</span>
+                      {task.status === 'paused' ? <Badge tone="orange">已暂停</Badge> : null}
+                      {task.payload.phase ? <Badge>{task.payload.phase}</Badge> : null}
                     </div>
                     <div className="caption">
-                      {formatNumber(phase.count)} 条 · 约 {phase.estimatedBatches} 批
-                      {phase.count === 0 ? ' · 已完成' : ''}
+                      {task.progress.total > 0 ? `${task.progress.done}/${task.progress.total} ${task.progress.unit} · ` : ''}
+                      {task.message ?? '等待执行'} · 创建 {timeAgo(task.createdAt)}
                     </div>
                   </div>
                   <div className="row" style={{ gap: 4 }}>
-                    <Button size="sm" variant="ghost" disabled={index === 0} title="提升优先级" onClick={() => movePhase(index, -1)}>
+                    <Button size="sm" variant="ghost" disabled={index === 0} title="提升" onClick={() => taskAction.mutate({ id: task.id, action: 'move-up' })}>
                       <ArrowUp size={14} />
                     </Button>
-                    <Button size="sm" variant="ghost" disabled={index === tasks.data!.phases.length - 1} title="延后" onClick={() => movePhase(index, 1)}>
+                    <Button size="sm" variant="ghost" disabled={index === queuedTasks.length - 1} title="延后" onClick={() => taskAction.mutate({ id: task.id, action: 'move-down' })}>
                       <ArrowDown size={14} />
                     </Button>
-                    <Button size="sm" variant="ghost" title={phase.paused ? '恢复' : '暂停'} onClick={() => togglePhase(phase.id)}>
-                      {phase.paused ? <Play size={14} /> : <Pause size={14} />}
+                    <Button size="sm" variant="ghost" title={task.status === 'paused' ? '恢复' : '暂停'} onClick={() => taskAction.mutate({ id: task.id, action: task.status === 'paused' ? 'resume' : 'pause' })}>
+                      {task.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
                     </Button>
-                    <Button
-                      size="sm"
-                      disabled={phase.paused || phase.count === 0}
-                      loading={runTask.isPending}
-                      onClick={() => runTask.mutate({ command: 'probe-batch', phase: phase.id })}
-                    >
-                      跑一批
-                    </Button>
+                    <Button size="sm" variant="ghost" title="取消" onClick={() => taskAction.mutate({ id: task.id, action: 'cancel' })}>取消</Button>
+                    <Button size="sm" variant="glass" title="插到队首" onClick={() => taskAction.mutate({ id: task.id, action: 'run-now' })}>插队</Button>
                   </div>
                 </div>
               ))}
+              {!queuedTasks.length ? <div className="caption">队列为空</div> : null}
             </div>
+
+            {recentTasks.length ? (
+              <>
+                <div className="caption" style={{ marginTop: 10 }}>最近完成</div>
+                <div className="list">
+                  {recentTasks.map((task) => (
+                    <div className="list__row" key={task.id}>
+                      <div className="grow">
+                        <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                          <Badge tone={task.source === 'manual' || task.source === 'detection' ? 'blue' : 'default'}>{TASK_SOURCE_LABEL[task.source]}</Badge>
+                          <span>{TASK_TYPE_LABEL[task.type] ?? task.type}</span>
+                          <Badge tone={task.status === 'done' ? 'green' : task.status === 'failed' ? 'red' : 'default'}>
+                            {task.status === 'done' ? '完成' : task.status === 'failed' ? '失败' : '取消'}
+                          </Badge>
+                        </div>
+                        <div className="caption">{task.message ?? ''} · {task.finishedAt ? timeAgo(task.finishedAt) : ''}</div>
+                      </div>
+                      {task.status === 'failed' || task.status === 'cancelled' ? (
+                        <Button size="sm" variant="glass" onClick={() => taskAction.mutate({ id: task.id, action: 'retry' })}>重试</Button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+
             <div className="caption" style={{ marginTop: 8 }}>
-              用 ↑↓ 调整阶段优先级；暂停后调度器跳过该阶段。抓源：
-              {tasks.data.schedules.fetch.enabled ? `每 ${tasks.data.schedules.fetch.intervalDays} 天` : '关闭'}
+              阶段余量：{tasks.data.phases.map((phase) => `${phase.label} ${phase.count}`).join(' · ')}。
+              抓源：{tasks.data.schedules.fetch.enabled ? `每 ${tasks.data.schedules.fetch.intervalDays} 天` : '关闭'}
               {tasks.data.schedules.fetch.nextAt ? `（下次 ${formatSnapshot(tasks.data.schedules.fetch.nextAt)}）` : ''}
               <Button size="sm" variant="glass" style={{ marginLeft: 6 }} loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'fetch' })}>
                 立即抓源
               </Button>
-              ；发布：
-              {tasks.data.schedules.publish.enabled ? `每天 ${tasks.data.schedules.publish.times}` : '关闭'}
+              ；发布：{tasks.data.schedules.publish.enabled ? `每天 ${tasks.data.schedules.publish.times}` : '关闭'}
               {tasks.data.schedules.publish.nextAt ? `（下次 ${formatSnapshot(tasks.data.schedules.publish.nextAt)}）` : ''}
               <Button size="sm" variant="glass" style={{ marginLeft: 6 }} loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
                 立即发布

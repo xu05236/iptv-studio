@@ -232,7 +232,7 @@ async function finishRun(
   api: ApiClient,
   report: RunReport,
 ): Promise<void> {
-  await api.post('/api/admin/runs', report).catch((error) => {
+  await api.post('/api/admin/runs', { ...report, taskId: report.taskId ?? process.env.TASK_ID ?? undefined }).catch((error) => {
     console.error('上报运行结果失败', error);
   });
 }
@@ -744,7 +744,9 @@ async function runBatchProbe(): Promise<void> {
       ? new Set<string>()
       : await prefilterLiveness(selected, settings, config.concurrency || settings.concurrency || 32, logger);
     const probeList = selected.filter((line) => !blocked.has(line.key));
-    const summary = await runProbes(probeList, settings, config.concurrency || settings.concurrency, logger);
+    const summary = await runProbes(probeList, settings, config.concurrency || settings.concurrency, logger, (done) => {
+      void reportTaskProgress(api, done, selected.length);
+    });
     const ffprobeLimit = Math.max(0, envNumber('FFPROBE_LIMIT') ?? settings.ffprobeLimit ?? 150);
     if (ffprobeLimit > 0) await enrichResolutions(probeList, ffprobeLimit, logger);
     logger.info('分批探测完成', { phase, checked: selected.length, probed: summary.probed, alive: summary.alive, dead: summary.dead });
@@ -1007,6 +1009,12 @@ async function runLiveness(): Promise<void> {
   }
 }
 
+async function reportTaskProgress(api: ApiClient, done: number, total: number): Promise<void> {
+  const taskId = process.env.TASK_ID;
+  if (!taskId) return;
+  await api.post(`/api/admin/tasks/${taskId}/progress`, { done, total }).catch(() => undefined);
+}
+
 /** Full speed/resolution probe for an explicit set of line keys (detection center). */
 async function runSelectedProbes(): Promise<void> {
   const config = loadConfig();
@@ -1050,7 +1058,9 @@ async function runSelectedProbes(): Promise<void> {
     logger.info('选中线路探测计划', { requested: keys.size, matched: selected.length });
 
     const concurrency = Math.max(1, Math.min(config.concurrency || settings.concurrency || 32, 64));
-    const summary = await runProbes(selected, settings, concurrency, logger);
+    const summary = await runProbes(selected, settings, concurrency, logger, (done) => {
+      void reportTaskProgress(api, done, selected.length);
+    });
     logger.info('选中线路探测完成', { probed: summary.probed, alive: summary.alive, suspect: summary.suspect, dead: summary.dead });
 
     const generatedAt = nowIso();

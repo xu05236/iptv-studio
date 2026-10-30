@@ -25,6 +25,7 @@ import {
 } from '../db.js';
 import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
 import { inferResolution } from '@iptv/core';import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
+import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask } from '../lib/tasks.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
 import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, parseCollectTimes } from '../lib/schedule.js';
@@ -222,7 +223,7 @@ adminRoutes.get('/runs/:id/log', async (c) => {
 });
 
 adminRoutes.post('/runs/dispatch', async (c) => {
-  const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string; lineKeys?: string[] | string; phase?: string }>(c)) ?? {};
+  const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string; lineKeys?: string[] | string; phase?: string; source?: string }>(c)) ?? {};
   const allowedCommands = new Set(['collect', 'export', 'epg', 'fetch', 'probe', 'probe-batch', 'publish', 'liveness', 'probe-lines']);
   const requestedCommand = body.command ?? '';
   const command = allowedCommands.has(requestedCommand) ? requestedCommand : 'collect';
@@ -246,17 +247,32 @@ adminRoutes.post('/runs/dispatch', async (c) => {
     : typeof body.lineKeys === 'string'
       ? body.lineKeys.split(/[\s,]+/).filter(Boolean).slice(0, 50)
       : [];
-  const result = await dispatchWorkflow(c.env, {
-    command,
-    force: force ? 'true' : 'false',
-    budget: String(body.budget ?? defaultBudget),
-    source_id: body.sourceId?.trim() ?? '',
-    line_keys: lineKeys.join(','),
-    phase: typeof body.phase === 'string' && ['pending', 'quarantine', 'rejected'].includes(body.phase) ? body.phase : '',
+  const source = ['manual', 'detection', 'source', 'cli'].includes(body.source ?? '') ? body.source! : 'manual';
+  const task = await createTask(c.env, {
+    type: command,
+    source: source as 'manual' | 'detection' | 'source' | 'cli',
+    priority: source === 'source' ? 80 : 100,
+    payload: {
+      force: force ? 'true' : 'false',
+      budget: String(body.budget ?? defaultBudget),
+      source_id: body.sourceId?.trim() ?? '',
+      line_keys: lineKeys.join(','),
+      phase: typeof body.phase === 'string' && ['pending', 'quarantine', 'rejected'].includes(body.phase) ? body.phase : '',
+    },
+    total: command === 'probe-batch' ? Math.max(0, Number(settings.probeBatchSize) || 1200) : 0,
+    unit: command === 'probe-batch' ? 'lines' : '',
+    message: source === 'detection' ? '检测中心发起' : undefined,
   });
-  await audit(c.env, c.get('actor'), 'run.dispatch', 'github', result);
-  if (!result.ok) return fail(result.message, 400, 'dispatch_failed');
-  return ok({ ...result, kvWrites, warning: kvWrites >= 850 ? `KV 今日已写入 ${kvWrites}/1000，接近上限` : undefined }, 202);
+  const dispatched = await dispatchNext(c.env);
+  await audit(c.env, c.get('actor'), 'run.dispatch', task.id, { command, source, message: dispatched.message });
+  const started = dispatched.task?.id === task.id && dispatched.task.status === 'running';
+  return ok({
+    ok: true,
+    message: started ? '任务已开始' : '任务已加入队列',
+    taskId: task.id,
+    kvWrites,
+    warning: kvWrites >= 850 ? `KV 今日已写入 ${kvWrites}/1000，接近上限` : undefined,
+  }, 202);
 });
 
 /** Runner callbacks: persist the run summary (artifacts already live in R2). */
@@ -264,6 +280,9 @@ adminRoutes.post('/runs', async (c) => {
   const report = await readJson<Record<string, unknown>>(c);
   if (!report || !report['id']) return fail('缺少运行 ID');
   await upsertRun(c.env, report as never);
+  if (typeof report['taskId'] === 'string') {
+    await finishTask(c.env, report['taskId'], report['status'] === 'failed' ? 'failed' : 'done', typeof report['error'] === 'string' ? report['error'] : undefined);
+  }
   return ok({ ok: true });
 });
 
@@ -379,6 +398,7 @@ const TASK_PHASE_LABEL: Record<string, string> = {
 /** Derived detection task board for the overview page. */
 adminRoutes.get('/tasks', async (c) => {
   const settings = await loadSettings(c.env);
+  const taskItems = await loadTasks(c.env);
   const [stats, probeState, fetchState, publishState] = await Promise.all([
     getJson<Record<string, number>>(c.env, 'state/pool-stats.json'),
     getJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/probe-schedule.json'),
@@ -413,6 +433,7 @@ adminRoutes.get('/tasks', async (c) => {
     intervalHours: settings.autoProbeIntervalHours,
     phases,
     stats: stats ?? null,
+    items: taskItems,
     schedules: {
       probe: {
         enabled: settings.autoProbeEnabled,
@@ -436,6 +457,20 @@ adminRoutes.get('/tasks', async (c) => {
       },
     },
   });
+});
+
+adminRoutes.patch('/tasks/:id', async (c) => {
+  const body = await readJson<{ action?: string }>(c);
+  if (!body?.action) return fail('缺少 action');
+  const message = await mutateTask(c.env, c.req.param('id'), body.action);
+  return ok({ message });
+});
+
+adminRoutes.post('/tasks/:id/progress', async (c) => {
+  const body = await readJson<{ done?: number; total?: number }>(c);
+  if (!body || !Number.isFinite(body.done)) return fail('缺少进度');
+  await progressTask(c.env, c.req.param('id'), Number(body.done), Number(body.total) || undefined);
+  return ok({ ok: true });
 });
 
 adminRoutes.get('/feedback', async (c) => {

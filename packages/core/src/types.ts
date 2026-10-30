@@ -380,6 +380,8 @@ export interface RunReport {
   error?: string;
   logKey?: string;
   actor?: string;
+  /** Global task queue id, used to mark the task done/failed. */
+  taskId?: string;
 }
 
 export interface SourceRunStats {

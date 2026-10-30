@@ -13,6 +13,7 @@ import { fail, isoNow, ok, parseJsonField, randomId, readJson } from '../lib/htt
 import { fetchSourceText } from '../lib/fetcher.js';
 import { getText, putText } from '../lib/r2.js';
 import { getJson } from '../lib/store.js';
+import { createTask, dispatchNext } from '../lib/tasks.js';
 
 export const sourceRoutes = new Hono<AppEnv>();
 
@@ -219,9 +220,18 @@ sourceRoutes.post('/', async (c) => {
       refreshHours: Number(input.refresh_hours ?? 24),
     });
     await audit(c.env, c.get('actor'), 'source.create.skip_fetch', id, { url: input.url });
+    const task = await createTask(c.env, {
+      type: 'fetch',
+      source: 'source',
+      priority: 80,
+      payload: { source_id: id },
+      message: '新增源自动抓取',
+    });
+    await dispatchNext(c.env);
     return ok(
       {
         source: await getSource(c.env, id),
+        taskId: task.id,
         summary: { kind: input.kind ?? 'auto', entries: 0, groups: [], sample: [], warnings: ['已跳过预检，采集器会在下一轮抓取'] },
       },
       201,
@@ -291,11 +301,20 @@ sourceRoutes.post('/', async (c) => {
     last_modified: lastModified,
   });
   await audit(c.env, c.get('actor'), 'source.create', id, { name, origin, entries: parsed?.entries.length ?? 0 });
+  const task = await createTask(c.env, {
+    type: 'fetch',
+    source: 'source',
+    priority: 80,
+    payload: { source_id: id },
+    message: '新增源自动抓取',
+  });
+  await dispatchNext(c.env);
 
   if (!parsed) {
     return ok(
       {
         source: await getSource(c.env, id),
+        taskId: task.id,
         summary: {
           kind: input.kind ?? 'auto',
           entries: 0,
@@ -311,6 +330,7 @@ sourceRoutes.post('/', async (c) => {
   return ok(
     {
       source: await getSource(c.env, id),
+      taskId: task.id,
       summary: {
         kind: parsed.kind,
         entries: parsed.entries.length,
