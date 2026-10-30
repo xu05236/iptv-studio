@@ -20,6 +20,7 @@ export interface ArtifactOptions {
   filename?: string;
   cache?: boolean;
   contentEncoding?: string;
+  vary?: string;
 }
 
 function bytesOf(body: string | Uint8Array | ArrayBuffer): Uint8Array {
@@ -114,6 +115,7 @@ export async function serveArtifact(
   if (meta?.updatedAt) headers.set('last-modified', new Date(meta.updatedAt).toUTCString());
   if (options.filename) headers.set('content-disposition', `inline; filename="${options.filename}"`);
   if (options.contentEncoding) headers.set('content-encoding', options.contentEncoding);
+  if (options.vary) headers.set('vary', options.vary);
 
   const response = new Response(result.value, { headers });
   if (cache) c.executionCtx.waitUntil(cache.put(request, response.clone()).catch(() => undefined));

@@ -120,28 +120,17 @@ artifactRoutes.get('/epg/:file', async (c) => {
   const row = await getSubscriptionByToken(c.env, match[1]!);
   if (!row || row.enabled !== 1) return fail('订阅不存在或已停用', 404);
 
-  // Prefer the pre-compressed guide: XMLTV is highly repetitive and gzip
-  // cuts a 2.5MB document down to a few hundred KB. Fall back to raw XML for
-  // clients that do not advertise gzip support.
-  const acceptsGzip = /\bgzip\b/i.test(c.req.header('accept-encoding') ?? '');
-  const compressed = acceptsGzip
-    ? await serveArtifact(c, `out/epg-${row.id}.xml.gz`, {
-        contentType: 'application/xml; charset=utf-8',
-        contentEncoding: 'gzip',
-        filename: `${encodeURIComponent(row.name)}.xml`,
-        maxAge: 300,
-        sMaxAge: 900,
-        cache: false,
-      })
-    : null;
-  if (compressed) return compressed;
-
-  // Prefer the per-subscription guide (much smaller for players).
+  // Serve the raw XML and let Cloudflare compress it at the edge. Returning a
+  // pre-gzipped body with Content-Encoding: gzip double-compresses it: the
+  // Workers runtime drops that header and the edge gzips the already-gzipped
+  // bytes, so players that accept gzip received a gzip file inside gzip.
+  // Without Vary the cached representation also leaked to identity clients.
   const perSub = await serveArtifact(c, `out/epg-${row.id}.xml`, {
     contentType: 'application/xml; charset=utf-8',
     filename: `${encodeURIComponent(row.name)}.xml`,
     maxAge: 300,
     sMaxAge: 900,
+    vary: 'Accept-Encoding',
   });
   if (perSub) return perSub;
 
@@ -150,5 +139,6 @@ artifactRoutes.get('/epg/:file', async (c) => {
     filename: 'epg.xml',
     maxAge: 300,
     sMaxAge: 900,
+    vary: 'Accept-Encoding',
   });
 });
