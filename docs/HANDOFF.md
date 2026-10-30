@@ -859,21 +859,21 @@ Actions 手动入口：
   - HTTP/TS：只取前 2KB（Range）
   - 超时 5 秒；rtsp/rtmp/udp 返回 inconclusive，不判死
   - 不做测速、不做分辨率
-- 新命令 `npm run probe -w @iptv/runner`：
+- 新命令 `npm run liveness -w @iptv/runner`（原 `probe`，拆分后 `probe` 表示完整探测阶段）：
   - 只检查 `status=alive` 的线路，按 `lastLivenessAt` 到期（默认 24 小时，`LINE_LIVENESS_HOURS` 可覆盖）
   - 预算用 `PROBE_BUDGET` / settings.probeBudget，URL 去重
   - 成功：状态 alive、failCount 清零、写 `lastLivenessAt`；**不动 lastProbeAt**，完整测速排期不变
   - 失败：failCount +1；3 次 → dead + 复活时间，否则 suspect
   - 写回 `state/lines.json` + 重新生成 `state/pool.json` + 运行日志/报告
 - 入口：
-  - Actions `collect.yml` 的 command 增加 `probe`
+  - Actions `collect.yml` 的 command 增加 `liveness`
   - 后台仪表盘新增「快速测活」按钮
-  - dispatch API 接受 `command=probe`
+  - dispatch API 接受 `command=liveness`
 - 新增 `lastLivenessAt` 字段
 
 ## 验证
 
-- 实测 dispatch `probe` budget=2：run `41005060726` success，报告 `probed=2`
+- 实测 dispatch `liveness` budget=2：run `41005060726` success，报告 `probed=2`
 - 2 条线路写入新的 `lastLivenessAt`，状态 alive
 - `state/pool.json` 已重新生成
 - 70 个测试通过（新增 liveness inconclusive 用例）
@@ -899,7 +899,7 @@ Actions 手动入口：
 - 新设置：
   - `probePrefilterEnabled`（默认 true）
   - `probePrefilterBudget`（默认 1200）
-- 概览页移除「快速测活」按钮；`probe` 命令保留，用于池内 alive 线路的日常体检/后续调度
+- 概览页移除「快速测活」按钮；`liveness` 命令保留，用于池内 alive 线路的日常体检/后续调度
 
 ## 验证
 
@@ -910,7 +910,7 @@ Actions 手动入口：
 
 ## 说明
 
-- 预筛只覆盖 pending/suspect；alive 线路仍由 `probe` 命令（轻量测活）负责
+- 预筛只覆盖 pending/suspect；alive 线路仍由 `liveness` 命令（轻量测活）负责
 - 完整 collect 对 alive 的 TTL 逻辑不变
 - 预筛失败不直接 dead，避免临时抖动误杀
 
@@ -948,3 +948,40 @@ Actions 手动入口：
 - `probe-lines` 不走预算/TTL，只测显式选中的 key
 - 快速测活前端自动分批：每批 30 条、最多 4 批并发、**不限总数**；按钮显示「测活中 X/Y」进度；检测中心新增 100/200 每页选项
 - 30 条只是 Worker 单请求子请求保护值，不是产品上限
+
+---
+
+# 2026-10-30 下午 · fetch / probe / publish 拆分
+
+## 命令
+
+- `fetch`：抓取启用的源 → 归一化/去重/墓碑/留存 → 写 `state/lines.json` → 同步源信誉；不测速、不发布
+- `probe`：读 `state/lines.json` → 轻量预筛 → 完整测速/分辨率 → 写回 lines + pool；不抓源、不发布
+- `publish`：读 lines → 抓 EPG → 构建 catalog/index/分片 → 发布 KV/R2 → 订阅 → 频道同步 → 差异/通知；不抓源、不测速
+- `collect`：仍是一键全流程（未改成串联三个命令，行为保持不变）
+- `liveness`：原 `probe` 轻量测活改名，避免和完整探测阶段冲突
+- `probe-lines`：检测中心选中线路探测，保持不变
+- `export` / `epg` 不变
+
+## 入口
+
+- `collect.yml` 的 command 选项：collect / fetch / probe / publish / export / epg / liveness / probe-lines
+- 后台 dispatch API 允许同样的 command
+- runner scripts：`fetch` / `probe` / `publish` / `liveness` / `probe-lines`
+
+## 验证
+
+- `fetch`：run `41008166866` success，`probed=0`，index 时间未变（确认没有发布）
+- `probe` budget=100：run `41008273629` success（partial，有少量失败），`probed=100`，alive 846→903，index 未变
+- `publish`：run `41008645813` success，index `02:09:22Z` → `05:30:38Z`，导出 2723 行 / 787 可用
+- 72 个测试通过
+
+## 成本
+
+- fetch：约 2 次 KV 写（lines + log）
+- probe：约 3 次（lines + pool + log）
+- publish：约 30–50 次（和原来发布相同）
+
+## 后续
+
+- `collect` 目前仍是旧的合并实现；三个阶段是独立命令，逻辑有重复。下一步可以让 collect 改为依次调用 fetch/probe/publish（但会产生 3 条运行报告，需要先定语义）
