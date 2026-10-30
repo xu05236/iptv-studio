@@ -49,8 +49,14 @@ export async function putArtifact(
   const meta: ArtifactMeta = { contentType, etag, size: bytes.byteLength, updatedAt: isoNow() };
   // KV writes are the scarce resource on the free plan. Skip rewriting a value
   // when the bytes and content type are unchanged.
-  const existing = await env.KV.list({ prefix: key, limit: 10 });
-  const current = existing.keys.find((entry) => entry.name === key)?.metadata as ArtifactMeta | undefined;
+  //
+  // Read the metadata instead of listing the key: list operations have a much
+  // smaller free quota (1k/day) than reads (100k/day), and a publish uploads
+  // dozens of artifacts. The value stream is cancelled immediately — only the
+  // metadata is needed.
+  const existing = await env.KV.getWithMetadata<ArtifactMeta>(key, { type: 'stream' });
+  if (existing.value) await existing.value.cancel().catch(() => undefined);
+  const current = existing.metadata ?? undefined;
   if (current?.etag === etag && current.contentType === contentType) return current;
   await env.KV.put(key, bytes, { metadata: meta });
   return meta;
