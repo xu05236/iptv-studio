@@ -12,6 +12,7 @@ interface FormState {
   name: string;
   groups: string;
   excludeGroups: string;
+  poolMode: string;
   minResolution: string;
   minSpeedKbps: string;
   maxLines: string;
@@ -25,6 +26,7 @@ const EMPTY_FORM: FormState = {
   name: '我的订阅',
   groups: '',
   excludeGroups: '',
+  poolMode: 'premium',
   minResolution: 'any',
   minSpeedKbps: '0',
   maxLines: '6',
@@ -70,6 +72,7 @@ export function SubscriptionsAdmin() {
         groups: split(form.groups),
         excludeGroups: split(form.excludeGroups),
         channelIds,
+        poolMode: form.poolMode,
         minResolution: form.minResolution,
         minSpeedKbps: Number(form.minSpeedKbps || 0),
         maxLinesPerChannel: Number(form.maxLines || 6),
@@ -122,6 +125,7 @@ export function SubscriptionsAdmin() {
             name: item.name,
             groups: item.groups.join(', '),
             excludeGroups: item.excludeGroups.join(', '),
+            poolMode: item.pool_mode ?? 'premium',
             minResolution: item.min_resolution,
             minSpeedKbps: String(item.min_speed_kbps),
             maxLines: String(item.max_lines_per_channel),
@@ -164,6 +168,7 @@ export function SubscriptionsAdmin() {
                 <div className="row row--wrap" style={{ gap: 6 }}>
                   <span className="title-3">{item.name}</span>
                   <Badge tone="blue">{item.format.toUpperCase()}</Badge>
+                  {item.pool_mode === 'custom' ? <Badge>自定义线路</Badge> : item.pool_mode === 'premium_backup' ? <Badge tone="orange">精品 + 备用</Badge> : <Badge tone="green">精品池</Badge>}
                   {item.min_resolution !== 'any' ? <Badge>≥ {item.min_resolution}</Badge> : null}
                   {item.min_speed_kbps ? <Badge>≥ {item.min_speed_kbps} kbps</Badge> : null}
                   {item.enabled ? <Badge tone="green">启用</Badge> : <Badge tone="red">停用</Badge>}
@@ -214,6 +219,13 @@ export function SubscriptionsAdmin() {
           </Field>
           <Field label="排除分组">
             <input className="input" value={form.excludeGroups} onChange={(event) => setForm({ ...form, excludeGroups: event.target.value })} placeholder="付费, 地方" />
+          </Field>
+          <Field label="线路池模式" hint="精品池只导出精品线路；精品 + 备用在精品不足时用备用线路补位">
+            <select className="select" value={form.poolMode} onChange={(event) => setForm({ ...form, poolMode: event.target.value })}>
+              <option value="premium">精品池</option>
+              <option value="premium_backup">精品 + 备用兜底</option>
+              {form.poolMode === 'custom' ? <option value="custom">自定义线路（来自线路池）</option> : null}
+            </select>
           </Field>
           <Field label="指定频道（可选）" hint="不选 = 按分组导出；选了 = 只导出这些频道，和分组过滤同时生效">
             <input className="input" value={channelSearch} onChange={(event) => setChannelSearch(event.target.value)} placeholder="搜索频道名，勾选加入订阅" />

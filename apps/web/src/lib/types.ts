@@ -124,6 +124,7 @@ export interface SubscriptionItem {
   showRegionSuffix: boolean;
   includeEpg: boolean;
   format: string;
+  pool_mode?: string;
   matchedChannels?: number;
   links: Record<string, string>;
 }
