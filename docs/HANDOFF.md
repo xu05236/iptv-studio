@@ -1140,3 +1140,55 @@ Actions 手动入口：
 - 首次请求可能较慢（要逐个源尝试）；之后走边缘缓存
 - 如果某 ID 在所有源都不存在，404 会缓存 1 小时，避免反复回源
 - 播放器只需访问一个稳定地址，不再依赖它自己能否访问 jsDelivr
+
+---
+
+# 2026-10-30 晚 · 自动采集开启、每日测活、卫视 EPG
+
+## 1. 手动 collect 观察 + 开启定时采集
+
+- dispatch `collect` budget=1200：run `41016021126` success
+- 报告：`probed=1200`，导出 **2782 行 / 868 可用**，index 更新到 `06:55:12Z`
+- 采集前 KV 写入 330/1000，余量充足
+- 已开启自动采集：
+  - `autoCollectEnabled=true`
+  - 每天 **08:30 北京时间**
+  - 下次 `2026-10-31T00:30:00Z`
+- 如果首个自动运行异常，后台设置里可随时关闭
+
+## 2. 每日池内测活
+
+- 调度器改为通用 `runScheduler`：
+  - collect / liveness 各自独立的北京时间、状态文件、审计动作
+  - `state/schedule.json`、`state/liveness-schedule.json`
+  - 共用 KV ≥920、已有 workflow 在跑的保护
+  - 两个同时到期时 collect 优先，liveness 等下一轮
+- `autoLivenessEnabled` 默认 **true**，每天 **20:30 北京时间**
+- 真实调度验证：
+  - 临时设为 14:56，cron 在 `07:00:40Z` 记录 `dispatched`
+  - run `41017440264` success，报告 `probed=767`
+  - 验证后已恢复 `20:30`，下次 `2026-10-30T12:30:00Z`
+- 设置页「定时任务」拆成「完整采集 / 每日池内测活」两块
+
+## 3. 卫视官方 EPG（CNTV）
+
+- 新 mapping `core/src/epg/cntv.ts`：31 个卫视/省级频道 → CNTV code
+  - 例：`hunan-weishi→hunan`、`dongfang-weishi→dongfang`、`beijing-weishi→btv1`
+  - 未覆盖：海南、山西、陕西、三沙、大湾区（继续用 XMLTV）
+- runner 的 EPG 抓取从“仅央视”扩展为“央视 + 卫视”，官方数据仍优先于 XMLTV
+- 本地 `npm run epg` 验证：**49 个频道 / 1746 条节目**（原来央视 18 / 787）
+- 重新 publish（run `41017033159` success，index `06:57:17Z`）
+- 公开频道详情验证：
+  - 湖南卫视：now 电视剧：梅花儿香(11)
+  - 浙江卫视：now 电视剧
+  - 东方卫视：now 电视剧：雁回时(20)
+  - 江苏卫视：now 新相亲大会
+  - 北京卫视：now 电视剧
+- 80 个测试通过
+
+## 当前状态
+
+- 自动采集：**开**，每天 08:30
+- 每日测活：**开**，每天 20:30
+- 导出：2782 行 / 868 可用
+- 最近 publish：`06:57:17Z`
