@@ -20,6 +20,7 @@ import {
 import type { ArtifactStore } from '../store.js';
 import type { RunLogger } from '../logger.js';
 import { buildGuide, nowPlaying, upcoming } from './epg.js';
+import { matchLogoFile } from './logoFiles.js';
 
 const GROUP_ORDER = ['央视', '卫视', '地方', '港澳台', '国际', '4K', '影视频道', '体育', '少儿', '纪录', '新闻', '音乐', '付费', '其他'];
 
@@ -34,6 +35,8 @@ export interface BuildInput {
   disabledChannelIds?: Set<string>;
   /** Public Worker logo proxy base, e.g. https://host/api/logo. */
   logoProxyBase?: string;
+  /** Filenames from the fanmingming logo pack, used to fill name-only channels. */
+  logoFiles?: string[];
 }
 
 export interface CatalogItem {
@@ -100,7 +103,15 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
       name: seed.name,
       group: seed.group,
       tvgId: seed.tvgId,
-      logo: channelLogo({ logo: seed.logo, tvgId: seed.tvgId, name: seed.name }, input.settings.logoBaseUrl, input.logoProxyBase),
+      logo: channelLogo(
+        {
+          logo: seed.logo ?? matchLogoFile(seed.name, input.logoFiles ?? []) ?? undefined,
+          tvgId: seed.tvgId,
+          name: seed.name,
+        },
+        input.settings.logoBaseUrl,
+        input.logoProxyBase,
+      ),
       aliases: seed.aliases,
     };
     const applied = applyRules(channel, lines, compiled);
@@ -186,7 +197,11 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
       name: seed.name,
       group: seed.group,
       tvgId: seed.tvgId,
-      logo: channelLogo({ logo: seed.logo, tvgId: seed.tvgId, name: seed.name }, input.settings.logoBaseUrl, input.logoProxyBase),
+      logo: channelLogo(
+        { logo: seed.logo ?? matchLogoFile(seed.name, input.logoFiles ?? []) ?? undefined, tvgId: seed.tvgId, name: seed.name },
+        input.settings.logoBaseUrl,
+        input.logoProxyBase,
+      ),
     })),
     totalLines,
     aliveLines,
