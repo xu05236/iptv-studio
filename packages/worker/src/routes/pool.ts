@@ -15,6 +15,7 @@ import {
 import { fail, ok, randomId, randomToken, readJson } from '../lib/http.js';
 import { getJson } from '../lib/store.js';
 import { countryOfGroup } from '../lib/channelCountry.js';
+import { loadIndex } from '../lib/catalog.js';
 
 export const poolRoutes = new Hono<AppEnv>();
 
@@ -254,7 +255,10 @@ function escapeM3u(value: string): string {
 
 poolRoutes.post('/export', async (c) => {
   const body = (await readJson<Record<string, unknown>>(c)) ?? {};
-  const { lines } = await loadPool(c.env);
+  const [{ lines }, index] = await Promise.all([loadPool(c.env), loadIndex(c.env)]);
+  // The D1 channel rows rarely carry a logo; the published index is where the
+  // seed/source logos live, so use it as the fallback for tvg-logo.
+  const meta = new Map((index?.channels ?? []).map((channel) => [channel.id, channel]));
   const keys = Array.isArray(body.keys)
     ? body.keys.filter((key): key is string => typeof key === 'string').slice(0, 500)
     : [];
@@ -286,10 +290,13 @@ poolRoutes.post('/export', async (c) => {
 
   const out = ['#EXTM3U'];
   for (const line of selected) {
+    const channel = meta.get(line.channelId);
+    const tvgId = line.tvgId ?? channel?.tvgId;
+    const logo = line.logo ?? channel?.logo;
     const attrs = [
-      line.tvgId ? `tvg-id="${escapeM3u(line.tvgId)}"` : '',
+      tvgId ? `tvg-id="${escapeM3u(tvgId)}"` : '',
       `tvg-name="${escapeM3u(line.channelName)}"`,
-      line.logo ? `tvg-logo="${escapeM3u(line.logo)}"` : '',
+      logo ? `tvg-logo="${escapeM3u(logo)}"` : '',
       `group-title="${escapeM3u(line.group)}"`,
     ].filter(Boolean);
     out.push(`#EXTINF:-1 ${attrs.join(' ')},${line.channelName} · ${line.sourceName}`);

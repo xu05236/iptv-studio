@@ -43,6 +43,7 @@ export function UsageAlert() {
   const items: UsageItem[] = [
     { label: 'KV 写入', used: kvFresh ? usage.kv.writes : 0, limit: 1000, format: number },
     { label: 'KV 读取', used: kvFresh ? usage.kv.reads : 0, limit: 100000, format: number },
+    { label: 'KV 列表', used: kvFresh ? usage.kv.lists : 0, limit: 1000, format: number },
     { label: 'KV 存储', used: usage.kv.storageBytes, limit: 1024 ** 3, format: bytes },
     { label: 'D1 写入', used: d1Fresh ? usage.d1.rowsWritten : 0, limit: 100000, format: number },
     { label: 'D1 读取', used: d1Fresh ? usage.d1.rowsRead : 0, limit: 5_000_000, format: number },

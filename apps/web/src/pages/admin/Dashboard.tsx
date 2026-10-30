@@ -134,10 +134,12 @@ export function Dashboard() {
   const d1Today = usage?.d1.day === today ? usage.d1 : null;
   const kvWrites = kvToday?.writes ?? 0;
   const kvReads = kvToday?.reads ?? 0;
+  const kvLists = kvToday?.lists ?? 0;
   const d1Writes = d1Today?.rowsWritten ?? 0;
   const d1Reads = d1Today?.rowsRead ?? 0;
   const kvBlocked = kvWrites >= 920;
   const kvWarn = kvWrites >= 850;
+  const kvListWarn = kvLists >= 850;
 
   return (
     <div className="stack">
@@ -168,6 +170,11 @@ export function Dashboard() {
         <div className="caption" style={{ color: kvBlocked ? 'var(--red)' : 'var(--orange)', padding: '0 2px' }}>
           KV 今日已写入 {formatNumber(kvWrites)} / 1,000
           {kvBlocked ? '，已暂停触发采集与导出，请等 UTC 00:00 重置。' : '，接近上限，请避免频繁采集。'}
+        </div>
+      ) : null}
+      {kvListWarn ? (
+        <div className="caption" style={{ color: 'var(--orange)', padding: '0 2px' }}>
+          KV 今日列表 {formatNumber(kvLists)} / 1,000，接近免费额度。
         </div>
       ) : null}
 
@@ -238,6 +245,7 @@ export function Dashboard() {
                   <>
                     <UsageBar label="今日写入" used={kvWrites} limit={1000} />
                     <UsageBar label="今日读取" used={kvReads} limit={100000} />
+                    <UsageBar label="今日列表" used={kvLists} limit={1000} />
                     <UsageBar label="存储占用" used={snapshot.kv.storageBytes} limit={1024 ** 3} format={formatBytes} />
                     <div className="caption" style={{ marginTop: 8 }}>
                       {kvToday
