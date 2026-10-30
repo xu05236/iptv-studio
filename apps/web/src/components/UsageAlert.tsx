@@ -36,12 +36,16 @@ export function UsageAlert() {
   const ageHours = (Date.now() - new Date(usage.collectedAt).getTime()) / 3_600_000;
   if (ageHours > 24) return null;
 
+  const today = new Date().toISOString().slice(0, 10);
+  const kvFresh = usage.kv.day === today;
+  const d1Fresh = usage.d1.day === today;
+
   const items: UsageItem[] = [
-    { label: 'KV 写入', used: usage.kv.writes, limit: 1000, format: number },
-    { label: 'KV 读取', used: usage.kv.reads, limit: 100000, format: number },
+    { label: 'KV 写入', used: kvFresh ? usage.kv.writes : 0, limit: 1000, format: number },
+    { label: 'KV 读取', used: kvFresh ? usage.kv.reads : 0, limit: 100000, format: number },
     { label: 'KV 存储', used: usage.kv.storageBytes, limit: 1024 ** 3, format: bytes },
-    { label: 'D1 写入', used: usage.d1.rowsWritten, limit: 100000, format: number },
-    { label: 'D1 读取', used: usage.d1.rowsRead, limit: 5_000_000, format: number },
+    { label: 'D1 写入', used: d1Fresh ? usage.d1.rowsWritten : 0, limit: 100000, format: number },
+    { label: 'D1 读取', used: d1Fresh ? usage.d1.rowsRead : 0, limit: 5_000_000, format: number },
     { label: 'Actions', used: usage.github.minutes, limit: 2000, format: (value) => `${value} 分钟` },
   ];
   const flagged = items

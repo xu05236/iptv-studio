@@ -72,9 +72,26 @@ export function Dashboard() {
 
   const refreshUsage = useMutation({
     mutationFn: () => api.post<{ ok: boolean; message: string }>('/api/admin/usage/refresh'),
-    onSuccess: (result) => {
-      show(`${result.message}，约 1 分钟后刷新`);
-      setTimeout(() => void queryClient.invalidateQueries({ queryKey: ['admin', 'usage'] }), 60_000);
+    onSuccess: async (result) => {
+      const before = usageQuery.data?.usage?.collectedAt ?? '';
+      show(`${result.message}，等待新快照…`);
+      // The workflow takes 2–4 minutes (npm ci + Cloudflare GraphQL), so a
+      // single 60s refetch usually showed the old snapshot again.
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 10_000));
+        try {
+          const next = await api.get<{ usage: UsageSnapshot | null }>('/api/admin/usage');
+          if (next.usage?.collectedAt !== before) {
+            queryClient.setQueryData(['admin', 'usage'], next);
+            show('用量快照已更新');
+            return;
+          }
+        } catch {
+          // Network hiccup or the workflow is still queued — keep polling.
+        }
+      }
+      show('用量快照尚未更新，请稍后再试', 'error');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'usage'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
@@ -111,7 +128,14 @@ export function Dashboard() {
   const aliveRatio = stats.index.totals.lines ? Math.round((stats.index.totals.alive / stats.index.totals.lines) * 100) : 0;
   const usage = usageQuery.data?.usage;
   const today = new Date().toISOString().slice(0, 10);
-  const kvWrites = usage?.kv.day === today ? usage.kv.writes : 0;
+  // The snapshot is written up to 6 hours apart; right after UTC midnight it
+  // still carries yesterday's totals. Only trust it when its day matches today.
+  const kvToday = usage?.kv.day === today ? usage.kv : null;
+  const d1Today = usage?.d1.day === today ? usage.d1 : null;
+  const kvWrites = kvToday?.writes ?? 0;
+  const kvReads = kvToday?.reads ?? 0;
+  const d1Writes = d1Today?.rowsWritten ?? 0;
+  const d1Reads = d1Today?.rowsRead ?? 0;
   const kvBlocked = kvWrites >= 920;
   const kvWarn = kvWrites >= 850;
 
@@ -212,11 +236,13 @@ export function Dashboard() {
                 </div>
                 {snapshot ? (
                   <>
-                    <UsageBar label="今日写入" used={snapshot.kv.writes} limit={1000} />
-                    <UsageBar label="今日读取" used={snapshot.kv.reads} limit={100000} />
+                    <UsageBar label="今日写入" used={kvWrites} limit={1000} />
+                    <UsageBar label="今日读取" used={kvReads} limit={100000} />
                     <UsageBar label="存储占用" used={snapshot.kv.storageBytes} limit={1024 ** 3} format={formatBytes} />
                     <div className="caption" style={{ marginTop: 8 }}>
-                      免费额度每日 UTC 00:00（北京时间 08:00）重置
+                      {kvToday
+                        ? '免费额度每日 UTC 00:00（北京时间 08:00）重置'
+                        : `额度已重置，快照仍是 ${snapshot.kv.day} 的数据，等下一轮刷新`}
                       {yesterday ? ` · 昨日（${yesterday.date}）写 ${formatNumber(yesterday.kvWrites)}` : ''}
                     </div>
                   </>
@@ -232,10 +258,12 @@ export function Dashboard() {
                 </div>
                 {snapshot ? (
                   <>
-                    <UsageBar label="今日写入行数" used={snapshot.d1.rowsWritten} limit={100000} />
-                    <UsageBar label="今日读取行数" used={snapshot.d1.rowsRead} limit={5000000} />
+                    <UsageBar label="今日写入行数" used={d1Writes} limit={100000} />
+                    <UsageBar label="今日读取行数" used={d1Reads} limit={5000000} />
                     <div className="caption" style={{ marginTop: 8 }}>
-                      写入已用 {Math.round((snapshot.d1.rowsWritten / 100000) * 100)}% · 免费额度每日 UTC 00:00 重置
+                      {d1Today
+                        ? `写入已用 ${Math.round((d1Writes / 100000) * 100)}%`
+                        : `额度已重置，快照仍是 ${snapshot.d1.day} 的数据，等下一轮刷新`} · 免费额度每日 UTC 00:00 重置
                       {yesterday ? ` · 昨日（${yesterday.date}）写 ${formatNumber(yesterday.d1Writes)}` : ''}
                     </div>
                   </>
