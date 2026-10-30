@@ -723,3 +723,35 @@ Actions 手动入口：
 - 保留的线路带 `retained: true`，继续参与探测和订阅；池表格显示「源已移除，保留中」
 - 超过保留期后自然淘汰；源重新列出同 URL 时恢复为正常线路（不继承 retained 标记）
 - 验证：`withinRetention` 单测通过；线上池 API 已有 `retained` 字段、web bundle 已有徽章；真实留存要等下一轮 collect 遇到“源丢弃 URL”才能观察
+
+---
+
+# 2026-10-30 下午 · 运行参数进后台
+
+## 新增 AppSettings
+
+- `probeAliveHours`（默认 360）：可用线路复测间隔
+- `probePremiumHours`（默认 168）：精品线路复测间隔
+- `probePerChannel`（默认 24）：每频道每轮最多探测
+- `ffprobeLimit`（默认 150）：每轮分辨率补全条数
+- `publishCooldownMs`（默认 60000）：发布前冷却
+- `lineRetentionDays`（默认 30）：源刷新后线路留存天数
+
+## 改动
+
+- runner 改为从 settings 读取这些值；环境变量仍作为显式覆盖
+- `collect.yml` 移除了 TTL / per-channel / retention / ffprobe / cooldown 的固定 env，避免覆盖后台设置
+- `config.concurrency` 默认改为 0，未设置时使用 settings.concurrency
+- 后台「采集与测速」新增对应输入；预算 / 并发 / 超时原本已有
+- settings PUT 的 allowed 列表补上新字段，否则保存会被静默丢弃
+
+## 验证
+
+- `GET /api/admin/settings` 返回全部新字段及默认值
+- 修改 `probePerChannel` 23 → 24 往返保存生效
+- web bundle 已包含「可用线路复测间隔」「线路留存天数」「发布前冷却」
+
+## 说明
+
+- GitHub Actions / Worker cron 的**运行时刻**仍是工作流/部署配置，后台改不了；后台能改的是探测参数、留存和发布行为
+- 触发时的 `budget` 输入仍优先；后台 `probeBudget` 只在未显式指定预算时生效
