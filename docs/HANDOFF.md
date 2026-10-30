@@ -1286,3 +1286,14 @@ Actions 手动入口：
 
 - 本轮测试的 export 让 catalog 暂时变为 279 频道 / 2303 行 / 581 可用；下一次每日 publish 会用最新状态重建
 - 自动任务：抓源 7 天、分批探测 2 小时、发布每天 08:30；collect/liveness 关闭
+
+## 孤儿线路清理（同日）
+
+- 手动 publish 任务完成（`task-mvup6tyf-u6md`, 74s），catalog 仍是 279 / 2303 / 581
+- 诊断：state 中 alive 1450 条、402 个频道；其中 **123 个频道在 D1 不存在**（孤儿线路），被发布逻辑排除
+- 新增 `npm run cleanup-orphans -w @iptv/runner`：
+  - 按 D1 频道 id 过滤 `state/lines.json`
+  - 重写 pool.json + pool-stats
+  - 结果：移除 **4709** 条，保留 **4649** 条（统计口径 4642，差 7 条 rtsp/rtmp）
+- fetchPhase 增加自动剔除孤儿线路，避免清理后再次长出来
+- 说明：catalog 279 是 D1 当前有效频道数，不是发布失败；要恢复更多频道需要用线路名重建频道记录（未做，孤儿多为 cctv20/cctv30/x-* 脏数据）

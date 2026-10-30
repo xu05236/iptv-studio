@@ -312,6 +312,12 @@ function poolSnapshotFor(remote: RemoteConfig, lines: LineEntry[], generatedAt: 
 const LIVENESS_RETRY_MS = 6 * 3_600_000;
 const UNPROBEABLE_URL = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
 
+function pruneOrphanLines(remote: RemoteConfig, lines: LineEntry[]): { lines: LineEntry[]; removed: number } {
+  const channelIds = new Set(remote.channels.map((channel) => channel.id));
+  const kept = lines.filter((line) => channelIds.has(line.channelId));
+  return { lines: kept, removed: lines.length - kept.length };
+}
+
 function livenessReady(line: LineEntry, now: number): boolean {
   if (!line.lastLivenessAt) return true;
   return now - Date.parse(line.lastLivenessAt) >= LIVENESS_RETRY_MS;
@@ -397,7 +403,9 @@ async function fetchPhase(
   const sources = new Map(remote.sources.map((source) => [source.id, source]));
   const retentionDays = Math.max(0, envNumber('LINE_RETENTION_DAYS') ?? settings.lineRetentionDays ?? 30);
   const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso(), tombstones, retentionDays);
-  const lines = normalized.lines;
+  const pruned = pruneOrphanLines(remote, normalized.lines);
+  const lines = pruned.lines;
+  if (pruned.removed) logger.warn('已剔除孤儿线路', { removed: pruned.removed });
   logger.info('线路归一完成', { lines: lines.length, sourceId: sourceId || undefined });
   await writePoolStats(store, remote, lines);
   return { lines, collected, sourceId };
@@ -1105,8 +1113,61 @@ async function runSelectedProbes(): Promise<void> {
   }
 }
 
+/** One-off maintenance: drop lines whose channel no longer exists in D1. */
+async function runCleanupOrphans(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+  let report: RunReport = {
+    id: runId, trigger: 'manual', status: 'running', startedAt,
+    sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0, durationMs: 0, warnings: [],
+  };
+
+  try {
+    const remote = await loadRemoteConfig(api);
+    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const pruned = pruneOrphanLines(remote, previous?.lines ?? []);
+    const lines = pruned.lines;
+    const generatedAt = nowIso();
+    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
+    await writePoolStats(store, remote, lines);
+    logger.info('孤儿线路清理完成', { removed: pruned.removed, lines: lines.length });
+    const logKey = await writeLog(store, runId, logger);
+    const alive = lines.filter((line) => line.status === 'alive').length;
+    report = {
+      ...report,
+      status: 'success',
+      finishedAt: nowIso(),
+      channels: remote.channels.length,
+      lines: lines.length,
+      alive,
+      dead: lines.length - alive,
+      durationMs: Date.now() - startedMs,
+      logKey,
+      warnings: pruned.removed ? [`已剔除孤儿线路 ${pruned.removed} 条`] : [],
+    };
+    await finishRun(api, report);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('孤儿清理失败', { error: message });
+    report = { ...report, status: 'failed', finishedAt: nowIso(), error: message, durationMs: Date.now() - startedMs };
+    try { report.logKey = await writeLog(store, runId, logger); } catch { /* ignore */ }
+    await finishRun(api, report);
+    throw error;
+  }
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2] ?? 'collect';
+  if (command === 'cleanup-orphans') {
+    await runCleanupOrphans();
+    return;
+  }
   if (command === 'liveness') {
     await runLiveness();
     return;
