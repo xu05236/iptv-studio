@@ -418,17 +418,20 @@ export function channelLogo(
   baseUrl?: string | null,
   proxyBase?: string | null,
 ): string | undefined {
-  const generated = Boolean(channel.logo && GENERATED_LOGO.test(channel.logo));
-  if (proxyBase && channel.tvgId && (!channel.logo || generated)) {
+  // Only absolute URLs are usable logos; old runs accidentally stored bare
+  // filenames like "金鹰卡通.png" in D1, which browsers resolve relatively.
+  const explicit = channel.logo && /^https?:\/\//i.test(channel.logo) ? channel.logo : undefined;
+  const generated = Boolean(explicit && GENERATED_LOGO.test(explicit));
+  if (proxyBase && channel.tvgId && (!explicit || generated)) {
     return `${proxyBase.replace(/\/+$/, '')}/${encodeURIComponent(channel.tvgId)}.png`;
   }
-  if (channel.logo && !generated) {
+  if (explicit && !generated) {
     // Custom/uploaded logo: keep the operator's explicit choice.
-    return channel.logo;
+    return explicit;
   }
-  if (channel.logo) {
+  if (explicit) {
     // Old data may still point at the retired fanmingming host.
-    return channel.logo.replace(
+    return explicit.replace(
       /^https?:\/\/live\.fanmingming\.com\/tv\//i,
       'https://cdn.jsdelivr.net/gh/fanmingming/live@main/tv/',
     );

@@ -17,6 +17,10 @@ describe('channelLogo', () => {
     expect(channelLogo({ name: 'A' })).toBeUndefined();
   });
 
+  it('ignores bare filenames accidentally stored as logos', () => {
+    expect(channelLogo({ logo: '金鹰卡通.png', name: '金鹰卡通' })).toBeUndefined();
+  });
+
   it('prefers the Worker proxy for generated and retired logos', () => {
     expect(channelLogo({ tvgId: 'CCTV1', name: 'CCTV1' }, null, 'https://host/api/public/logo'))
       .toBe('https://host/api/public/logo/CCTV1.png');

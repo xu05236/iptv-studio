@@ -27,12 +27,13 @@ const GROUP_ORDER = ['央视', '卫视', '地方', '港澳台', '国际', '4K', 
 type LogoSeed = { name: string; logo?: string | null; tvgId?: string | null };
 
 function logoForSeed(seed: LogoSeed, input: BuildInput): string | undefined {
-  const matched = !seed.logo && !seed.tvgId ? matchLogoFile(seed.name, input.logoFiles ?? []) : undefined;
+  const stored = seed.logo && /^https?:\/\//i.test(seed.logo) ? seed.logo : undefined;
+  const matched = !stored && !seed.tvgId ? matchLogoFile(seed.name, input.logoFiles ?? []) : undefined;
   const nameLogo = matched
     ? `https://cdn.jsdelivr.net/gh/fanmingming/live@main/tv/${encodeURIComponent(matched)}`
     : undefined;
   return channelLogo(
-    { logo: seed.logo ?? nameLogo, tvgId: seed.tvgId, name: seed.name },
+    { logo: stored ?? nameLogo, tvgId: seed.tvgId, name: seed.name },
     input.settings.logoBaseUrl,
     input.logoProxyBase,
   );
