@@ -80,7 +80,8 @@ export async function finishTask(env: Env, taskId: string, status: 'done' | 'fai
   const task = tasks.find((item) => item.id === taskId);
   if (!task) return;
   task.status = status;
-  task.message = message ?? task.message;
+  task.message = status === 'done' ? (message ?? '完成') : (message ?? '失败');
+  if (status === 'done' && task.progress.total > 0) task.progress.done = task.progress.total;
   task.finishedAt = new Date().toISOString();
   await saveTasks(env, tasks);
 }

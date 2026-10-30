@@ -204,7 +204,9 @@ async function collectAll(
   sources: SourceRecord[],
   store: ArtifactStore,
   logger: RunLogger,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<CollectedSource[]> {
+  let done = 0;
   return mapPool(sources, 4, async (source) => {
     try {
       return await collectSource(source, store, logger);
@@ -218,6 +220,9 @@ async function collectAll(
         bytes: 0,
         error: error instanceof Error ? error.message : String(error),
       } satisfies CollectedSource;
+    } finally {
+      done++;
+      onProgress?.(done, sources.length);
     }
   });
 }
@@ -398,7 +403,9 @@ async function fetchPhase(
   const targetSources = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
   if (sourceId && !targetSources.length) throw new Error(`采集站不存在或已停用：${sourceId}`);
 
-  const collected = await collectAll(targetSources, store, logger);
+  const collected = await collectAll(targetSources, store, logger, (done, total) => {
+    void reportTaskProgress(api, done, total);
+  });
   const registry = buildRegistry(remote);
   const sources = new Map(remote.sources.map((source) => [source.id, source]));
   const retentionDays = Math.max(0, envNumber('LINE_RETENTION_DAYS') ?? settings.lineRetentionDays ?? 30);
@@ -489,9 +496,11 @@ async function publishPhase(
 ): Promise<{ output: Awaited<ReturnType<typeof buildArtifacts>>; logKey: string }> {
   const settings = remote.settings;
   const registry = buildRegistry(remote);
+  await reportTaskProgress(api, 0, 4);
   const epg = epgMode === 'fetch'
     ? await collectEpg(settings.epgUrls, registry, logger)
     : { xml: null, programmes: 0, data: epgFromGuide(await store.getJson<StoredGuide>('state/guide.json')) };
+  await reportTaskProgress(api, 1, 4);
 
   const output = buildArtifacts({
     runId,
@@ -504,6 +513,7 @@ async function publishPhase(
     disabledChannelIds: new Set(remote.channels.filter((row) => row.enabled === false || row.enabled === 0).map((row) => row.id)),
     logoProxyBase: `${config.publicBaseUrl.replace(/\/+$/, '')}/api/public/logo`,
   });
+  await reportTaskProgress(api, 2, 4);
   const logKey = await writeLog(store, runId, logger);
   const poolSnapshot = buildPoolSnapshot({
     lines,
@@ -519,9 +529,11 @@ async function publishPhase(
     generatedAt: output.catalog.generatedAt,
     poolSnapshot,
   }, logger);
+  await reportTaskProgress(api, 3, 4);
   // A guide-based export keeps the existing per-subscription XMLTV untouched:
   // rebuilding from the compact guide would truncate schedules.
   await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, epgMode === 'fetch' ? epg.data : null, logger);
+  await reportTaskProgress(api, 4, 4);
   await api.post('/api/admin/sync/channels', { channels: output.channels.map((channel) => ({ ...channel, aliases: [] })) });
 
   const previousCatalog = await store.getJson<ExportCatalog>('state/prev.json');
@@ -752,6 +764,7 @@ async function runBatchProbe(): Promise<void> {
       ? new Set<string>()
       : await prefilterLiveness(selected, settings, config.concurrency || settings.concurrency || 32, logger);
     const probeList = selected.filter((line) => !blocked.has(line.key));
+    await reportTaskProgress(api, 0, selected.length);
     const summary = await runProbes(probeList, settings, config.concurrency || settings.concurrency, logger, (done) => {
       void reportTaskProgress(api, done, selected.length);
     });
@@ -1066,6 +1079,7 @@ async function runSelectedProbes(): Promise<void> {
     logger.info('选中线路探测计划', { requested: keys.size, matched: selected.length });
 
     const concurrency = Math.max(1, Math.min(config.concurrency || settings.concurrency || 32, 64));
+    await reportTaskProgress(api, 0, selected.length);
     const summary = await runProbes(selected, settings, concurrency, logger, (done) => {
       void reportTaskProgress(api, done, selected.length);
     });
