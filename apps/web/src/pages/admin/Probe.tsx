@@ -53,8 +53,8 @@ interface LivenessItem {
 }
 
 /** Worker allows ~50 subrequests per call, so batch the preview client-side. */
-const LIVENESS_BATCH = 25;
-const LIVENESS_MAX = 200;
+const LIVENESS_BATCH = 30;
+const LIVENESS_CONCURRENCY = 4;
 
 export function Probe() {
   const { show } = useToast();
@@ -67,6 +67,7 @@ export function Probe() {
   const [openTester, setOpenTester] = useState(false);
   const [livenessOpen, setLivenessOpen] = useState(false);
   const [livenessResults, setLivenessResults] = useState<LivenessItem[]>([]);
+  const [livenessProgress, setLivenessProgress] = useState<{ done: number; total: number } | null>(null);
   const [passedSelected, setPassedSelected] = useState<Set<string>>(new Set());
   const [url, setUrl] = useState('');
   const [ua, setUa] = useState('');
@@ -96,7 +97,7 @@ export function Probe() {
   const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(totalItems / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pagedItems = visibleItems;
-  const livenessTargets = pagedItems.slice(0, LIVENESS_MAX);
+  const livenessTargets = pagedItems;
 
   useEffect(() => {
     setPage(1);
@@ -116,12 +117,22 @@ export function Probe() {
 
   const quickLiveness = useMutation({
     mutationFn: async (keys: string[]) => {
-      const results: LivenessItem[] = [];
+      const chunks: string[][] = [];
       for (let offset = 0; offset < keys.length; offset += LIVENESS_BATCH) {
-        const chunk = keys.slice(offset, offset + LIVENESS_BATCH);
-        const response = await api.post<{ results: LivenessItem[] }>('/api/admin/lines/liveness', { keys: chunk });
-        results.push(...response.results);
+        chunks.push(keys.slice(offset, offset + LIVENESS_BATCH));
       }
+      const results: LivenessItem[] = [];
+      let cursor = 0;
+      const worker = async (): Promise<void> => {
+        while (true) {
+          const index = cursor++;
+          if (index >= chunks.length) return;
+          const response = await api.post<{ results: LivenessItem[] }>('/api/admin/lines/liveness', { keys: chunks[index] });
+          results.push(...response.results);
+          setLivenessProgress({ done: results.length, total: keys.length });
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(LIVENESS_CONCURRENCY, chunks.length) }, worker));
       return { results };
     },
     onSuccess: (res) => {
@@ -129,6 +140,7 @@ export function Probe() {
       setPassedSelected(new Set(res.results.filter((item) => item.ok && !item.inconclusive).map((item) => item.key)));
       setLivenessOpen(true);
     },
+    onSettled: () => setLivenessProgress(null),
     onError: (error: Error) => show(error.message, 'error'),
   });
 
@@ -156,10 +168,13 @@ export function Probe() {
           <Button
             loading={quickLiveness.isPending}
             disabled={!livenessTargets.length}
-            title={`分 ${Math.max(1, Math.ceil(livenessTargets.length / LIVENESS_BATCH))} 批检查，单次最多 ${LIVENESS_MAX} 条`}
+            title={`每批 ${LIVENESS_BATCH} 条，自动分批，不限总数`}
             onClick={() => quickLiveness.mutate(livenessTargets.map((row) => row.key))}
           >
-            <Activity size={15} /> 快速测活（{livenessTargets.length} 条）
+            <Activity size={15} />{' '}
+            {quickLiveness.isPending && livenessProgress
+              ? `测活中 ${livenessProgress.done}/${livenessProgress.total}`
+              : `快速测活（${livenessTargets.length} 条）`}
           </Button>
           <Button variant="primary" loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'collect' })}>
             <PlayCircle size={15} /> 全量检测
