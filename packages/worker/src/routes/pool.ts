@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { compareLines, qualityOf, qualityRank, type LineEntry, type Quality } from '@iptv/core';
+import { channelLogo, compareLines, qualityOf, qualityRank, type LineEntry, type Quality } from '@iptv/core';
 import type { AppEnv, Env } from '../env.js';
 import {
   audit,
@@ -292,7 +292,9 @@ poolRoutes.post('/export', async (c) => {
   for (const line of selected) {
     const channel = meta.get(line.channelId);
     const tvgId = line.tvgId ?? channel?.tvgId;
-    const logo = line.logo ?? channel?.logo;
+    // Index rows do not carry the seed logo, so synthesise it from tvg-id the
+    // same way the subscription playlists do (jsDelivr fanmingming pack).
+    const logo = channelLogo({ logo: line.logo ?? channel?.logo, tvgId, name: line.channelName });
     const attrs = [
       tvgId ? `tvg-id="${escapeM3u(tvgId)}"` : '',
       `tvg-name="${escapeM3u(line.channelName)}"`,
