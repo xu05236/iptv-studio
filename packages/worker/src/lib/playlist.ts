@@ -56,7 +56,7 @@ export function channelMatches(channel: ChannelConfig, config: SubscriptionConfi
 export function buildFromCatalog(
   catalog: ExportCatalog,
   config: SubscriptionConfig,
-  options: { logoBaseUrl?: string | null; epgUrl?: string | null },
+  options: { logoBaseUrl?: string | null; logoProxyBase?: string | null; epgUrl?: string | null },
 ): { body: string; channels: number; lines: number } {
   const rows: Array<{ channel: ChannelConfig; lines: LineEntry[] }> = [];
   const allowedKeys = new Set(config.lineKeys ?? []);
@@ -80,6 +80,7 @@ export function buildFromCatalog(
 
   const exportChannels = toExportChannels(rows, {
     logoBaseUrl: options.logoBaseUrl,
+    logoProxyBase: options.logoProxyBase,
     showRegionSuffix: config.showRegionSuffix,
   });
 
@@ -111,7 +112,7 @@ export function buildFromPool(
   snapshot: PoolSnapshot,
   overrides: LineOverrideRow[],
   config: SubscriptionConfig,
-  options: { logoBaseUrl?: string | null; epgUrl?: string | null } = {},
+  options: { logoBaseUrl?: string | null; logoProxyBase?: string | null; epgUrl?: string | null } = {},
   tombstoned: Set<string> = new Set(),
 ): { body: string; channels: number; lines: number } {
   const overrideMap = new Map(overrides.map((row) => [row.line_key, row.pool]));
@@ -158,6 +159,7 @@ export function buildFromPool(
 
   const exportChannels = toExportChannels(rows, {
     logoBaseUrl: options.logoBaseUrl ?? null,
+    logoProxyBase: options.logoProxyBase,
     showRegionSuffix: config.showRegionSuffix,
   });
   const body = buildPlaylist(exportChannels, config.format, {
@@ -190,6 +192,7 @@ export async function renderSubscription(
   baseUrl: string,
 ): Promise<{ body: string; etag: string; channels: number; lines: number } | null> {
   const epgUrl = config.includeEpg ? `${baseUrl}/epg/${config.token}.xml` : null;
+  const logoProxyBase = `${baseUrl.replace(/\/+$/, '')}/api/public/logo`;
   if (config.lineKeys?.length) {
     const [state, channels] = await Promise.all([
       getJson<{ lines: LineEntry[] }>(env, 'state/lines.json'),
@@ -219,7 +222,7 @@ export async function renderSubscription(
       });
     }
     if (!rows.length) return null;
-    const exportChannels = toExportChannels(rows, { showRegionSuffix: config.showRegionSuffix });
+    const exportChannels = toExportChannels(rows, { showRegionSuffix: config.showRegionSuffix, logoProxyBase });
     const body = buildPlaylist(exportChannels, config.format, {
       epgUrl: epgUrl ?? undefined,
       showRegionSuffix: config.showRegionSuffix,
@@ -240,13 +243,13 @@ export async function renderSubscription(
     const snapshot = await loadPoolSnapshot(env);
     if (snapshot) {
       const [overrides, tombstones] = await Promise.all([listLineOverrides(env), listLineTombstones(env)]);
-      const rendered = buildFromPool(snapshot, overrides, config, { epgUrl }, new Set(tombstones.map((row) => row.url)));
+      const rendered = buildFromPool(snapshot, overrides, config, { epgUrl, logoProxyBase }, new Set(tombstones.map((row) => row.url)));
       return { ...rendered, etag: poolEtag(snapshot, overrides, config, tombstones) };
     }
   }
 
   const catalog = await loadCatalog(env);
   if (!catalog) return null;
-  const rendered = buildFromCatalog(catalog, config, { logoBaseUrl: undefined, epgUrl });
+  const rendered = buildFromCatalog(catalog, config, { logoBaseUrl: undefined, epgUrl, logoProxyBase });
   return { ...rendered, etag: playlistEtag(catalog, config) };
 }
