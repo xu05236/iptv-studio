@@ -1,7 +1,7 @@
 import { gunzipSync } from 'node:zlib';
 import {
   buildXmltv,
-  cctvApiCode,
+  cntvApiCode,
   EPGPW_ID_MAP,
   mapPool,
   matchEpg,
@@ -22,26 +22,26 @@ export interface EpgResult {
   xml: string;
 }
 
-/** Fetch CCTV's unofficial JSON guide as an enhancement for CCTV channels. */
-async function collectCctvEpg(
+/** Fetch CNTV's unofficial JSON guide for CCTV and supported satellite channels. */
+async function collectCntvEpg(
   registry: ChannelRegistry,
   logger: RunLogger,
 ): Promise<{ channels: EpgChannel[]; programmes: EpgProgramme[] }> {
-  const ids = registry
+  const targets = registry
     .list()
-    .map((seed) => seed.id)
-    .filter((id) => cctvApiCode(id) !== null);
+    .map((seed) => ({ id: seed.id, code: cntvApiCode(seed.id) }))
+    .filter((item): item is { id: string; code: string } => item.code !== null);
 
-  if (!ids.length) return { channels: [], programmes: [] };
+  if (!targets.length) return { channels: [], programmes: [] };
 
   const channels: EpgChannel[] = [];
   const programmes: EpgProgramme[] = [];
 
-  await mapPool(ids, 3, async (id) => {
+  await mapPool(targets, 4, async ({ id, code }) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error('timeout')), 15_000);
     try {
-      const response = await fetch(`https://api.cntv.cn/epg/epginfo?c=${encodeURIComponent(id)}&serviceId=tvcctv`, {
+      const response = await fetch(`https://api.cntv.cn/epg/epginfo?c=${encodeURIComponent(code)}&serviceId=tvcctv`, {
         headers: { 'User-Agent': 'IPTV-Studio-Runner/0.1', Referer: 'https://tv.cctv.com/' },
         signal: controller.signal,
       });
@@ -52,20 +52,20 @@ async function collectCctvEpg(
       channels.push(parsed.channel);
       programmes.push(...parsed.programmes);
     } catch {
-      // CCTV is an enhancement, never a hard dependency
+      // CNTV is an enhancement, never a hard dependency
     } finally {
       clearTimeout(timer);
     }
   });
 
-  logger.info('央视 EPG 完成', { channels: channels.length, programmes: programmes.length });
+  logger.info('央视/卫视 EPG 完成', { channels: channels.length, programmes: programmes.length });
   return { channels, programmes };
 }
 
 /** Fetch, normalise and merge every configured XMLTV source plus CCTV. */
 export async function collectEpg(urls: string[], registry: ChannelRegistry, logger: RunLogger): Promise<EpgResult> {
   const sources: EpgData[] = [];
-  const cctv = await collectCctvEpg(registry, logger);
+  const cntv = await collectCntvEpg(registry, logger);
   for (const url of urls) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error('timeout')), 90_000);
@@ -103,18 +103,19 @@ export async function collectEpg(urls: string[], registry: ChannelRegistry, logg
     maxProgrammesPerChannel: 180,
   });
 
-  // CCTV's own API wins for channels it covers. Remove every XMLTV programme
-  // for those channels first; otherwise a slightly shifted XMLTV entry can
-  // survive next to the official one and show the wrong "now playing" title.
-  const cctvIds = new Set(cctv.programmes.map((programme) => programme.channelId));
-  data.programmes = data.programmes.filter((programme) => !cctvIds.has(programme.channelId));
+  // CNTV's own API wins for channels it covers (CCTV + most satellite). Remove
+  // every XMLTV programme for those channels first; otherwise a slightly
+  // shifted XMLTV entry can survive next to the official one and show the
+  // wrong "now playing" title.
+  const cntvIds = new Set(cntv.programmes.map((programme) => programme.channelId));
+  data.programmes = data.programmes.filter((programme) => !cntvIds.has(programme.channelId));
 
-  // CCTV data wins for the exact same start time; future days from XMLTV stay.
-  if (cctv.programmes.length) {
+  // CNTV data wins for the exact same start time; future days from XMLTV stay.
+  if (cntv.programmes.length) {
     const known = new Set(data.channels.map((channel) => channel.id));
-    for (const channel of cctv.channels) if (!known.has(channel.id)) data.channels.push(channel);
+    for (const channel of cntv.channels) if (!known.has(channel.id)) data.channels.push(channel);
     const bySlot = new Map(data.programmes.map((programme) => [`${programme.channelId}|${programme.start}`, programme]));
-    for (const programme of cctv.programmes) bySlot.set(`${programme.channelId}|${programme.start}`, programme);
+    for (const programme of cntv.programmes) bySlot.set(`${programme.channelId}|${programme.start}`, programme);
     data.programmes = [...bySlot.values()].sort((a, b) => a.start - b.start);
   }
 
