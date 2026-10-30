@@ -135,6 +135,12 @@ export function SettingsPage() {
             <div className="grow"><Field label="精品线路复测间隔（小时）" hint="默认 168 小时（7 天）"><input className="input" inputMode="numeric" value={form.probePremiumHours ?? 168} onChange={(event) => set('probePremiumHours', Number(event.target.value))} /></Field></div>
             <div className="grow"><Field label="每频道每轮最多探测" hint="防止单个大频道吃掉整轮预算"><input className="input" inputMode="numeric" value={form.probePerChannel ?? 24} onChange={(event) => set('probePerChannel', Number(event.target.value))} /></Field></div>
           </div>
+          <div className="list">
+            <div className="list__row"><span className="grow">采集前轻量测活预筛（pending / suspect）</span><Switch checked={form.probePrefilterEnabled ?? true} onChange={(value) => set('probePrefilterEnabled', value)} /></div>
+          </div>
+          <div className="row">
+            <div className="grow"><Field label="每轮预筛条数" hint="先用清单 / 2KB 检查，通过后才进入完整测速；0 = 关闭"><input className="input" inputMode="numeric" value={form.probePrefilterBudget ?? 1200} onChange={(event) => set('probePrefilterBudget', Number(event.target.value))} /></Field></div>
+          </div>
           <div className="row">
             <div className="grow"><Field label="ffprobe 每轮补全条数" hint="每轮最多用 ffprobe 实测多少条缺分辨率的 alive 线路；调大更完整但整轮更慢，0 = 关闭"><input className="input" inputMode="numeric" value={form.ffprobeLimit ?? 150} onChange={(event) => set('ffprobeLimit', Number(event.target.value))} /></Field></div>
             <div className="grow"><Field label="线路留存天数" hint="源刷新不再列出后，已测线路仍保留的天数"><input className="input" inputMode="numeric" value={form.lineRetentionDays ?? 30} onChange={(event) => set('lineRetentionDays', Number(event.target.value))} /></Field></div>

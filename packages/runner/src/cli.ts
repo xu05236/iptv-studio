@@ -32,6 +32,7 @@ import { collectSource, type CollectedSource } from './pipeline/collect.js';
 import { planProbes, runProbes } from './pipeline/probe.js';
 import { buildArtifacts, publish, type ExportCatalog } from './pipeline/publish.js';
 import { collectEpg } from './pipeline/epg.js';
+import { prefilterLiveness } from './pipeline/liveness.js';
 import { publishSubscriptions } from './pipeline/subscriptions.js';
 import { captureScreenshots } from './pipeline/screenshots.js';
 import { enrichResolutions } from './pipeline/ffprobe.js';
@@ -298,7 +299,11 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
 
       const configuredBudget = config.probeBudget || settings.probeBudget;
       const force = process.env.PROBE_FORCE === '1' || process.env.PROBE_FORCE === 'true';
-      const probeCandidates = sourceId ? lines.filter((line) => line.sourceId === sourceId) : lines;
+      const baseCandidates = sourceId ? lines.filter((line) => line.sourceId === sourceId) : lines;
+      const blockedByLiveness = force
+        ? new Set<string>()
+        : await prefilterLiveness(baseCandidates, settings, config.concurrency || settings.concurrency || 32, logger);
+      const probeCandidates = baseCandidates.filter((line) => !blockedByLiveness.has(line.key));
       const premium = new Set<string>();
       const byChannel = new Map<string, LineEntry[]>();
       for (const line of probeCandidates) {

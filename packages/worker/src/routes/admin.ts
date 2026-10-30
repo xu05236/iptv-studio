@@ -303,7 +303,7 @@ adminRoutes.put('/settings', async (c) => {
   const allowed: Array<keyof AppSettings> = [
     'logoBaseUrl', 'maxLinesPerChannel', 'maxLinesPerSource', 'compensate', 'keepSuspect', 'deadReviveDays',
     'probeBudget', 'concurrency', 'probeAliveHours', 'probePremiumHours', 'probePerChannel',
-    'ffprobeLimit', 'lineRetentionDays', 'epgUrls', 'regionSuffix',
+    'ffprobeLimit', 'probePrefilterEnabled', 'probePrefilterBudget', 'lineRetentionDays', 'epgUrls', 'regionSuffix',
     'autoCollectEnabled', 'autoCollectTimes',
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback',
   ];

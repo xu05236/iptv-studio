@@ -283,6 +283,9 @@ export interface AppSettings {
   probePerChannel: number;
   /** ffprobe resolution enrichment budget per run. */
   ffprobeLimit: number;
+  /** Run a cheap manifest/range liveness check before full probes. */
+  probePrefilterEnabled: boolean;
+  probePrefilterBudget: number;
   /** Days to keep tested lines after their source stops advertising them. */
   lineRetentionDays: number;
   /** Automatic collect scheduler (default off). Times are Beijing-local HH:mm. */
@@ -317,6 +320,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   probePremiumHours: 168,
   probePerChannel: 24,
   ffprobeLimit: 150,
+  probePrefilterEnabled: true,
+  probePrefilterBudget: 1200,
   lineRetentionDays: 30,
   autoCollectEnabled: false,
   autoCollectTimes: '08:30',
