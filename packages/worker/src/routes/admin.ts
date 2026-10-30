@@ -43,9 +43,12 @@ adminRoutes.get('/epg/coverage', async (c) => {
   );
   const missing = index.channels.filter((channel) => !coveredIds.has(channel.id));
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
-  const filtered = q
-    ? missing.filter((channel) => `${channel.name} ${channel.id} ${channel.group}`.toLowerCase().includes(q))
-    : missing;
+  const group = (c.req.query('group') ?? '').trim();
+  const filtered = missing.filter((channel) => {
+    if (group && (channel.group || '其他') !== group) return false;
+    if (!q) return true;
+    return `${channel.name} ${channel.id} ${channel.group}`.toLowerCase().includes(q);
+  });
   const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0);
   const limit = Math.min(200, Math.max(1, Number(c.req.query('limit') ?? 100) || 100));
   const total = index.channels.length;
@@ -60,6 +63,51 @@ adminRoutes.get('/epg/coverage', async (c) => {
     offset,
     limit,
   });
+});
+
+/**
+ * Batch-bind EPG aliases. The workbench usually fills several channels from one
+ * group at a time; doing one POST per row was slow and noisy.
+ */
+adminRoutes.post('/epg/bind-bulk', async (c) => {
+  const body = await readJson<{ items?: Array<{ channelId?: string; alias?: string }> }>(c);
+  const items = (Array.isArray(body?.items) ? body.items : [])
+    .map((item) => ({ channelId: String(item?.channelId ?? '').trim(), alias: String(item?.alias ?? '').trim() }))
+    .filter((item) => item.channelId && item.alias)
+    .slice(0, 500);
+  if (!items.length) return fail('没有可绑定的条目');
+
+  const ids = [...new Set(items.map((item) => item.channelId))];
+  const aliases = [...new Set(items.map((item) => item.alias))];
+  const [channelRows, aliasRows] = await Promise.all([
+    c.env.DB.prepare(`SELECT id FROM channels WHERE id IN (${ids.map(() => '?').join(', ')})`).bind(...ids).all<{ id: string }>(),
+    c.env.DB.prepare(`SELECT alias, channel_id FROM aliases WHERE alias IN (${aliases.map(() => '?').join(', ')})`).bind(...aliases).all<{ alias: string; channel_id: string }>(),
+  ]);
+  const knownChannels = new Set(channelRows.results.map((row) => row.id));
+  const aliasOwner = new Map(aliasRows.results.map((row) => [row.alias, row.channel_id]));
+
+  const statements: D1PreparedStatement[] = [];
+  const failed: Array<{ channelId: string; alias: string; reason: string }> = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (!knownChannels.has(item.channelId)) {
+      failed.push({ ...item, reason: '频道不存在' });
+      continue;
+    }
+    const owner = aliasOwner.get(item.alias);
+    if (owner && owner !== item.channelId) {
+      failed.push({ ...item, reason: `别名已属于 ${owner}` });
+      continue;
+    }
+    if (owner === item.channelId || seen.has(item.alias)) continue;
+    seen.add(item.alias);
+    statements.push(c.env.DB.prepare('INSERT OR IGNORE INTO aliases (alias, channel_id) VALUES (?, ?)').bind(item.alias, item.channelId));
+  }
+  for (let offset = 0; offset < statements.length; offset += 40) {
+    await c.env.DB.batch(statements.slice(offset, offset + 40));
+  }
+  await audit(c.env, c.get('actor'), 'epg.bind_bulk', 'channels', { bound: statements.length, failed: failed.length });
+  return ok({ bound: statements.length, failed });
 });
 
 adminRoutes.get('/backup', async (c) => {

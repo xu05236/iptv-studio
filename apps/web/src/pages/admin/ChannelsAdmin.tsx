@@ -8,6 +8,20 @@ import { Badge, Button, Card, Field, Pagination, Sheet, Switch, useToast } from 
 
 const DEFAULT_PAGE_SIZE = 10;
 
+/** Parse `channelId => EPG name` lines (also accepts comma or tab). */
+function parseBulkMappings(text: string): Array<{ channelId: string; alias: string }> {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(.+?)\s*(?:=>|,|\t)\s*(.+)$/);
+      return match ? { channelId: match[1].trim(), alias: match[2].trim() } : null;
+    })
+    .filter((item): item is { channelId: string; alias: string } => Boolean(item))
+    .slice(0, 500);
+}
+
 interface AliasConflict {
   normalized: string;
   aliases: string[];
@@ -32,8 +46,10 @@ export function ChannelsAdmin() {
   const [conflictsOpen, setConflictsOpen] = useState(false);
   const [epgOpen, setEpgOpen] = useState(false);
   const [epgSearch, setEpgSearch] = useState('');
+  const [epgGroup, setEpgGroup] = useState('');
   const [epgLimit, setEpgLimit] = useState(100);
   const [epgInputs, setEpgInputs] = useState<Record<string, string>>({});
+  const [epgBulk, setEpgBulk] = useState('');
 
   const tree = useQuery({
     queryKey: ['admin', 'channels', 'tree'],
@@ -63,10 +79,11 @@ export function ChannelsAdmin() {
   });
 
   const epgCoverage = useQuery({
-    queryKey: ['admin', 'epg-coverage', epgSearch, epgLimit],
+    queryKey: ['admin', 'epg-coverage', epgSearch, epgGroup, epgLimit],
     queryFn: () => {
       const params = new URLSearchParams({ limit: String(epgLimit) });
       if (epgSearch.trim()) params.set('q', epgSearch.trim());
+      if (epgGroup) params.set('group', epgGroup);
       return api.get<{
         total: number;
         covered: number;
@@ -89,10 +106,22 @@ export function ChannelsAdmin() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const bindEpgBulk = useMutation({
+    mutationFn: (items: Array<{ channelId: string; alias: string }>) =>
+      api.post<{ bound: number; failed: Array<{ channelId: string; alias: string; reason: string }> }>('/api/admin/epg/bind-bulk', { items }),
+    onSuccess: (result) => {
+      show(`批量绑定 ${result.bound} 条${result.failed.length ? `，失败 ${result.failed.length} 条` : ''}`);
+      setEpgBulk('');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'epg-coverage'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const items = channels.data?.items ?? [];
   const total = channels.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const activeCountry = tree.data?.countries.find((item) => item.country === country);
+  const epgGroups = [...new Set((tree.data?.countries ?? []).flatMap((item) => item.groups.map((groupItem) => groupItem.group)))];
   const allSelected = items.length > 0 && items.every((channel) => selected.has(channel.id));
 
   useEffect(() => {
@@ -414,6 +443,29 @@ export function ChannelsAdmin() {
             输入 EPG 里的显示名或数字 ID（例如 北京卫视 / 539726），绑定后下一轮采集生效。
             {epgCoverage.data ? ` 当前缺失 ${epgCoverage.data.missingTotal} 个，已显示 ${epgCoverage.data.missing.length} 个。` : ''}
           </div>
+          <div className="row row--wrap" style={{ gap: 6, flexWrap: 'wrap' }}>
+            <button
+              className={epgGroup ? 'chip' : 'chip chip--active'}
+              onClick={() => {
+                setEpgGroup('');
+                setEpgLimit(100);
+              }}
+            >
+              全部分组
+            </button>
+            {epgGroups.map((item) => (
+              <button
+                key={item}
+                className={epgGroup === item ? 'chip chip--active' : 'chip'}
+                onClick={() => {
+                  setEpgGroup(item);
+                  setEpgLimit(100);
+                }}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
           <input
             className="input"
             placeholder="搜索缺失频道…"
@@ -423,6 +475,35 @@ export function ChannelsAdmin() {
               setEpgLimit(100);
             }}
           />
+          <div className="stack" style={{ gap: 6 }}>
+            <div className="caption">批量粘贴：每行「频道 ID 或名称 =&gt; EPG 名称/ID」，最多 500 条</div>
+            <textarea
+              className="input"
+              rows={4}
+              value={epgBulk}
+              onChange={(event) => setEpgBulk(event.target.value)}
+              placeholder={'cctv1 => CCTV1\nx-abc123 => 北京卫视'}
+              style={{ fontFamily: 'monospace', resize: 'vertical' }}
+            />
+            <div className="row" style={{ gap: 8 }}>
+              <Button
+                size="sm"
+                variant="glass"
+                disabled={!epgCoverage.data?.missing.length}
+                onClick={() => setEpgBulk((epgCoverage.data?.missing ?? []).map((channel) => `${channel.id} => `).join('\n'))}
+              >
+                填入当前列表
+              </Button>
+              <Button
+                size="sm"
+                loading={bindEpgBulk.isPending}
+                disabled={!parseBulkMappings(epgBulk).length}
+                onClick={() => bindEpgBulk.mutate(parseBulkMappings(epgBulk))}
+              >
+                批量绑定
+              </Button>
+            </div>
+          </div>
           {epgCoverage.isLoading ? <div className="caption">正在读取覆盖率…</div> : null}
           {epgCoverage.data?.missing.map((channel) => (
               <div key={channel.id} className="list__row" style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
