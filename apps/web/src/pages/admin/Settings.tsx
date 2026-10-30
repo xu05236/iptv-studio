@@ -197,9 +197,36 @@ export function SettingsPage() {
             <input className="input" value={form.autoLivenessTimes ?? '20:30'} onChange={(event) => set('autoLivenessTimes', event.target.value)} />
           </Field>
           <div className="caption">
-            {schedule.data?.liveness?.nextAt ? `下次：${new Date(schedule.data.liveness.nextAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` : '当前未启用。'}
+            已由「分批探测」替代，建议关闭，保留仅用于手动应急。
+            {schedule.data?.liveness?.nextAt ? ` 下次：${new Date(schedule.data.liveness.nextAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` : ' 当前未启用。'}
             {schedule.data?.liveness?.lastRunAt ? ` · 上次：${new Date(schedule.data.liveness.lastRunAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（${schedule.data.liveness.result ?? '未知'}）` : ''}
           </div>
+
+          <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>分批探测</div>
+          <div className="list">
+            <div className="list__row"><span className="grow">启用自动分批探测（pending → 待复测 → 已淘汰）</span><Switch checked={form.autoProbeEnabled ?? true} onChange={(value) => set('autoProbeEnabled', value)} /></div>
+          </div>
+          <div className="row">
+            <div className="grow"><Field label="每批条数" hint="一次 dispatch 最多完整探测多少条；建议 1200"><input className="input" inputMode="numeric" value={form.probeBatchSize ?? 1200} onChange={(event) => set('probeBatchSize', Number(event.target.value))} /></Field></div>
+            <div className="grow"><Field label="批次间隔（小时）" hint="一批完成后至少隔多久再派下一批；全部清空后自动停"><input className="input" inputMode="numeric" value={form.autoProbeIntervalHours ?? 2} onChange={(event) => set('autoProbeIntervalHours', Number(event.target.value))} /></Field></div>
+          </div>
+          <div className="caption">阶段顺序、提升/延后、暂停在概览页「检测任务」里调整；KV 写入 ≥920 时队列自动暂停。</div>
+
+          <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>抓源</div>
+          <div className="list">
+            <div className="list__row"><span className="grow">启用定时抓源（新源建议手动触发）</span><Switch checked={form.autoFetchEnabled ?? true} onChange={(value) => set('autoFetchEnabled', value)} /></div>
+          </div>
+          <Field label="抓源间隔（天）" hint="只抓源、不测速；新线路进入 pending 后由分批探测处理">
+            <input className="input" inputMode="numeric" value={form.fetchIntervalDays ?? 7} onChange={(event) => set('fetchIntervalDays', Number(event.target.value))} />
+          </Field>
+
+          <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>每日发布</div>
+          <div className="list">
+            <div className="list__row"><span className="grow">启用每日发布（只更新 EPG/catalog，不探测）</span><Switch checked={form.autoPublishEnabled ?? true} onChange={(value) => set('autoPublishEnabled', value)} /></div>
+          </div>
+          <Field label="每天发布时刻（北京时间）" hint="只抓 EPG 并重建 catalog/index/订阅，不抓源、不测速">
+            <input className="input" value={form.autoPublishTimes ?? '08:30'} onChange={(event) => set('autoPublishTimes', event.target.value)} />
+          </Field>
         </div>
       </Card>
 

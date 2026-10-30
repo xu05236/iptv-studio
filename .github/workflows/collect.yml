@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: 'collect=全流程，fetch=只抓源，probe=只测速，publish=只发布，export=重建导出，epg=只更新节目单，liveness=池内测活，probe-lines=指定线路探测'
+        description: 'collect=全流程，fetch=只抓源，probe=只测速，probe-batch=分批探测，publish=只发布，export=重建导出，epg=只更新节目单，liveness=池内测活，probe-lines=指定线路探测'
         type: choice
-        options: [collect, fetch, probe, publish, export, epg, liveness, probe-lines]
+        options: [collect, fetch, probe, probe-batch, publish, export, epg, liveness, probe-lines]
         default: collect
       budget:
         description: '本次测速条数（首轮建议 1200，稳定后再调大）'
@@ -23,6 +23,9 @@ on:
         default: ''
       line_keys:
         description: '仅探测指定线路 key（逗号分隔，检测中心勾选用）'
+        default: ''
+      phase:
+        description: '分批探测指定阶段：pending / quarantine / rejected（留空按后台顺序）'
         default: ''
 
 concurrency:
@@ -65,6 +68,7 @@ jobs:
           PROBE_FORCE: ${{ github.event.inputs.force || 'false' }}
           SOURCE_ID: ${{ github.event.inputs.source_id || '' }}
           LINE_KEYS: ${{ github.event.inputs.line_keys || '' }}
+          PROBE_PHASE: ${{ github.event.inputs.phase || '' }}
           TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}
         run: |
           if [ "${{ github.event.inputs.command || 'collect' }}" = "export" ]; then
@@ -75,6 +79,8 @@ jobs:
             npm run fetch -w @iptv/runner
           elif [ "${{ github.event.inputs.command || 'collect' }}" = "probe" ]; then
             npm run probe -w @iptv/runner
+          elif [ "${{ github.event.inputs.command || 'collect' }}" = "probe-batch" ]; then
+            npm run probe-batch -w @iptv/runner
           elif [ "${{ github.event.inputs.command || 'collect' }}" = "publish" ]; then
             npm run publish -w @iptv/runner
           elif [ "${{ github.event.inputs.command || 'collect' }}" = "liveness" ]; then

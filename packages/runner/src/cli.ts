@@ -11,6 +11,7 @@ import {
   guessProtocol,
   hashId,
   inferResolution,
+  isDueForProbe,
   mapPool,
   nextReputation,
   normalizeUrlForDedupe,
@@ -308,6 +309,26 @@ function poolSnapshotFor(remote: RemoteConfig, lines: LineEntry[], generatedAt: 
   });
 }
 
+/** Small summary consumed by the Worker scheduler; avoids parsing lines.json. */
+function poolStatsFor(remote: RemoteConfig, lines: LineEntry[]) {
+  const channelIds = new Set(remote.channels.map((channel) => channel.id));
+  const valid = lines.filter((line) => channelIds.has(line.channelId));
+  const now = Date.now();
+  return {
+    generatedAt: new Date().toISOString(),
+    total: valid.length,
+    pending: valid.filter((line) => !line.lastProbeAt).length,
+    quarantine: valid.filter((line) => line.status === 'suspect').length,
+    rejected: valid.filter((line) => line.status === 'dead' && (!line.reviveAt || Date.parse(line.reviveAt) <= now)).length,
+    alive: valid.filter((line) => line.status === 'alive').length,
+    dead: valid.filter((line) => line.status === 'dead').length,
+  };
+}
+
+async function writePoolStats(store: ArtifactStore, remote: RemoteConfig, lines: LineEntry[]): Promise<void> {
+  await store.put('state/pool-stats.json', JSON.stringify(poolStatsFor(remote, lines)), 'application/json');
+}
+
 async function syncSourceStats(
   api: ApiClient,
   remote: RemoteConfig,
@@ -365,6 +386,7 @@ async function fetchPhase(
   const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso(), tombstones, retentionDays);
   const lines = normalized.lines;
   logger.info('线路归一完成', { lines: lines.length, sourceId: sourceId || undefined });
+  await writePoolStats(store, remote, lines);
   return { lines, collected, sourceId };
 }
 
@@ -618,8 +640,130 @@ async function runProbePhase(): Promise<void> {
   }
 }
 
-/** Phase 3 command: publish from persisted lines. */
-async function runPublishPhase(): Promise<void> {
+function parsePhaseList(value: string): Array<'pending' | 'quarantine' | 'rejected'> {
+  const valid = new Set(['pending', 'quarantine', 'rejected']);
+  return String(value ?? '')
+    .split(/[\s,，]+/)
+    .map((item) => item.trim())
+    .filter((item): item is 'pending' | 'quarantine' | 'rejected' => valid.has(item));
+}
+
+function parsePhaseOrder(value: string): Array<'pending' | 'quarantine' | 'rejected'> {
+  const order = parsePhaseList(value);
+  return order.length ? order : ['pending', 'quarantine', 'rejected'];
+}
+
+function phaseMatches(line: LineEntry, phase: 'pending' | 'quarantine' | 'rejected', now: number, forced: boolean): boolean {
+  if (phase === 'pending') return !line.lastProbeAt;
+  if (phase === 'quarantine') {
+    if (line.status !== 'suspect') return false;
+    return forced || isDueForProbe(line, 'normal', new Date(now));
+  }
+  if (line.status !== 'dead') return false;
+  // Permanently dead lines are not worth re-probing.
+  if (line.failCount >= 5) return false;
+  return forced || !line.reviveAt || Date.parse(line.reviveAt) <= now;
+}
+
+/**
+ * Automatic batched probing: one phase per run, fixed batch size.
+ * pending -> quarantine -> rejected (order/pause configurable), then idle.
+ */
+async function runBatchProbe(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+  let report: RunReport = {
+    id: runId, trigger: 'manual', status: 'running', startedAt,
+    sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0, durationMs: 0, warnings: [],
+  };
+
+  try {
+    const remote = await loadRemoteConfig(api);
+    const settings = remote.settings;
+    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const lines = previous?.lines ?? [];
+    if (!lines.length) throw new Error('没有线路状态，请先运行 fetch');
+    const channelIds = new Set(remote.channels.map((channel) => channel.id));
+    const now = Date.now();
+    const forcedPhase = (process.env.PROBE_PHASE ?? '').trim() as 'pending' | 'quarantine' | 'rejected' | '';
+    const paused = new Set(parsePhaseList(settings.probePausedPhases));
+    const order = parsePhaseOrder(settings.probePhaseOrder);
+    const validPhase = (phase: 'pending' | 'quarantine' | 'rejected'): boolean =>
+      channelIds.size > 0 && lines.some((line) => channelIds.has(line.channelId) && phaseMatches(line, phase, now, forcedPhase === phase));
+    const phase = forcedPhase && ['pending', 'quarantine', 'rejected'].includes(forcedPhase)
+      ? forcedPhase
+      : order.find((candidate) => !paused.has(candidate) && validPhase(candidate));
+    if (!phase) {
+      logger.info('分批探测空闲：没有待测线路');
+      report = { ...report, status: 'success', finishedAt: nowIso(), channels: remote.channels.length, lines: lines.length, durationMs: Date.now() - startedMs };
+      await finishRun(api, report);
+      return;
+    }
+
+    const batchSize = Math.max(1, Number(settings.probeBatchSize) || 1200);
+    const perChannel = Math.max(1, Number(settings.probePerChannel) || 24);
+    const candidates = lines.filter((line) => channelIds.has(line.channelId) && phaseMatches(line, phase, now, Boolean(forcedPhase)));
+    const byChannel = new Map<string, LineEntry[]>();
+    for (const line of candidates) {
+      const bucket = byChannel.get(line.channelId) ?? [];
+      bucket.push(line);
+      byChannel.set(line.channelId, bucket);
+    }
+    const picked: LineEntry[] = [];
+    for (const bucket of byChannel.values()) {
+      bucket.sort((a, b) => (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
+      picked.push(...bucket.slice(0, perChannel));
+    }
+    picked.sort((a, b) => (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
+    const selected = picked.slice(0, batchSize);
+    logger.info('分批探测计划', { phase, candidates: candidates.length, batch: selected.length, batchSize, forced: Boolean(forcedPhase) });
+
+    const blocked = phase === 'rejected'
+      ? new Set<string>()
+      : await prefilterLiveness(selected, settings, config.concurrency || settings.concurrency || 32, logger);
+    const probeList = selected.filter((line) => !blocked.has(line.key));
+    const summary = await runProbes(probeList, settings, config.concurrency || settings.concurrency, logger);
+    const ffprobeLimit = Math.max(0, envNumber('FFPROBE_LIMIT') ?? settings.ffprobeLimit ?? 150);
+    if (ffprobeLimit > 0) await enrichResolutions(probeList, ffprobeLimit, logger);
+    logger.info('分批探测完成', { phase, checked: selected.length, probed: summary.probed, alive: summary.alive, dead: summary.dead });
+
+    const generatedAt = nowIso();
+    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
+    await writePoolStats(store, remote, lines);
+    const logKey = await writeLog(store, runId, logger);
+    const alive = lines.filter((line) => line.status === 'alive').length;
+    report = {
+      ...report,
+      status: summary.errors.length ? 'partial' : 'success',
+      finishedAt: nowIso(),
+      channels: remote.channels.length,
+      lines: lines.length,
+      alive,
+      dead: lines.length - alive,
+      probed: summary.probed,
+      bytes: summary.bytes,
+      durationMs: Date.now() - startedMs,
+      logKey,
+      warnings: summary.errors.slice(0, 10).map((item) => `${item.url}: ${item.error}`),
+    };
+    await finishRun(api, report);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('分批探测失败', { error: message });
+    report = { ...report, status: 'failed', finishedAt: nowIso(), error: message, durationMs: Date.now() - startedMs };
+    try { report.logKey = await writeLog(store, runId, logger); } catch { /* ignore */ }
+    await finishRun(api, report);
+    throw error;
+  }
+}
+
+/** Phase 3 command: publish from persisted lines. */async function runPublishPhase(): Promise<void> {
   const config = loadConfig();
   const logger = new RunLogger();
   const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -949,6 +1093,10 @@ async function main(): Promise<void> {
   }
   if (command === 'publish') {
     await runPublishPhase();
+    return;
+  }
+  if (command === 'probe-batch') {
+    await runBatchProbe();
     return;
   }
   if (command === 'probe-lines') {

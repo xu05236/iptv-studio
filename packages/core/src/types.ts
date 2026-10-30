@@ -294,6 +294,20 @@ export interface AppSettings {
   /** Daily pool liveness schedule (default on, cheap). */
   autoLivenessEnabled: boolean;
   autoLivenessTimes: string;
+  /** Automatic batched probing of pending/quarantine/rejected lines. */
+  autoProbeEnabled: boolean;
+  probeBatchSize: number;
+  autoProbeIntervalHours: number;
+  /** Phase priority for batched probing, e.g. pending,quarantine,rejected. */
+  probePhaseOrder: string;
+  /** Phases temporarily skipped by the batch scheduler. */
+  probePausedPhases: string;
+  /** Weekly source refresh + manual fetch on source add. */
+  autoFetchEnabled: boolean;
+  fetchIntervalDays: number;
+  /** Daily publish-only (EPG/catalog) without probing. */
+  autoPublishEnabled: boolean;
+  autoPublishTimes: string;
   epgUrls: string[];
   regionSuffix: boolean;
   notifyTelegram: boolean;
@@ -330,6 +344,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoCollectTimes: '08:30',
   autoLivenessEnabled: true,
   autoLivenessTimes: '20:30',
+  autoProbeEnabled: true,
+  probeBatchSize: 1200,
+  autoProbeIntervalHours: 2,
+  probePhaseOrder: 'pending,quarantine,rejected',
+  probePausedPhases: '',
+  autoFetchEnabled: true,
+  fetchIntervalDays: 7,
+  autoPublishEnabled: true,
+  autoPublishTimes: '08:30',
   epgUrls: DEFAULT_EPG_URLS,
   regionSuffix: true,
   notifyTelegram: false,

@@ -59,6 +59,11 @@ export function nextAutoLivenessAt(settings: AppSettings, nowMs = Date.now()): n
   return nextScheduledAt(parseCollectTimes(settings.autoLivenessTimes), nowMs);
 }
 
+export function nextAutoPublishAt(settings: AppSettings, nowMs = Date.now()): number | null {
+  if (!settings.autoPublishEnabled) return null;
+  return nextScheduledAt(parseCollectTimes(settings.autoPublishTimes), nowMs);
+}
+
 interface ScheduleState {
   lastRunAt?: string;
   lastScheduledAt?: string;
@@ -66,7 +71,7 @@ interface ScheduleState {
 }
 
 interface SchedulerConfig {
-  command: 'collect' | 'liveness';
+  command: 'collect' | 'liveness' | 'publish';
   enabled: boolean;
   times: string;
   stateKey: string;
@@ -79,6 +84,12 @@ function schedulerConfigs(settings: AppSettings): SchedulerConfig[] {
       enabled: Boolean(settings.autoCollectEnabled),
       times: settings.autoCollectTimes,
       stateKey: 'state/schedule.json',
+    },
+    {
+      command: 'publish',
+      enabled: Boolean(settings.autoPublishEnabled),
+      times: settings.autoPublishTimes,
+      stateKey: 'state/publish-schedule.json',
     },
     {
       command: 'liveness',
@@ -117,7 +128,12 @@ export async function runScheduler(env: Env): Promise<void> {
     if (lastAttempt >= scheduledAt) continue;
     due.push({ config, scheduledAt });
   }
-  if (!due.length) return;
+  if (!due.length) {
+    const at = Date.now();
+    if (await runFetchWatch(env, settings, at)) return;
+    await runProbeWatch(env, settings, at);
+    return;
+  }
 
   const record = async (config: SchedulerConfig, scheduledAt: number, result: string): Promise<void> => {
     const next: ScheduleState = {
@@ -163,4 +179,79 @@ export async function runScheduler(env: Env): Promise<void> {
     });
     dispatched = result.ok;
   }
+
+  if (dispatched) return;
+  const at = Date.now();
+  if (await runFetchWatch(env, settings, at)) return;
+  await runProbeWatch(env, settings, at);
+}
+
+interface IntervalState {
+  lastRunAt?: string;
+  nextRunAt?: string;
+  result?: string;
+}
+
+async function intervalGuard(env: Env): Promise<'quota' | 'running' | null> {
+  const today = new Date().toISOString().slice(0, 10);
+  const usage = await getJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
+  const writes = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
+  if (writes >= 920) return 'quota';
+  const runs = (await workflowRunStatus(env)) as Array<{ status?: string }> | null;
+  if (Array.isArray(runs) && runs.some((run) => run.status === 'queued' || run.status === 'in_progress')) return 'running';
+  return null;
+}
+
+async function recordInterval(env: Env, key: string, now: number, nextMs: number, result: string): Promise<void> {
+  const state: IntervalState = {
+    lastRunAt: new Date(now).toISOString(),
+    nextRunAt: new Date(nextMs).toISOString(),
+    result,
+  };
+  await env.KV.put(key, JSON.stringify(state));
+}
+
+const PHASES = ['pending', 'quarantine', 'rejected'] as const;
+
+function phaseList(value: string): string[] {
+  return String(value ?? '').split(/[\s,，]+/).map((item) => item.trim()).filter((item) => (PHASES as readonly string[]).includes(item));
+}
+
+/** Weekly-ish fetch task, independent from daily publish/probe. */
+async function runFetchWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
+  if (!settings.autoFetchEnabled) return false;
+  const state = await getJson<IntervalState>(env, 'state/fetch-schedule.json');
+  if (state?.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
+  const intervalMs = Math.max(1, Number(settings.fetchIntervalDays) || 7) * 86_400_000;
+  const guard = await intervalGuard(env);
+  if (guard) {
+    await recordInterval(env, 'state/fetch-schedule.json', now, now + 30 * 60_000, `skipped: ${guard}`);
+    return false;
+  }
+  const result = await dispatchWorkflow(env, { command: 'fetch', force: 'false' });
+  await recordInterval(env, 'state/fetch-schedule.json', now, now + intervalMs, result.ok ? 'dispatched' : `failed: ${result.message}`);
+  await audit(env, 'scheduler', 'schedule.fetch', 'github', { ...result });
+  return result.ok;
+}
+
+/** Batched probe scheduler: dispatch only while unpaused phases still have work. */
+async function runProbeWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
+  if (!settings.autoProbeEnabled) return false;
+  const stats = await getJson<Record<string, number>>(env, 'state/pool-stats.json');
+  const paused = new Set(phaseList(settings.probePausedPhases));
+  const hasWork = !stats || PHASES.some((phase) => !paused.has(phase) && Number(stats[phase] ?? 0) > 0);
+  if (!hasWork) return false;
+
+  const state = await getJson<IntervalState>(env, 'state/probe-schedule.json');
+  if (state?.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
+  const intervalMs = Math.max(1, Number(settings.autoProbeIntervalHours) || 2) * 3_600_000;
+  const guard = await intervalGuard(env);
+  if (guard) {
+    await recordInterval(env, 'state/probe-schedule.json', now, now + 15 * 60_000, `skipped: ${guard}`);
+    return false;
+  }
+  const result = await dispatchWorkflow(env, { command: 'probe-batch', force: 'false' });
+  await recordInterval(env, 'state/probe-schedule.json', now, now + intervalMs, result.ok ? 'dispatched' : `failed: ${result.message}`);
+  await audit(env, 'scheduler', 'schedule.probe-batch', 'github', { ...result });
+  return result.ok;
 }

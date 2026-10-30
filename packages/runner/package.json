@@ -7,6 +7,7 @@
     "collect": "tsx src/cli.ts collect",
     "fetch": "tsx src/cli.ts fetch",
     "probe": "tsx src/cli.ts probe",
+    "probe-batch": "tsx src/cli.ts probe-batch",
     "publish": "tsx src/cli.ts publish",
     "liveness": "tsx src/cli.ts liveness",
     "export": "tsx src/cli.ts export",

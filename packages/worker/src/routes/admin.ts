@@ -27,7 +27,7 @@ import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
 import { inferResolution } from '@iptv/core';import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
-import { nextAutoCollectAt, nextAutoLivenessAt, parseCollectTimes } from '../lib/schedule.js';
+import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, parseCollectTimes } from '../lib/schedule.js';
 import { sourceMetaMap } from '../lib/source.js';
 
 export const adminRoutes = new Hono<AppEnv>();
@@ -222,8 +222,8 @@ adminRoutes.get('/runs/:id/log', async (c) => {
 });
 
 adminRoutes.post('/runs/dispatch', async (c) => {
-  const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string; lineKeys?: string[] | string }>(c)) ?? {};
-  const allowedCommands = new Set(['collect', 'export', 'epg', 'fetch', 'probe', 'publish', 'liveness', 'probe-lines']);
+  const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string; lineKeys?: string[] | string; phase?: string }>(c)) ?? {};
+  const allowedCommands = new Set(['collect', 'export', 'epg', 'fetch', 'probe', 'probe-batch', 'publish', 'liveness', 'probe-lines']);
   const requestedCommand = body.command ?? '';
   const command = allowedCommands.has(requestedCommand) ? requestedCommand : 'collect';
   const force = Boolean(body.force);
@@ -252,6 +252,7 @@ adminRoutes.post('/runs/dispatch', async (c) => {
     budget: String(body.budget ?? defaultBudget),
     source_id: body.sourceId?.trim() ?? '',
     line_keys: lineKeys.join(','),
+    phase: typeof body.phase === 'string' && ['pending', 'quarantine', 'rejected'].includes(body.phase) ? body.phase : '',
   });
   await audit(c.env, c.get('actor'), 'run.dispatch', 'github', result);
   if (!result.ok) return fail(result.message, 400, 'dispatch_failed');
@@ -312,6 +313,9 @@ adminRoutes.put('/settings', async (c) => {
     'probeBudget', 'concurrency', 'probeAliveHours', 'probePremiumHours', 'probePerChannel',
     'ffprobeLimit', 'probePrefilterEnabled', 'probePrefilterBudget', 'lineRetentionDays', 'epgUrls', 'regionSuffix',
     'autoCollectEnabled', 'autoCollectTimes', 'autoLivenessEnabled', 'autoLivenessTimes',
+    'autoProbeEnabled', 'probeBatchSize', 'autoProbeIntervalHours',
+    'probePhaseOrder', 'probePausedPhases',
+    'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishTimes',
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback',
   ];
   const clean: Partial<AppSettings> = {};
@@ -328,6 +332,14 @@ adminRoutes.put('/settings', async (c) => {
     if (!times.length) return fail('每日测活时间格式应为 HH:mm，多个用逗号分隔（北京时间）');
     clean.autoLivenessTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
   }
+  if (clean.autoPublishTimes !== undefined) {
+    const times = parseCollectTimes(clean.autoPublishTimes);
+    if (!times.length) return fail('每日发布时间格式应为 HH:mm（北京时间）');
+    clean.autoPublishTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
+  }
+  if (clean.probeBatchSize !== undefined) clean.probeBatchSize = Math.max(1, Number(clean.probeBatchSize) || 1200);
+  if (clean.autoProbeIntervalHours !== undefined) clean.autoProbeIntervalHours = Math.max(1, Number(clean.autoProbeIntervalHours) || 2);
+  if (clean.fetchIntervalDays !== undefined) clean.fetchIntervalDays = Math.max(1, Number(clean.fetchIntervalDays) || 7);
   const settings = await saveSettings(c.env, clean);
   return ok({ settings });
 });
@@ -353,6 +365,75 @@ adminRoutes.get('/schedule', async (c) => {
       lastScheduledAt: livenessState?.lastScheduledAt ?? null,
       result: livenessState?.result ?? null,
       nextAt: nextLivenessAt ? new Date(nextLivenessAt).toISOString() : null,
+    },
+  });
+});
+
+const TASK_PHASES = ['pending', 'quarantine', 'rejected'] as const;
+const TASK_PHASE_LABEL: Record<string, string> = {
+  pending: '待测（从未探测）',
+  quarantine: '待复测（suspect）',
+  rejected: '已淘汰（dead）',
+};
+
+/** Derived detection task board for the overview page. */
+adminRoutes.get('/tasks', async (c) => {
+  const settings = await loadSettings(c.env);
+  const [stats, probeState, fetchState, publishState] = await Promise.all([
+    getJson<Record<string, number>>(c.env, 'state/pool-stats.json'),
+    getJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/probe-schedule.json'),
+    getJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/fetch-schedule.json'),
+    getJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/publish-schedule.json'),
+  ]);
+  const order = String(settings.probePhaseOrder ?? '')
+    .split(/[\s,，]+/)
+    .map((item) => item.trim())
+    .filter((item): item is typeof TASK_PHASES[number] => (TASK_PHASES as readonly string[]).includes(item));
+  for (const phase of TASK_PHASES) if (!order.includes(phase)) order.push(phase);
+  const paused = new Set(
+    String(settings.probePausedPhases ?? '')
+      .split(/[\s,，]+/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+  );
+  const batchSize = Math.max(1, Number(settings.probeBatchSize) || 1200);
+  const phases = order.map((id) => {
+    const count = Math.max(0, Number(stats?.[id] ?? 0));
+    return {
+      id,
+      label: TASK_PHASE_LABEL[id] ?? id,
+      count,
+      estimatedBatches: count > 0 ? Math.ceil(count / batchSize) : 0,
+      paused: paused.has(id),
+    };
+  });
+  const nextPublish = nextAutoPublishAt(settings);
+  return ok({
+    batchSize,
+    intervalHours: settings.autoProbeIntervalHours,
+    phases,
+    stats: stats ?? null,
+    schedules: {
+      probe: {
+        enabled: settings.autoProbeEnabled,
+        nextAt: probeState?.nextRunAt ?? null,
+        lastRunAt: probeState?.lastRunAt ?? null,
+        result: probeState?.result ?? null,
+      },
+      fetch: {
+        enabled: settings.autoFetchEnabled,
+        intervalDays: settings.fetchIntervalDays,
+        nextAt: fetchState?.nextRunAt ?? null,
+        lastRunAt: fetchState?.lastRunAt ?? null,
+        result: fetchState?.result ?? null,
+      },
+      publish: {
+        enabled: settings.autoPublishEnabled,
+        times: settings.autoPublishTimes,
+        nextAt: nextPublish ? new Date(nextPublish).toISOString() : null,
+        lastRunAt: publishState?.lastRunAt ?? null,
+        result: publishState?.result ?? null,
+      },
     },
   });
 });

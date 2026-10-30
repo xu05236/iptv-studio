@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowUpRight, Database, Download, PlayCircle, RefreshCw, RadioTower, Users } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, Database, Download, ListChecks, Pause, Play, PlayCircle, RefreshCw, RadioTower, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminStats, UsageSnapshot } from '../../lib/types';
 import { formatDuration, timeAgo } from '../../lib/format';
@@ -36,6 +36,25 @@ function formatSnapshot(value: string): string {
   return new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+interface TaskPhase {
+  id: 'pending' | 'quarantine' | 'rejected';
+  label: string;
+  count: number;
+  estimatedBatches: number;
+  paused: boolean;
+}
+
+interface TaskBoard {
+  batchSize: number;
+  intervalHours: number;
+  phases: TaskPhase[];
+  schedules: {
+    probe: { enabled: boolean; nextAt: string | null; lastRunAt: string | null; result: string | null };
+    fetch: { enabled: boolean; intervalDays: number; nextAt: string | null; lastRunAt: string | null; result: string | null };
+    publish: { enabled: boolean; times: string; nextAt: string | null; lastRunAt: string | null; result: string | null };
+  };
+}
+
 export function Dashboard() {
   const queryClient = useQueryClient();
   const { show } = useToast();
@@ -66,6 +85,32 @@ export function Dashboard() {
     onSuccess: (result) => {
       show(result.message);
       void queryClient.invalidateQueries({ queryKey: ['admin'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const tasks = useQuery({
+    queryKey: ['admin', 'tasks'],
+    queryFn: () => api.get<TaskBoard>('/api/admin/tasks'),
+  });
+
+  const saveTaskPlan = useMutation({
+    mutationFn: (patch: { probePhaseOrder?: string; probePausedPhases?: string }) =>
+      api.put<{ settings: unknown }>('/api/admin/settings', patch),
+    onSuccess: () => {
+      show('检测任务已更新');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'tasks'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const runTask = useMutation({
+    mutationFn: (body: { command: 'probe-batch' | 'fetch' | 'publish'; phase?: string }) =>
+      api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', body),
+    onSuccess: (result) => {
+      show(result.message);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'tasks'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
@@ -110,6 +155,25 @@ export function Dashboard() {
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
+
+  const movePhase = (index: number, delta: number): void => {
+    const board = tasks.data;
+    if (!board) return;
+    const ids = board.phases.map((phase) => phase.id);
+    const target = index + delta;
+    if (target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+    saveTaskPlan.mutate({ probePhaseOrder: ids.join(',') });
+  };
+
+  const togglePhase = (id: TaskPhase['id']): void => {
+    const board = tasks.data;
+    if (!board) return;
+    const paused = new Set(board.phases.filter((phase) => phase.paused).map((phase) => phase.id));
+    if (paused.has(id)) paused.delete(id);
+    else paused.add(id);
+    saveTaskPlan.mutate({ probePausedPhases: [...paused].join(',') });
+  };
 
   if (isLoading) {
     return (
@@ -195,6 +259,73 @@ export function Dashboard() {
         <Stat value={stats.sources.enabled} label={`启用源 / 共 ${stats.sources.total}`} />
         <Stat value={stats.subscriptions} label="订阅出口" />
       </div>
+
+      <Card>
+        <div className="row row--between row--wrap">
+          <div className="row" style={{ gap: 6 }}>
+            <ListChecks size={17} />
+            <span className="title-3">检测任务</span>
+          </div>
+          <span className="caption">
+            {tasks.data ? `每 ${tasks.data.intervalHours} 小时一批 · 每批 ${tasks.data.batchSize} 条` : '加载中'}
+          </span>
+        </div>
+        {tasks.data ? (
+          <>
+            <div className="list" style={{ marginTop: 10 }}>
+              {tasks.data.phases.map((phase, index) => (
+                <div className="list__row" key={phase.id}>
+                  <div className="grow">
+                    <div className="row" style={{ gap: 6 }}>
+                      <span style={{ fontWeight: 600 }}>{phase.label}</span>
+                      {phase.paused ? <Badge tone="orange">已暂停</Badge> : null}
+                    </div>
+                    <div className="caption">
+                      {formatNumber(phase.count)} 条 · 约 {phase.estimatedBatches} 批
+                      {phase.count === 0 ? ' · 已完成' : ''}
+                    </div>
+                  </div>
+                  <div className="row" style={{ gap: 4 }}>
+                    <Button size="sm" variant="ghost" disabled={index === 0} title="提升优先级" onClick={() => movePhase(index, -1)}>
+                      <ArrowUp size={14} />
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={index === tasks.data!.phases.length - 1} title="延后" onClick={() => movePhase(index, 1)}>
+                      <ArrowDown size={14} />
+                    </Button>
+                    <Button size="sm" variant="ghost" title={phase.paused ? '恢复' : '暂停'} onClick={() => togglePhase(phase.id)}>
+                      {phase.paused ? <Play size={14} /> : <Pause size={14} />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={phase.paused || phase.count === 0}
+                      loading={runTask.isPending}
+                      onClick={() => runTask.mutate({ command: 'probe-batch', phase: phase.id })}
+                    >
+                      跑一批
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="caption" style={{ marginTop: 8 }}>
+              用 ↑↓ 调整阶段优先级；暂停后调度器跳过该阶段。抓源：
+              {tasks.data.schedules.fetch.enabled ? `每 ${tasks.data.schedules.fetch.intervalDays} 天` : '关闭'}
+              {tasks.data.schedules.fetch.nextAt ? `（下次 ${formatSnapshot(tasks.data.schedules.fetch.nextAt)}）` : ''}
+              <Button size="sm" variant="glass" style={{ marginLeft: 6 }} loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'fetch' })}>
+                立即抓源
+              </Button>
+              ；发布：
+              {tasks.data.schedules.publish.enabled ? `每天 ${tasks.data.schedules.publish.times}` : '关闭'}
+              {tasks.data.schedules.publish.nextAt ? `（下次 ${formatSnapshot(tasks.data.schedules.publish.nextAt)}）` : ''}
+              <Button size="sm" variant="glass" style={{ marginLeft: 6 }} loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
+                立即发布
+              </Button>
+            </div>
+          </>
+        ) : (
+          <Skeleton height={90} radius={12} />
+        )}
+      </Card>
 
       {epgCoverage.data ? (
         <Card>
