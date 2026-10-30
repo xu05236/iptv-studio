@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Filter, Layers3, RefreshCw, RotateCcw } from 'lucide-react';
+import { Ban, Download, Filter, Layers3, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import { api, getToken } from '../../lib/api';
 import { formatResolution, formatSpeed, statusLabel, statusTone } from '../../lib/format';
-import { Badge, Button, Card, EmptyState, Pagination, Skeleton, useToast } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Pagination, Sheet, Skeleton, useToast } from '../../components/ui';
 import { timeAgo } from '../../lib/format';
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -98,6 +98,7 @@ export function Pool() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [tombstonesOpen, setTombstonesOpen] = useState(false);
 
   const tree = useQuery({
     queryKey: ['admin', 'pool', 'tree'],
@@ -112,6 +113,12 @@ export function Pool() {
   const sources = useQuery({
     queryKey: ['admin', 'sources'],
     queryFn: () => api.get<{ items: Array<{ id: string; name: string; enabled: boolean }> }>('/api/admin/sources'),
+  });
+
+  const tombstones = useQuery({
+    queryKey: ['admin', 'pool', 'tombstones'],
+    queryFn: () => api.get<{ items: Array<{ url: string; channel_id?: string | null; reason?: string | null; created_at: string }> }>('/api/admin/pool/tombstones'),
+    enabled: tombstonesOpen,
   });
 
   const poolTotals = useMemo(() => {
@@ -185,6 +192,38 @@ export function Pool() {
     onSuccess: (result) => {
       show(`已恢复 ${result.removed} 条线路为自动池`);
       setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const deleteLines = useMutation({
+    mutationFn: (keys: string[]) => api.post<{ removed: number }>('/api/admin/pool/delete', { keys }),
+    onSuccess: (result) => {
+      show(`已删除 ${result.removed} 条线路`);
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const tombstoneLines = useMutation({
+    mutationFn: ({ keys, reason }: { keys: string[]; reason?: string }) =>
+      api.post<{ tombstoned: number; removed: number }>('/api/admin/pool/tombstone', { keys, reason }),
+    onSuccess: (result) => {
+      show(`已标记墓碑 ${result.tombstoned} 条，删除 ${result.removed} 条`);
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const untombstone = useMutation({
+    mutationFn: (urls: string[]) => api.post<{ removed: number }>('/api/admin/pool/untombstone', { urls }),
+    onSuccess: (result) => {
+      show(`已解除 ${result.removed} 条墓碑`);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
@@ -286,7 +325,7 @@ export function Pool() {
         <div>
           <h1 className="large-title">线路池</h1>
           <p className="subhead" style={{ marginTop: 4 }}>
-            按国家 / 分组 / 频道或订阅查看线路；可移动到其他池、恢复自动；candidate 为测活通过但质量待确认。
+            按国家 / 分组 / 频道或订阅查看线路；可移动、删除、墓碑；candidate 为测活通过但质量待确认。
           </p>
         </div>
         <Button loading={tree.isFetching || lines.isFetching} onClick={() => { void tree.refetch(); void lines.refetch(); }}>
@@ -297,6 +336,9 @@ export function Pool() {
         </Button>
         <Button loading={saveSubscription.isPending} onClick={() => saveSubscription.mutate()}>
           <Layers3 size={15} /> 保存为订阅
+        </Button>
+        <Button onClick={() => setTombstonesOpen(true)}>
+          <Ban size={15} /> 墓碑列表
         </Button>
       </div>
 
@@ -426,6 +468,26 @@ export function Pool() {
             <Button loading={reset.isPending} variant="glass" onClick={() => reset.mutate([...selected])}>
               恢复自动
             </Button>
+            <Button
+              variant="danger"
+              loading={deleteLines.isPending}
+              onClick={() => {
+                if (confirm(`删除 ${selected.size} 条线路？源刷新后可能回来；想永久阻止请用「墓碑」。`)) deleteLines.mutate([...selected]);
+              }}
+            >
+              <Trash2 size={13} /> 删除
+            </Button>
+            <Button
+              variant="danger"
+              loading={tombstoneLines.isPending}
+              onClick={() => {
+                if (!confirm(`标记墓碑 ${selected.size} 条？删除后不会再从任何源导入。`)) return;
+                const reason = window.prompt('墓碑原因（可选）') ?? undefined;
+                tombstoneLines.mutate({ keys: [...selected], reason });
+              }}
+            >
+              <Ban size={13} /> 墓碑
+            </Button>
             <Button variant="ghost" onClick={() => setSelected(new Set())}>取消选择</Button>
           </div>
         </Card>
@@ -526,6 +588,26 @@ export function Pool() {
       ) : (
         <EmptyState icon={<Layers3 size={24} />} title="没有符合条件的线路" description="换个分组、池类型或降低筛选条件试试。" />
       )}
+
+      <Sheet open={tombstonesOpen} onClose={() => setTombstonesOpen(false)} title="已墓碑线路" subtitle={`${tombstones.data?.items.length ?? 0} 条永久不再导入`}>
+        <div className="stack">
+          {tombstones.data?.items.length ? (
+            tombstones.data.items.map((item) => (
+              <div key={item.url} className="list__row" style={{ alignItems: 'center', gap: 8 }}>
+                <div className="grow" style={{ minWidth: 0 }}>
+                  <div className="truncate">{item.url}</div>
+                  <div className="caption">{item.channel_id ?? '未知频道'} · {item.reason || '无原因'} · {item.created_at}</div>
+                </div>
+                <Button size="sm" variant="glass" loading={untombstone.isPending} onClick={() => untombstone.mutate([item.url])}>
+                  解除
+                </Button>
+              </div>
+            ))
+          ) : (
+            <div className="caption">还没有墓碑。</div>
+          )}
+        </div>
+      </Sheet>
     </div>
   );
 }

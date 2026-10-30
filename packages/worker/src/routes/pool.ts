@@ -1,24 +1,64 @@
 import { Hono } from 'hono';
-import { channelLogo, compareLines, dedupePoolLines, qualityOf, qualityRank, type LineEntry, type Quality } from '@iptv/core';
+import { canonicalPoolUrl, channelLogo, compareLines, dedupePoolLines, qualityOf, qualityRank, type LineEntry, type PoolSnapshot, type Quality } from '@iptv/core';
 import type { AppEnv, Env } from '../env.js';
 import {
+  addLineTombstones,
   audit,
   createSubscription,
   deleteLineOverrides,
   listChannels,
   listLineOverrides,
+  listLineTombstones,
   listSources,
   listSubscriptions,
   loadSettings,
+  removeLineTombstones,
   upsertLineOverride,
   type SubscriptionRow,
 } from '../db.js';
 import { fail, ok, parseJsonField, randomId, randomToken, readJson } from '../lib/http.js';
-import { getJson } from '../lib/store.js';
+import { getJson, putArtifact } from '../lib/store.js';
 import { countryOfGroup } from '../lib/channelCountry.js';
 import { loadIndex } from '../lib/catalog.js';
 
 export const poolRoutes = new Hono<AppEnv>();
+
+/**
+ * Remove lines from both the persisted state and the compact pool snapshot so
+ * the next request already reflects the deletion (no publish required).
+ * Tombstones are handled by the caller.
+ */
+async function removeLinesFromArtifacts(env: Env, keys: Set<string>): Promise<number> {
+  let removed = 0;
+  const state = await getJson<{ generatedAt?: string; lines: LineEntry[] }>(env, 'state/lines.json');
+  if (state?.lines?.length) {
+    const kept = state.lines.filter((line) => !keys.has(line.key));
+    removed = state.lines.length - kept.length;
+    if (removed) {
+      await putArtifact(env, 'state/lines.json', JSON.stringify({ generatedAt: state.generatedAt, lines: kept }), 'application/json; charset=utf-8');
+    }
+  }
+
+  const snapshot = await getJson<PoolSnapshot>(env, 'state/pool.json');
+  if (snapshot) {
+    let changed = false;
+    for (const [channelId, entry] of Object.entries(snapshot.channels)) {
+      for (const bucket of ['premium', 'backup', 'candidate'] as const) {
+        const before = entry[bucket].length;
+        entry[bucket] = entry[bucket].filter((line) => !keys.has(line.key));
+        if (entry[bucket].length !== before) changed = true;
+      }
+      if (!entry.premium.length && !entry.backup.length && !entry.candidate.length) {
+        delete snapshot.channels[channelId];
+        changed = true;
+      }
+    }
+    if (changed) {
+      await putArtifact(env, 'state/pool.json', JSON.stringify(snapshot), 'application/json; charset=utf-8');
+    }
+  }
+  return removed;
+}
 
 const PREMIUM_PER_CHANNEL = 12;
 
@@ -278,6 +318,60 @@ poolRoutes.post('/reset', async (c) => {
   if (!keys.length) return fail('keys 不能为空');
   const removed = await deleteLineOverrides(c.env, keys);
   await audit(c.env, c.get('actor'), 'pool.reset', 'bulk', { keys, removed });
+  return ok({ removed });
+});
+
+poolRoutes.get('/tombstones', async (c) => {
+  const items = await listLineTombstones(c.env);
+  return ok({ items, urls: items.map((item) => item.url) });
+});
+
+/** Delete lines without a tombstone; a source refresh may bring them back. */
+poolRoutes.post('/delete', async (c) => {
+  const body = (await readJson<{ keys?: unknown }>(c)) ?? {};
+  const keys = Array.isArray(body.keys) ? body.keys.filter((key): key is string => typeof key === 'string').slice(0, 200) : [];
+  if (!keys.length) return fail('keys 不能为空');
+  const removed = await removeLinesFromArtifacts(c.env, new Set(keys));
+  await deleteLineOverrides(c.env, keys);
+  await audit(c.env, c.get('actor'), 'pool.delete', 'bulk', { keys, removed });
+  return ok({ removed });
+});
+
+/** Delete + permanent tombstone so the URL can never be re-imported. */
+poolRoutes.post('/tombstone', async (c) => {
+  const body = (await readJson<{ keys?: unknown; urls?: unknown; reason?: unknown }>(c)) ?? {};
+  const reason = typeof body.reason === 'string' ? body.reason.slice(0, 200) : null;
+  // URLs can be tombstoned without deleting the line; keys remove + tombstone.
+  const urls = Array.isArray(body.urls)
+    ? body.urls.filter((url): url is string => typeof url === 'string' && Boolean(url.trim())).slice(0, 500)
+    : [];
+  if (urls.length) {
+    const tombstoned = await addLineTombstones(c.env, urls.map((url) => ({ url: canonicalPoolUrl(url), reason })));
+    await audit(c.env, c.get('actor'), 'pool.tombstone', 'urls', { urls, tombstoned, reason });
+    return ok({ tombstoned, removed: 0 });
+  }
+
+  const keys = Array.isArray(body.keys) ? body.keys.filter((key): key is string => typeof key === 'string').slice(0, 200) : [];
+  if (!keys.length) return fail('keys 或 urls 不能为空');
+  const state = await getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json');
+  const selected = (state?.lines ?? []).filter((line) => keys.includes(line.key));
+  if (!selected.length) return fail('线路不存在或已被删除', 404);
+  const tombstoned = await addLineTombstones(
+    c.env,
+    selected.map((line) => ({ url: canonicalPoolUrl(line.url), lineKey: line.key, channelId: line.channelId, reason })),
+  );
+  const removed = await removeLinesFromArtifacts(c.env, new Set(selected.map((line) => line.key)));
+  await deleteLineOverrides(c.env, selected.map((line) => line.key));
+  await audit(c.env, c.get('actor'), 'pool.tombstone', 'bulk', { keys, tombstoned, removed, reason });
+  return ok({ tombstoned, removed });
+});
+
+poolRoutes.post('/untombstone', async (c) => {
+  const body = (await readJson<{ urls?: unknown }>(c)) ?? {};
+  const urls = Array.isArray(body.urls) ? body.urls.filter((url): url is string => typeof url === 'string' && Boolean(url.trim())).slice(0, 500) : [];
+  if (!urls.length) return fail('urls 不能为空');
+  const removed = await removeLineTombstones(c.env, urls);
+  await audit(c.env, c.get('actor'), 'pool.untombstone', 'bulk', { urls, removed });
   return ok({ removed });
 });
 

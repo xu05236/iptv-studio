@@ -66,6 +66,28 @@ adminRoutes.get('/epg/coverage', async (c) => {
 });
 
 /**
+ * Idempotent schema guard for environments where `wrangler d1 migrations` is
+ * not available (no Cloudflare API token on the dev machine). Safe to call
+ * repeatedly; the canonical DDL lives in migrations/0012_line_tombstones.sql.
+ */
+adminRoutes.post('/db/ensure-tombstones', async (c) => {
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS line_tombstones (
+        url TEXT PRIMARY KEY,
+        line_key TEXT,
+        channel_id TEXT,
+        reason TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+    ),
+    c.env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_line_tombstones_created ON line_tombstones(created_at)'),
+  ]);
+  await audit(c.env, c.get('actor'), 'db.ensure_tombstones', 'schema');
+  return ok({ ok: true });
+});
+
+/**
  * Batch-bind EPG aliases. The workbench usually fills several channels from one
  * group at a time; doing one POST per row was slow and noisy.
  */

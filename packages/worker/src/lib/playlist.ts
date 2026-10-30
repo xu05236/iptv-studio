@@ -1,5 +1,6 @@
 import {
   buildPlaylist,
+  canonicalPoolUrl,
   compareLines,
   hashId,
   selectLines,
@@ -12,7 +13,7 @@ import {
   type SubscriptionSpec,
 } from '@iptv/core';
 import type { Env } from '../env.js';
-import { listChannels, listLineOverrides, type LineOverrideRow, type SubscriptionRow } from '../db.js';
+import { listChannels, listLineOverrides, listLineTombstones, type LineOverrideRow, type SubscriptionRow } from '../db.js';
 import { getJson } from './store.js';
 import { parseJsonField } from './http.js';
 import { loadCatalog, loadPoolSnapshot, type ExportCatalog } from './catalog.js';
@@ -111,6 +112,7 @@ export function buildFromPool(
   overrides: LineOverrideRow[],
   config: SubscriptionConfig,
   options: { logoBaseUrl?: string | null; epgUrl?: string | null } = {},
+  tombstoned: Set<string> = new Set(),
 ): { body: string; channels: number; lines: number } {
   const overrideMap = new Map(overrides.map((row) => [row.line_key, row.pool]));
   const rows: Array<{ channel: ChannelConfig; lines: LineEntry[] }> = [];
@@ -129,6 +131,7 @@ export function buildFromPool(
     const premium: LineEntry[] = [];
     const backup: LineEntry[] = [];
     const add = (line: LineEntry, autoPool: 'premium' | 'backup' | 'candidate'): void => {
+      if (tombstoned.has(canonicalPoolUrl(line.url))) return;
       const pool = overrideMap.get(line.key) ?? autoPool;
       if (pool === 'premium') premium.push(line);
       else if (pool === 'backup') backup.push(line);
@@ -165,10 +168,19 @@ export function buildFromPool(
   return { body, channels: exportChannels.length, lines: exportChannels.reduce((sum, channel) => sum + channel.lines.length, 0) };
 }
 
-/** Pool renders change whenever the snapshot or a manual override changes. */
-export function poolEtag(snapshot: PoolSnapshot, overrides: LineOverrideRow[], config: SubscriptionConfig): string {
+/** Pool renders change whenever the snapshot, an override or a tombstone changes. */
+export function poolEtag(
+  snapshot: PoolSnapshot,
+  overrides: LineOverrideRow[],
+  config: SubscriptionConfig,
+  tombstones: Array<{ created_at: string }> = [],
+): string {
   const overrideVersion = overrides.reduce((max, row) => (row.updated_at > max ? row.updated_at : max), '');
-  const fingerprint = hashId(`${snapshot.generatedAt}:${overrideVersion}:${config.updatedAt ?? ''}:${config.poolMode}`, 16);
+  const tombstoneVersion = tombstones.reduce((max, row) => (row.created_at > max ? row.created_at : max), '');
+  const fingerprint = hashId(
+    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}`,
+    16,
+  );
   return `W/"pool-${fingerprint}"`;
 }
 
@@ -227,9 +239,9 @@ export async function renderSubscription(
   if (poolMode === 'premium' || poolMode === 'premium_backup') {
     const snapshot = await loadPoolSnapshot(env);
     if (snapshot) {
-      const overrides = await listLineOverrides(env);
-      const rendered = buildFromPool(snapshot, overrides, config, { epgUrl });
-      return { ...rendered, etag: poolEtag(snapshot, overrides, config) };
+      const [overrides, tombstones] = await Promise.all([listLineOverrides(env), listLineTombstones(env)]);
+      const rendered = buildFromPool(snapshot, overrides, config, { epgUrl }, new Set(tombstones.map((row) => row.url)));
+      return { ...rendered, etag: poolEtag(snapshot, overrides, config, tombstones) };
     }
   }
 

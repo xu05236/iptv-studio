@@ -2,6 +2,7 @@ import {
   BUILTIN_CHANNELS,
   ChannelRegistry,
   buildPoolSnapshot,
+  canonicalPoolUrl,
   classifyGroup,
   compareLines,
   diffCatalogs,
@@ -96,6 +97,7 @@ function normalize(
   previousLines: LineEntry[],
   sources: Map<string, SourceRecord>,
   timestamp: string,
+  tombstoned: Set<string> = new Set(),
 ): { lines: LineEntry[]; authoritative: Set<string> } {
   const previousByKey = new Map(previousLines.map((line) => [`${line.sourceId}|${line.urlKey}`, line]));
   const authoritative = new Set<string>();
@@ -109,6 +111,7 @@ function normalize(
       const { url } = splitUrlHeaders(raw.url);
       const urlKey = normalizeUrlForDedupe(url);
       if (!urlKey) continue;
+      if (tombstoned.has(canonicalPoolUrl(url))) continue;
 
       const source = sources.get(item.source.id);
       const resolved = registry.resolve(raw.name, { tvgId: raw.tvgId, group: raw.group });
@@ -159,6 +162,7 @@ function normalize(
   for (const old of previousLines) {
     if (authoritative.has(old.sourceId)) continue;
     if (!sources.has(old.sourceId)) continue;
+    if (tombstoned.has(canonicalPoolUrl(old.url))) continue;
     const key = `${old.sourceId}|${old.urlKey}`;
     if (!merged.has(key)) merged.set(key, old);
   }
@@ -188,8 +192,7 @@ async function collectAll(
   });
 }
 
-async function writeLog(store: ArtifactStore, runId: string, logger: RunLogger): Promise<string> {
-  const day = new Date().toISOString().slice(0, 10);
+async function writeLog(store: ArtifactStore, runId: string, logger: RunLogger): Promise<string> {  const day = new Date().toISOString().slice(0, 10);
   const key = `logs/${day}/${runId}.jsonl`;
   await store.put(key, logger.toJSONL(), 'application/x-ndjson; charset=utf-8');
   return key;
@@ -204,6 +207,17 @@ async function finishRun(
   });
 }
 
+/** URLs the operator has permanently retired; they must never be re-imported. */
+async function loadTombstones(api: ApiClient): Promise<Set<string>> {
+  try {
+    const response = await api.get<{ urls?: string[] }>('/api/admin/pool/tombstones');
+    return new Set((response.urls ?? []).map((url) => canonicalPoolUrl(url)));
+  } catch (error) {
+    console.error('读取墓碑失败，本轮不跳过任何线路', error);
+    return new Set();
+  }
+}
+
 async function runCollect(command: 'collect' | 'export'): Promise<void> {
   const config = loadConfig();
   const logger = new RunLogger();
@@ -212,6 +226,7 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
   const startedMs = Date.now();
   const api = new ApiClient(config.apiBaseUrl, config.adminToken);
   const store = new ArtifactStore(api);
+  const tombstones = await loadTombstones(api);
 
   let report: RunReport = {
     id: runId,
@@ -248,7 +263,7 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       const targetSources = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
       if (sourceId && !targetSources.length) throw new Error(`采集站不存在或已停用：${sourceId}`);
       const collected = await collectAll(targetSources, store, logger);
-      const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso());
+      const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso(), tombstones);
       // normalize() already keeps previous lines for sources that were skipped,
       // returned 304 or failed; merging them again would duplicate state.
       lines = normalized.lines;
@@ -427,7 +442,7 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
     }
 
     // ---- export only: rebuild artifacts from persisted state (no probing) ----
-    lines = previousState?.lines ?? [];
+    lines = (previousState?.lines ?? []).filter((line) => !tombstones.has(canonicalPoolUrl(line.url)));
     logger.info('仅导出模式', { lines: lines.length });
     const exportFfprobeLimit = Number(process.env.FFPROBE_LIMIT ?? '150') || 0;
     if (exportFfprobeLimit > 0) await enrichResolutions(lines, exportFfprobeLimit, logger);

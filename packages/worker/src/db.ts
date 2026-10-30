@@ -352,6 +352,45 @@ export async function listLineOverrides(env: Env): Promise<LineOverrideRow[]> {
   return results;
 }
 
+export interface LineTombstoneRow {
+  url: string;
+  line_key: string | null;
+  channel_id: string | null;
+  reason: string | null;
+  created_at: string;
+}
+
+export async function listLineTombstones(env: Env): Promise<LineTombstoneRow[]> {
+  const { results } = await env.DB.prepare('SELECT url, line_key, channel_id, reason, created_at FROM line_tombstones ORDER BY created_at DESC').all<LineTombstoneRow>();
+  return results;
+}
+
+export async function addLineTombstones(
+  env: Env,
+  rows: Array<{ url: string; lineKey?: string | null; channelId?: string | null; reason?: string | null }>,
+): Promise<number> {
+  const statements = rows.map((row) =>
+    env.DB.prepare(
+      `INSERT INTO line_tombstones (url, line_key, channel_id, reason, created_at)
+       VALUES (?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(url) DO UPDATE SET reason = excluded.reason, created_at = datetime('now')`,
+    ).bind(row.url, row.lineKey ?? null, row.channelId ?? null, row.reason ?? null),
+  );
+  for (let offset = 0; offset < statements.length; offset += 40) {
+    await env.DB.batch(statements.slice(offset, offset + 40));
+  }
+  return statements.length;
+}
+
+export async function removeLineTombstones(env: Env, urls: string[]): Promise<number> {
+  if (!urls.length) return 0;
+  const statements = urls.map((url) => env.DB.prepare('DELETE FROM line_tombstones WHERE url = ?').bind(url));
+  for (let offset = 0; offset < statements.length; offset += 40) {
+    await env.DB.batch(statements.slice(offset, offset + 40));
+  }
+  return urls.length;
+}
+
 export async function upsertLineOverride(
   env: Env,
   lineKey: string,

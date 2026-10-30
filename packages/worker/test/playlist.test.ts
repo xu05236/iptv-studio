@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildFromCatalog, playlistEtag, subscriptionFromRow } from '../src/lib/playlist.js';
+import { buildFromCatalog, buildFromPool, playlistEtag, subscriptionFromRow, type SubscriptionConfig } from '../src/lib/playlist.js';
 import type { ExportCatalog } from '../src/lib/catalog.js';
 import type { SubscriptionRow } from '../src/db.js';
-import type { LineEntry } from '@iptv/core';
+import type { LineEntry, PoolSnapshot } from '@iptv/core';
 
 function line(url: string, score: number): LineEntry {
   return {
@@ -84,5 +84,39 @@ describe('subscription rendering', () => {
     const two = playlistEtag(catalog, subscriptionFromRow({ ...row, groups: JSON.stringify(['卫视']) }));
     expect(one).not.toBe(two);
     expect(one).toContain('run-1');
+  });
+
+  it('drops tombstoned URLs from pool rendering', () => {
+    const poolLine = line('http://a/1.m3u8', 90);
+    const snapshot: PoolSnapshot = {
+      generatedAt: '2026-10-30T00:00:00Z',
+      channels: {
+        cctv1: {
+          channel: { id: 'cctv1', name: 'CCTV-1 综合', group: '央视', tvgId: 'CCTV1' },
+          premium: [poolLine],
+          backup: [],
+          candidate: [],
+        },
+      },
+    };
+    const config: SubscriptionConfig = {
+      id: 'sub-test',
+      name: 'test',
+      token: 'token',
+      enabled: true,
+      groups: [],
+      excludeGroups: [],
+      channelIds: [],
+      minResolution: 'any',
+      minSpeedKbps: 0,
+      protocols: [],
+      maxLinesPerChannel: 6,
+      showRegionSuffix: false,
+      includeEpg: false,
+      format: 'm3u',
+      poolMode: 'premium',
+    };
+    expect(buildFromPool(snapshot, [], config).lines).toBe(1);
+    expect(buildFromPool(snapshot, [], config, {}, new Set([poolLine.url])).lines).toBe(0);
   });
 });

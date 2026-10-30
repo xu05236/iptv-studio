@@ -33,6 +33,13 @@ export function qualityConfirmed(line: Pick<LineEntry, 'resolution' | 'height'>)
   return Boolean(line.resolution && !/unknown/i.test(line.resolution));
 }
 
+/** Canonical form used to dedupe/tombstone a stream across source variants. */
+export function canonicalPoolUrl(url: string): string {
+  const trimmed = url.trim();
+  if (trimmed.startsWith('//')) return `http:${trimmed}`;
+  return trimmed;
+}
+
 /**
  * The same stream is often advertised by several sources. State keeps one row
  * per source, and their urlKey formats disagree (`//host/path` vs `http://…`),
@@ -40,15 +47,10 @@ export function qualityConfirmed(line: Pick<LineEntry, 'resolution' | 'height'>)
  * then the most recently probed.
  */
 export function dedupePoolLines(lines: LineEntry[]): LineEntry[] {
-  const canonical = (url: string): string => {
-    const trimmed = url.trim();
-    if (trimmed.startsWith('//')) return `http:${trimmed}`;
-    return trimmed;
-  };
   const rank: Record<string, number> = { alive: 3, suspect: 2, unknown: 1, dead: 0 };
   const best = new Map<string, LineEntry>();
   for (const line of lines) {
-    const key = canonical(line.url);
+    const key = canonicalPoolUrl(line.url);
     const current = best.get(key);
     if (!current) {
       best.set(key, line);
