@@ -29,7 +29,15 @@ export function SettingsPage() {
 
   const schedule = useQuery({
     queryKey: ['admin', 'schedule'],
-    queryFn: () => api.get<{ enabled: boolean; times: string; budget: number; nextAt: string | null; lastRunAt: string | null; result: string | null }>('/api/admin/schedule'),
+    queryFn: () => api.get<{
+      enabled: boolean;
+      times: string;
+      budget: number;
+      nextAt: string | null;
+      lastRunAt: string | null;
+      result: string | null;
+      liveness: { enabled: boolean; times: string; nextAt: string | null; lastRunAt: string | null; lastScheduledAt: string | null; result: string | null };
+    }>('/api/admin/schedule'),
   });
 
   useEffect(() => {
@@ -166,8 +174,9 @@ export function SettingsPage() {
       </Card>
 
       <Card>
-        <div className="title-3">定时采集</div>
+        <div className="title-3">定时任务</div>
         <div className="stack" style={{ marginTop: 12 }}>
+          <div className="title-3" style={{ fontSize: 14 }}>完整采集</div>
           <div className="list">
             <div className="list__row"><span className="grow">启用定时采集（默认关闭）</span><Switch checked={form.autoCollectEnabled ?? false} onChange={(value) => set('autoCollectEnabled', value)} /></div>
           </div>
@@ -175,9 +184,21 @@ export function SettingsPage() {
             <input className="input" value={form.autoCollectTimes ?? '08:30'} onChange={(event) => set('autoCollectTimes', event.target.value)} />
           </Field>
           <div className="caption">
-            预算沿用上方「采集预算」；保护：KV 写入 ≥920 或已有采集在跑时自动跳过；时区固定北京时间（UTC+8）。
+            预算沿用上方「采集预算」；保护：KV 写入 ≥920 或已有任务在跑时自动跳过；时区固定北京时间（UTC+8）。
             {schedule.data?.nextAt ? ` 下次：${new Date(schedule.data.nextAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` : ' 当前未启用。'}
             {schedule.data?.lastRunAt ? ` · 上次：${new Date(schedule.data.lastRunAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（${schedule.data.result ?? '未知'}）` : ''}
+          </div>
+
+          <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>每日池内测活</div>
+          <div className="list">
+            <div className="list__row"><span className="grow">启用每日轻量测活（默认开启，成本很低）</span><Switch checked={form.autoLivenessEnabled ?? true} onChange={(value) => set('autoLivenessEnabled', value)} /></div>
+          </div>
+          <Field label="每天测活时刻（北京时间）" hint="HH:mm，多个用逗号分隔；只检查池内 alive 线路，不做测速">
+            <input className="input" value={form.autoLivenessTimes ?? '20:30'} onChange={(event) => set('autoLivenessTimes', event.target.value)} />
+          </Field>
+          <div className="caption">
+            {schedule.data?.liveness?.nextAt ? `下次：${new Date(schedule.data.liveness.nextAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` : '当前未启用。'}
+            {schedule.data?.liveness?.lastRunAt ? ` · 上次：${new Date(schedule.data.liveness.lastRunAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（${schedule.data.liveness.result ?? '未知'}）` : ''}
           </div>
         </div>
       </Card>

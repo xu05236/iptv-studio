@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { mostRecentScheduledAt, nextScheduledAt, parseCollectTimes } from '../src/lib/schedule.js';
+import { DEFAULT_SETTINGS } from '@iptv/core';
+import { mostRecentScheduledAt, nextAutoLivenessAt, nextScheduledAt, parseCollectTimes } from '../src/lib/schedule.js';
 
 describe('parseCollectTimes', () => {
   it('parses, de-duplicates and sorts Beijing-local times', () => {
@@ -28,5 +29,13 @@ describe('schedule instants', () => {
     // 2026-10-30 00:20 Beijing == 2026-10-29 16:20 UTC
     const now = Date.parse('2026-10-29T16:20:00Z');
     expect(nextScheduledAt(parseCollectTimes('00:30'), now)).toBe(Date.parse('2026-10-29T16:30:00Z'));
+  });
+
+  it('computes the daily liveness slot only when enabled', () => {
+    // 2026-10-30 20:35 Beijing == 12:35 UTC; next 20:30 is tomorrow.
+    const now = Date.parse('2026-10-30T12:35:00Z');
+    const enabled = { ...DEFAULT_SETTINGS, autoLivenessEnabled: true, autoLivenessTimes: '20:30' };
+    expect(nextAutoLivenessAt(enabled, now)).toBe(Date.parse('2026-10-31T12:30:00Z'));
+    expect(nextAutoLivenessAt({ ...enabled, autoLivenessEnabled: false }, now)).toBeNull();
   });
 });

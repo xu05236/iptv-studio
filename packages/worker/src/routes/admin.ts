@@ -27,7 +27,7 @@ import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
 import { inferResolution } from '@iptv/core';import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
-import { nextAutoCollectAt, parseCollectTimes } from '../lib/schedule.js';
+import { nextAutoCollectAt, nextAutoLivenessAt, parseCollectTimes } from '../lib/schedule.js';
 import { sourceMetaMap } from '../lib/source.js';
 
 export const adminRoutes = new Hono<AppEnv>();
@@ -311,7 +311,7 @@ adminRoutes.put('/settings', async (c) => {
     'logoBaseUrl', 'maxLinesPerChannel', 'maxLinesPerSource', 'compensate', 'keepSuspect', 'deadReviveDays',
     'probeBudget', 'concurrency', 'probeAliveHours', 'probePremiumHours', 'probePerChannel',
     'ffprobeLimit', 'probePrefilterEnabled', 'probePrefilterBudget', 'lineRetentionDays', 'epgUrls', 'regionSuffix',
-    'autoCollectEnabled', 'autoCollectTimes',
+    'autoCollectEnabled', 'autoCollectTimes', 'autoLivenessEnabled', 'autoLivenessTimes',
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback',
   ];
   const clean: Partial<AppSettings> = {};
@@ -323,6 +323,11 @@ adminRoutes.put('/settings', async (c) => {
     if (!times.length) return fail('自动采集时间格式应为 HH:mm，多个用逗号分隔（北京时间）');
     clean.autoCollectTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
   }
+  if (clean.autoLivenessTimes !== undefined) {
+    const times = parseCollectTimes(clean.autoLivenessTimes);
+    if (!times.length) return fail('每日测活时间格式应为 HH:mm，多个用逗号分隔（北京时间）');
+    clean.autoLivenessTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
+  }
   const settings = await saveSettings(c.env, clean);
   return ok({ settings });
 });
@@ -330,7 +335,9 @@ adminRoutes.put('/settings', async (c) => {
 adminRoutes.get('/schedule', async (c) => {
   const settings = await loadSettings(c.env);
   const state = await getJson<{ lastRunAt?: string; lastScheduledAt?: string; result?: string }>(c.env, 'state/schedule.json');
+  const livenessState = await getJson<{ lastRunAt?: string; lastScheduledAt?: string; result?: string }>(c.env, 'state/liveness-schedule.json');
   const nextAt = nextAutoCollectAt(settings);
+  const nextLivenessAt = nextAutoLivenessAt(settings);
   return ok({
     enabled: settings.autoCollectEnabled,
     times: settings.autoCollectTimes,
@@ -339,6 +346,14 @@ adminRoutes.get('/schedule', async (c) => {
     lastScheduledAt: state?.lastScheduledAt ?? null,
     result: state?.result ?? null,
     nextAt: nextAt ? new Date(nextAt).toISOString() : null,
+    liveness: {
+      enabled: settings.autoLivenessEnabled,
+      times: settings.autoLivenessTimes,
+      lastRunAt: livenessState?.lastRunAt ?? null,
+      lastScheduledAt: livenessState?.lastScheduledAt ?? null,
+      result: livenessState?.result ?? null,
+      nextAt: nextLivenessAt ? new Date(nextLivenessAt).toISOString() : null,
+    },
   });
 });
 

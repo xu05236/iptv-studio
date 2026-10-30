@@ -291,6 +291,9 @@ export interface AppSettings {
   /** Automatic collect scheduler (default off). Times are Beijing-local HH:mm. */
   autoCollectEnabled: boolean;
   autoCollectTimes: string;
+  /** Daily pool liveness schedule (default on, cheap). */
+  autoLivenessEnabled: boolean;
+  autoLivenessTimes: string;
   epgUrls: string[];
   regionSuffix: boolean;
   notifyTelegram: boolean;
@@ -325,6 +328,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lineRetentionDays: 30,
   autoCollectEnabled: false,
   autoCollectTimes: '08:30',
+  autoLivenessEnabled: true,
+  autoLivenessTimes: '20:30',
   epgUrls: DEFAULT_EPG_URLS,
   regionSuffix: true,
   notifyTelegram: false,

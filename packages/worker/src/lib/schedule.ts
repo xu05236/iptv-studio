@@ -54,61 +54,113 @@ export function nextAutoCollectAt(settings: AppSettings, nowMs = Date.now()): nu
   return nextScheduledAt(parseCollectTimes(settings.autoCollectTimes), nowMs);
 }
 
+export function nextAutoLivenessAt(settings: AppSettings, nowMs = Date.now()): number | null {
+  if (!settings.autoLivenessEnabled) return null;
+  return nextScheduledAt(parseCollectTimes(settings.autoLivenessTimes), nowMs);
+}
+
 interface ScheduleState {
   lastRunAt?: string;
   lastScheduledAt?: string;
   result?: string;
 }
 
+interface SchedulerConfig {
+  command: 'collect' | 'liveness';
+  enabled: boolean;
+  times: string;
+  stateKey: string;
+}
+
+function schedulerConfigs(settings: AppSettings): SchedulerConfig[] {
+  return [
+    {
+      command: 'collect',
+      enabled: Boolean(settings.autoCollectEnabled),
+      times: settings.autoCollectTimes,
+      stateKey: 'state/schedule.json',
+    },
+    {
+      command: 'liveness',
+      enabled: Boolean(settings.autoLivenessEnabled),
+      times: settings.autoLivenessTimes,
+      stateKey: 'state/liveness-schedule.json',
+    },
+  ];
+}
+
+interface DueSlot {
+  config: SchedulerConfig;
+  scheduledAt: number;
+}
+
 /**
- * Runs on a 5-minute Worker cron. Dispatches collect only when a configured
- * Beijing-local time just passed, the previous attempt was older than that
- * slot, KV writes are below the hard guard, and no collect is already running.
- * Every exit path records the attempt so a bad slot cannot retry every 5 min.
+ * Runs on the 5-minute Worker cron. Each enabled schedule (collect / liveness)
+ * has its own Beijing-local times and state file. A slot only fires when it
+ * just passed, it was not attempted before, KV writes are below the hard guard
+ * and no workflow run is active. When both are due, collect wins and liveness
+ * waits for the next tick (the GitHub concurrency group would queue anyway).
  */
-export async function runAutoCollect(env: Env): Promise<void> {
+export async function runScheduler(env: Env): Promise<void> {
   const settings = await loadSettings(env);
-  if (!settings.autoCollectEnabled) return;
-  const times = parseCollectTimes(settings.autoCollectTimes);
-  if (!times.length) return;
-
   const now = Date.now();
-  const scheduledAt = mostRecentScheduledAt(times, now);
-  if (scheduledAt === null || now - scheduledAt > RUN_WINDOW_MS) return;
+  const due: DueSlot[] = [];
 
-  const state = await getJson<ScheduleState>(env, 'state/schedule.json');
-  const lastAttempt = state?.lastRunAt ? Date.parse(state.lastRunAt) : 0;
-  if (lastAttempt >= scheduledAt) return;
+  for (const config of schedulerConfigs(settings)) {
+    if (!config.enabled) continue;
+    const times = parseCollectTimes(config.times);
+    if (!times.length) continue;
+    const scheduledAt = mostRecentScheduledAt(times, now);
+    if (scheduledAt === null || now - scheduledAt > RUN_WINDOW_MS) continue;
+    const state = await getJson<ScheduleState>(env, config.stateKey);
+    const lastAttempt = state?.lastRunAt ? Date.parse(state.lastRunAt) : 0;
+    if (lastAttempt >= scheduledAt) continue;
+    due.push({ config, scheduledAt });
+  }
+  if (!due.length) return;
 
-  const record = async (result: string): Promise<void> => {
+  const record = async (config: SchedulerConfig, scheduledAt: number, result: string): Promise<void> => {
     const next: ScheduleState = {
       lastRunAt: new Date(now).toISOString(),
       lastScheduledAt: new Date(scheduledAt).toISOString(),
       result,
     };
-    await env.KV.put('state/schedule.json', JSON.stringify(next));
+    await env.KV.put(config.stateKey, JSON.stringify(next));
   };
 
   const today = new Date(now).toISOString().slice(0, 10);
   const usage = await getJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
   const writes = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
-  if (writes >= 920) {
-    await record('skipped: KV quota');
-    return;
+
+  let running = false;
+  if (writes < 920) {
+    const runs = (await workflowRunStatus(env)) as Array<{ status?: string }> | null;
+    running = Array.isArray(runs) && runs.some((run) => run.status === 'queued' || run.status === 'in_progress');
   }
 
-  const runs = (await workflowRunStatus(env)) as Array<{ status?: string }> | null;
-  if (Array.isArray(runs) && runs.some((run) => run.status === 'queued' || run.status === 'in_progress')) {
-    await record('skipped: collect running');
-    return;
+  let dispatched = false;
+  for (const { config, scheduledAt } of due) {
+    if (dispatched) break;
+    if (writes >= 920) {
+      await record(config, scheduledAt, 'skipped: KV quota');
+      continue;
+    }
+    if (running) {
+      await record(config, scheduledAt, 'skipped: workflow running');
+      continue;
+    }
+    const budget = Math.max(1, Number(settings.probeBudget) || 1200);
+    const result = await dispatchWorkflow(env, {
+      command: config.command,
+      force: 'false',
+      budget: String(budget),
+    });
+    await record(config, scheduledAt, result.ok ? 'dispatched' : `failed: ${result.message}`);
+    await audit(env, 'scheduler', `schedule.${config.command}`, 'github', {
+      scheduledAt: new Date(scheduledAt).toISOString(),
+      budget,
+      ...result,
+    });
+    dispatched = result.ok;
   }
-
-  const budget = Math.max(1, Number(settings.probeBudget) || 1200);
-  const result = await dispatchWorkflow(env, { command: 'collect', force: 'false', budget: String(budget) });
-  await record(result.ok ? 'dispatched' : `failed: ${result.message}`);
-  await audit(env, 'scheduler', 'schedule.collect', 'github', {
-    scheduledAt: new Date(scheduledAt).toISOString(),
-    budget,
-    ...result,
-  });
 }
