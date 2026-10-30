@@ -319,6 +319,31 @@ adminRoutes.delete('/rules/:id', async (c) => {
   return ok({ ok: true });
 });
 
+adminRoutes.get('/snapshots', async (c) => {
+  const manifest = await getJson<{ items: unknown[] }>(c.env, 'state/snapshots.json');
+  return ok({ items: manifest?.items ?? [] });
+});
+
+adminRoutes.post('/snapshots/:id/restore', async (c) => {
+  const id = c.req.param('id');
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(id)) return fail('快照 ID 不合法', 400);
+  const base = `state/snapshots/${id}`;
+  const [index, catalog, pool, guide] = await Promise.all([
+    getJson<unknown>(c.env, `${base}/index.json`),
+    getJson<unknown>(c.env, `${base}/catalog.json`),
+    getJson<unknown>(c.env, `${base}/pool.json`),
+    getJson<unknown>(c.env, `${base}/guide.json`),
+  ]);
+  if (!index || !catalog) return fail('快照不存在或已过期', 404);
+  const json = 'application/json; charset=utf-8';
+  await putArtifact(c.env, 'state/index.json', JSON.stringify(index), json);
+  await putArtifact(c.env, 'out/catalog.json', JSON.stringify(catalog), json);
+  if (pool) await putArtifact(c.env, 'state/pool.json', JSON.stringify(pool), json);
+  if (guide) await putArtifact(c.env, 'state/guide.json', JSON.stringify(guide), json);
+  await audit(c.env, c.get('actor'), 'snapshot.restore', id);
+  return ok({ ok: true });
+});
+
 adminRoutes.get('/settings', async (c) => {
   const settings = await loadSettings(c.env);
   return ok({ settings, publicBaseUrl: c.env.PUBLIC_BASE_URL ?? new URL(c.req.url).origin });

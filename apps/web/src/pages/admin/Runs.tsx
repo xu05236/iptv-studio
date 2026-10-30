@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { FileText } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FileText, RotateCcw } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { RunItem } from '../../lib/types';
 import { formatBytes, formatDateTime, formatDuration, timeAgo } from '../../lib/format';
@@ -8,6 +8,7 @@ import { Badge, Button, Card, Sheet, Skeleton, useToast } from '../../components
 
 export function Runs() {
   const { show } = useToast();
+  const queryClient = useQueryClient();
   const [selected, setSelected] = useState<RunItem | null>(null);
   const [log, setLog] = useState<string | null>(null);
   const [loadingLog, setLoadingLog] = useState(false);
@@ -15,6 +16,20 @@ export function Runs() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'runs', 50],
     queryFn: () => api.get<{ items: RunItem[] }>('/api/admin/runs?limit=50'),
+  });
+
+  const snapshots = useQuery({
+    queryKey: ['admin', 'snapshots'],
+    queryFn: () => api.get<{ items: Array<{ id: string; generatedAt: string; channels: number; lines: number; alive: number }> }>('/api/admin/snapshots'),
+  });
+
+  const restore = useMutation({
+    mutationFn: (id: string) => api.post<{ ok: boolean }>(`/api/admin/snapshots/${id}/restore`),
+    onSuccess: () => {
+      show('已恢复该快照');
+      void queryClient.invalidateQueries({ queryKey: ['admin'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
   });
 
   async function openRun(run: RunItem): Promise<void> {
@@ -38,6 +53,33 @@ export function Runs() {
         <h1 className="large-title">运行与日志</h1>
         <p className="subhead" style={{ marginTop: 4 }}>每次采集的抓取、测速、聚合结果都会留下结构化日志。</p>
       </div>
+
+      <Card>
+        <div className="row row--between">
+          <div className="title-3">快照回滚</div>
+          <span className="caption">保留最近 10 次发布</span>
+        </div>
+        <div className="list" style={{ marginTop: 8 }}>
+          {(snapshots.data?.items ?? []).map((item) => (
+            <div className="list__row" key={item.id}>
+              <div className="grow">
+                <div>{formatDateTime(item.generatedAt)}</div>
+                <div className="caption">{item.channels} 频道 · {item.lines} 行 · {item.alive} 可用</div>
+              </div>
+              <Button
+                size="sm"
+                loading={restore.isPending}
+                onClick={() => {
+                  if (window.confirm(`恢复到 ${formatDateTime(item.generatedAt)} 的快照？`)) restore.mutate(item.id);
+                }}
+              >
+                <RotateCcw size={14} /> 回滚
+              </Button>
+            </div>
+          ))}
+          {!snapshots.data?.items.length ? <div className="caption">还没有版本快照，下一次发布后生成。</div> : null}
+        </div>
+      </Card>
 
       {isLoading ? <Skeleton height={200} radius={16} /> : null}
 

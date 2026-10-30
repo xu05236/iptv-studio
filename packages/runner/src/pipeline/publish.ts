@@ -294,6 +294,27 @@ export async function publish(
   await store.put(`logs/${day}/${options.runId}.jsonl`, options.log, 'application/x-ndjson; charset=utf-8');
   objects += 2;
 
+  // Versioned rollback snapshots (keep 10). Restore writes these back to state.
+  if (options.poolSnapshot) {
+    const base = `state/snapshots/${options.runId}`;
+    await store.put(`${base}/index.json`, JSON.stringify(output.index), json);
+    await store.put(`${base}/catalog.json`, JSON.stringify(output.catalog), json);
+    await store.put(`${base}/pool.json`, JSON.stringify(options.poolSnapshot), json);
+    await store.put(`${base}/guide.json`, JSON.stringify(output.guide), json);
+    const manifest = await store.getJson<{ items: Array<Record<string, unknown>> }>('state/snapshots.json');
+    const items = (manifest?.items ?? []).filter((item) => item['id'] !== options.runId);
+    items.unshift({
+      id: options.runId,
+      generatedAt: options.generatedAt,
+      channels: output.index.totalChannels,
+      lines: output.index.totalLines,
+      alive: output.index.aliveLines,
+      createdAt: new Date().toISOString(),
+    });
+    await store.put('state/snapshots.json', JSON.stringify({ items: items.slice(0, 10) }), json);
+    objects += 5;
+  }
+
   logger.info('产物已发布', { objects, buckets: buckets.size, channels: output.catalog.items.length });
   return { objects };
 }
