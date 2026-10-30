@@ -16,6 +16,7 @@ import {
   normalizeUrlForDedupe,
   splitUrlHeaders,
   tierFor,
+  withinRetention,
   type AppSettings,
   type EpgData,
   type LineEntry,
@@ -98,6 +99,7 @@ function normalize(
   sources: Map<string, SourceRecord>,
   timestamp: string,
   tombstoned: Set<string> = new Set(),
+  retentionDays = 30,
 ): { lines: LineEntry[]; authoritative: Set<string> } {
   const previousByKey = new Map(previousLines.map((line) => [`${line.sourceId}|${line.urlKey}`, line]));
   const authoritative = new Set<string>();
@@ -165,6 +167,21 @@ function normalize(
     if (tombstoned.has(canonicalPoolUrl(old.url))) continue;
     const key = `${old.sourceId}|${old.urlKey}`;
     if (!merged.has(key)) merged.set(key, old);
+  }
+
+  // A successful refresh is authoritative, but upstreams often drop URLs
+  // temporarily. Keep already-tested lines for a retention window instead of
+  // wiping them from the pool on the first missing refresh.
+  const nowMs = Date.parse(timestamp) || Date.now();
+  for (const old of previousLines) {
+    if (!authoritative.has(old.sourceId)) continue;
+    if (!sources.has(old.sourceId)) continue;
+    if (tombstoned.has(canonicalPoolUrl(old.url))) continue;
+    const key = `${old.sourceId}|${old.urlKey}`;
+    if (merged.has(key)) continue;
+    if (!old.lastProbeAt && old.status === 'unknown') continue;
+    if (!withinRetention(old.lastSeenAt, nowMs, retentionDays)) continue;
+    merged.set(key, old.retained ? old : { ...old, retained: true });
   }
 
   return { lines: [...merged.values()], authoritative };
@@ -263,7 +280,8 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       const targetSources = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
       if (sourceId && !targetSources.length) throw new Error(`采集站不存在或已停用：${sourceId}`);
       const collected = await collectAll(targetSources, store, logger);
-      const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso(), tombstones);
+      const retentionDays = Math.max(0, Number(process.env.LINE_RETENTION_DAYS ?? '30') || 30);
+      const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso(), tombstones, retentionDays);
       // normalize() already keeps previous lines for sources that were skipped,
       // returned 304 or failed; merging them again would duplicate state.
       lines = normalized.lines;

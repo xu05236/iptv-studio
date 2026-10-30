@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPoolSnapshot, dedupePoolLines, qualityConfirmed } from '../src/linePool.js';
+import { buildPoolSnapshot, canonicalPoolUrl, dedupePoolLines, qualityConfirmed, withinRetention } from '../src/linePool.js';
 import type { LineEntry } from '../src/types.js';
 
 function line(overrides: Partial<LineEntry> & { url: string }): LineEntry {
@@ -86,5 +86,20 @@ describe('dedupePoolLines', () => {
     const newer = line({ url: 'http://host/x', key: 'new', lastProbeAt: '2026-10-01T00:00:00Z' });
     const deduped = dedupePoolLines([older, newer]);
     expect(deduped[0]?.key).toBe('new');
+  });
+});
+
+describe('retention helpers', () => {
+  it('normalises scheme-relative URLs', () => {
+    expect(canonicalPoolUrl('//host/a')).toBe('http://host/a');
+    expect(canonicalPoolUrl(' https://host/a ')).toBe('https://host/a');
+  });
+
+  it('keeps lines inside the retention window and drops older ones', () => {
+    const now = Date.parse('2026-10-30T00:00:00Z');
+    expect(withinRetention('2026-10-20T00:00:00Z', now, 30)).toBe(true);
+    expect(withinRetention('2026-08-01T00:00:00Z', now, 30)).toBe(false);
+    expect(withinRetention(undefined, now, 30)).toBe(false);
+    expect(withinRetention('2026-10-30T00:00:00Z', now, 0)).toBe(true);
   });
 });

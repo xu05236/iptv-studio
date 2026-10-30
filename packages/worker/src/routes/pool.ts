@@ -294,6 +294,7 @@ poolRoutes.get('/lines', async (c) => {
       score: line.score,
       passCount: line.passCount,
       lastProbeAt: line.lastProbeAt,
+      retained: line.retained ?? false,
     })),
   });
 });

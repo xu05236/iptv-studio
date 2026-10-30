@@ -69,6 +69,7 @@ interface PoolLine {
   score: number;
   passCount?: number;
   lastProbeAt?: string;
+  retained?: boolean;
 }
 
 function poolTone(pool: string): 'green' | 'blue' | 'orange' | 'red' | undefined {
@@ -545,6 +546,7 @@ export function Pool() {
                     <td>
                       <div className="truncate" style={{ maxWidth: 170 }}>{line.sourceName}</div>
                       <div className="caption truncate" style={{ maxWidth: 170 }}>{line.name}</div>
+                      {line.retained ? <Badge tone="orange">源已移除，保留中</Badge> : null}
                     </td>
                     <td>{formatResolution(line.resolution)}</td>
                     <td>{line.speedKbps ? formatSpeed(line.speedKbps) : '—'}</td>

@@ -40,6 +40,14 @@ export function canonicalPoolUrl(url: string): string {
   return trimmed;
 }
 
+/** True while a line that disappeared from its source is still inside retention. */
+export function withinRetention(lastSeenAt: string | undefined, nowMs: number, retentionDays: number): boolean {
+  if (!lastSeenAt) return false;
+  const last = Date.parse(lastSeenAt);
+  if (!Number.isFinite(last)) return false;
+  return nowMs - last <= Math.max(0, retentionDays) * 86_400_000;
+}
+
 /**
  * The same stream is often advertised by several sources. State keeps one row
  * per source, and their urlKey formats disagree (`//host/path` vs `http://…`),

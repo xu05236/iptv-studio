@@ -126,6 +126,8 @@ export interface LineEntry {
   firstSeenAt: string;
   lastSeenAt: string;
   lastProbeAt?: string;
+  /** Source no longer advertises this URL, but the tested line is kept for a while. */
+  retained?: boolean;
   reviveAt?: string;
   region?: string;
   operator?: string;
