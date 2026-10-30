@@ -226,6 +226,8 @@ adminRoutes.post('/runs/dispatch', async (c) => {
   const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string }>(c)) ?? {};
   const command = body.command === 'export' ? 'export' : body.command === 'epg' ? 'epg' : 'collect';
   const force = Boolean(body.force);
+  const settings = await loadSettings(c.env);
+  const defaultBudget = force ? Math.max(6000, settings.probeBudget || 1200) : settings.probeBudget || 1200;
 
   // Hard guard against accidentally crossing the daily KV write quota.
   const usage = await getJson<{ kv?: { day?: string; writes?: number } }>(c.env, 'state/usage.json');
@@ -241,7 +243,7 @@ adminRoutes.post('/runs/dispatch', async (c) => {
   const result = await dispatchWorkflow(c.env, {
     command,
     force: force ? 'true' : 'false',
-    budget: String(body.budget ?? (force ? 6000 : 1200)),
+    budget: String(body.budget ?? defaultBudget),
     source_id: body.sourceId?.trim() ?? '',
   });
   await audit(c.env, c.get('actor'), 'run.dispatch', 'github', result);
@@ -302,7 +304,7 @@ adminRoutes.put('/settings', async (c) => {
     'logoBaseUrl', 'maxLinesPerChannel', 'maxLinesPerSource', 'compensate', 'keepSuspect', 'deadReviveDays',
     'probeBudget', 'concurrency', 'probeTimeoutMs', 'probeAliveHours', 'probePremiumHours', 'probePerChannel',
     'ffprobeLimit', 'publishCooldownMs', 'lineRetentionDays', 'warmupBytes', 'sampleMs', 'epgUrls', 'regionSuffix',
-    'autoCollectEnabled', 'autoCollectTimes', 'autoCollectBudget',
+    'autoCollectEnabled', 'autoCollectTimes',
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback',
   ];
   const clean: Partial<AppSettings> = {};
@@ -314,7 +316,6 @@ adminRoutes.put('/settings', async (c) => {
     if (!times.length) return fail('自动采集时间格式应为 HH:mm，多个用逗号分隔（北京时间）');
     clean.autoCollectTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
   }
-  if (clean.autoCollectBudget !== undefined) clean.autoCollectBudget = Math.max(1, Number(clean.autoCollectBudget) || 1200);
   const settings = await saveSettings(c.env, clean);
   return ok({ settings });
 });
@@ -326,7 +327,7 @@ adminRoutes.get('/schedule', async (c) => {
   return ok({
     enabled: settings.autoCollectEnabled,
     times: settings.autoCollectTimes,
-    budget: settings.autoCollectBudget,
+    budget: settings.probeBudget,
     lastRunAt: state?.lastRunAt ?? null,
     lastScheduledAt: state?.lastScheduledAt ?? null,
     result: state?.result ?? null,

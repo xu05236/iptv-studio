@@ -289,7 +289,6 @@ export interface AppSettings {
   /** Automatic collect scheduler (default off). Times are Beijing-local HH:mm. */
   autoCollectEnabled: boolean;
   autoCollectTimes: string;
-  autoCollectBudget: number;
   warmupBytes: number;
   sampleMs: number;
   epgUrls: string[];
@@ -326,7 +325,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lineRetentionDays: 30,
   autoCollectEnabled: false,
   autoCollectTimes: '08:30',
-  autoCollectBudget: 1200,
   warmupBytes: 512 * 1024,
   sampleMs: 1_500,
   epgUrls: DEFAULT_EPG_URLS,

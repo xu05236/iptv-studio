@@ -6,6 +6,14 @@ import { api } from '../../lib/api';
 import type { SettingsResponse } from '../../lib/types';
 import { Button, Card, Field, Skeleton, Switch, useToast } from '../../components/ui';
 
+/** Rough measurements from the 2026-10-30 1200-budget run (probe ~2 min / 302 MB). */
+const BUDGET_TIERS = [
+  { budget: 600, probe: '约 1 分钟', run: '5–6 分钟', traffic: '约 150 MB', kv: '30–50 次', actions: '约 6 分钟' },
+  { budget: 1200, probe: '约 2 分钟', run: '8–10 分钟', traffic: '约 300 MB', kv: '30–50 次', actions: '约 10 分钟' },
+  { budget: 3000, probe: '约 5 分钟', run: '13–16 分钟', traffic: '约 750 MB', kv: '30–50 次', actions: '约 15 分钟' },
+  { budget: 6000, probe: '约 10 分钟', run: '20–25 分钟', traffic: '约 1.5 GB', kv: '30–50 次', actions: '约 25 分钟' },
+];
+
 export function SettingsPage() {
   const queryClient = useQueryClient();
   const { show } = useToast();
@@ -94,11 +102,33 @@ export function SettingsPage() {
       </Card>
 
       <Card>
-        <div className="title-3">采集与测速</div>
+        <div className="title-3">采集与探测</div>
         <div className="stack" style={{ marginTop: 12 }}>
           <div className="row">
-            <div className="grow"><Field label="默认测速预算（条）" hint="触发时未显式指定预算时使用；按未测 / 到期复检自动折算"><input className="input" inputMode="numeric" value={form.probeBudget} onChange={(event) => set('probeBudget', Number(event.target.value))} /></Field></div>
+            <div className="grow"><Field label="采集预算（条）" hint="手动/定时触发未显式指定时使用；按未测 / 到期复检自动折算"><input className="input" inputMode="numeric" value={form.probeBudget} onChange={(event) => set('probeBudget', Number(event.target.value))} /></Field></div>
             <div className="grow"><Field label="并发数"><input className="input" inputMode="numeric" value={form.concurrency} onChange={(event) => set('concurrency', Number(event.target.value))} /></Field></div>
+          </div>
+          <div className="table-wrap" style={{ marginTop: 4 }}>
+            <table className="table" style={{ minWidth: 640 }}>
+              <thead>
+                <tr><th>预算</th><th>探测耗时</th><th>整轮耗时</th><th>探测流量</th><th>KV 写入</th><th>Actions</th></tr>
+              </thead>
+              <tbody>
+                {BUDGET_TIERS.map((row) => (
+                  <tr key={row.budget} style={row.budget === form.probeBudget ? { background: 'rgba(245, 165, 36, 0.08)' } : undefined}>
+                    <td>{row.budget}</td>
+                    <td>{row.probe}</td>
+                    <td>{row.run}</td>
+                    <td>{row.traffic}</td>
+                    <td>{row.kv}</td>
+                    <td>{row.actions}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="caption">
+            估算基于一次 1200 预算的实测：探测约 2 分钟 / 302 MB，整轮 8–10 分钟；KV 写入主要随发布固定，不随预算线性增长。
           </div>
           <div className="row">
             <div className="grow"><Field label="可用线路复测间隔（小时）" hint="每次探测通过自动 +3 天，上限 30 天"><input className="input" inputMode="numeric" value={form.probeAliveHours ?? 360} onChange={(event) => set('probeAliveHours', Number(event.target.value))} /></Field></div>
@@ -122,17 +152,16 @@ export function SettingsPage() {
       </Card>
 
       <Card>
-        <div className="title-3">自动采集</div>
+        <div className="title-3">定时采集</div>
         <div className="stack" style={{ marginTop: 12 }}>
           <div className="list">
-            <div className="list__row"><span className="grow">启用自动采集（默认关闭）</span><Switch checked={form.autoCollectEnabled ?? false} onChange={(value) => set('autoCollectEnabled', value)} /></div>
+            <div className="list__row"><span className="grow">启用定时采集（默认关闭）</span><Switch checked={form.autoCollectEnabled ?? false} onChange={(value) => set('autoCollectEnabled', value)} /></div>
           </div>
-          <div className="row">
-            <div className="grow"><Field label="每天运行时刻（北京时间）" hint="HH:mm，多个用逗号分隔，例如 08:30 或 08:30, 20:30；建议在 08:00 额度重置后"><input className="input" value={form.autoCollectTimes ?? '08:30'} onChange={(event) => set('autoCollectTimes', event.target.value)} /></Field></div>
-            <div className="grow"><Field label="自动采集预算（条）" hint="独立于手动触发；建议先 1200"><input className="input" inputMode="numeric" value={form.autoCollectBudget ?? 1200} onChange={(event) => set('autoCollectBudget', Number(event.target.value))} /></Field></div>
-          </div>
+          <Field label="每天运行时刻（北京时间）" hint="HH:mm，多个用逗号分隔，例如 08:30 或 08:30, 20:30；建议在 08:00 额度重置后">
+            <input className="input" value={form.autoCollectTimes ?? '08:30'} onChange={(event) => set('autoCollectTimes', event.target.value)} />
+          </Field>
           <div className="caption">
-            保护：KV 写入 ≥920 或已有采集在跑时自动跳过；时区固定北京时间（UTC+8）。
+            预算沿用上方「采集预算」；保护：KV 写入 ≥920 或已有采集在跑时自动跳过；时区固定北京时间（UTC+8）。
             {schedule.data?.nextAt ? ` 下次：${new Date(schedule.data.nextAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` : ' 当前未启用。'}
             {schedule.data?.lastRunAt ? ` · 上次：${new Date(schedule.data.lastRunAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（${schedule.data.result ?? '未知'}）` : ''}
           </div>

@@ -103,7 +103,7 @@ export async function runAutoCollect(env: Env): Promise<void> {
     return;
   }
 
-  const budget = Math.max(1, Number(settings.autoCollectBudget) || 1200);
+  const budget = Math.max(1, Number(settings.probeBudget) || 1200);
   const result = await dispatchWorkflow(env, { command: 'collect', force: 'false', budget: String(budget) });
   await record(result.ok ? 'dispatched' : `failed: ${result.message}`);
   await audit(env, 'scheduler', 'schedule.collect', 'github', {
