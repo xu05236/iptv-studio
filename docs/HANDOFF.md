@@ -1414,3 +1414,18 @@ P2-4：任务阶段 UI（阶段顺序/暂停），然后是 P2-5 大功能、P2-
 - 规则下一轮采集生效
 
 下一步：P2-5-1 快照一键回滚。
+
+---
+
+# 2026-10-30 晚 · P2-5-1 快照一键回滚
+
+- publish 每次归档 `state/snapshots/<runId>/{index,catalog,pool,guide}.json`
+- 维护 `state/snapshots.json` 最近 10 份，含频道/线路/可用数
+- 新增 API：
+  - `GET /api/admin/snapshots`
+  - `POST /api/admin/snapshots/:id/restore`（写回 state/index.json、out/catalog.json、state/pool.json、state/guide.json）
+- 运行与日志页新增「快照回滚」卡片，可确认恢复
+- 验证：发布后生成快照；回滚成功，index 时间保持不变；web bundle 已包含入口
+- 代价：每次 publish 多 5 次 KV 写（4 个归档 + manifest）
+
+下一步：P2-5-4 非 HLS 分辨率。
