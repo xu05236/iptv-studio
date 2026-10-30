@@ -1240,3 +1240,49 @@ Actions 手动入口：
   - 新增源创建高优先级 fetch
   - runner 上报进度，Worker 估算 ETA
 - 完成后更新 `/help` 与管理后台规则说明
+
+---
+
+# 2026-10-30 晚 · 全局任务队列
+
+## 数据与生命周期
+
+- 任务保存在 `state/tasks.json`（KV），最多保留 30 条已完成历史
+- 字段：type / source / status / priority / payload / progress / timestamps
+- 来源：`schedule`、`manual`、`detection`、`source`、`cli`
+- 状态：queued / running / paused / done / failed / cancelled
+- 优先级：手动/检测中心 100，新增源 80，定时 50，重试 30
+- 同一时间只运行一个；running 超过 45 分钟自动失败并释放队列
+
+## 调度与入口
+
+- 调度器不再直接 dispatch，而是创建任务 + `dispatchNext`
+- 手动/检测中心 dispatch API 创建任务并立即尝试启动；已有任务时排队
+- 新增源创建 `fetch` 任务（80），自动进入队列
+- 任务卡片支持上移/下移、暂停/恢复、取消、插队、失败重试
+- KV 写入 ≥920 时 `dispatchNext` 保持任务 queued，不派发
+
+## 进度与完成
+
+- workflow 增加 `task_id` 输入，runner 通过 `TASK_ID` 环境变量回传 `RunReport.taskId`
+- `/api/admin/runs` 收到报告后把任务标 done/failed
+- `probe-batch` / `probe-lines` 每 200 条调用 `/api/admin/tasks/:id/progress`
+- 前端 ETA：已测/总数 + 已运行时间估算；无进度时显示已运行时长
+
+## 验证
+
+- 手动 export 任务：创建后立即 running；随后手动 fetch 进入 queued
+- 取消 fetch → cancelled；export 完成后自动 done（taskId 回写成功）
+- 任务来源徽章、队列、取消、完成均正常
+- 首次自动 fetch 在旧调度器下执行，未进队列；之后的任务都走队列
+
+## 任务板现状
+
+- 概览页已显示：运行中（来源/进度/ETA）、排队中（来源/优先级/操作）、最近完成
+- 阶段余量（pending/quarantine/rejected）保留为摘要
+- 阶段顺序/暂停仍保存在 settings（当前没有专门 UI，任务级排序已可用）
+
+## 说明
+
+- 本轮测试的 export 让 catalog 暂时变为 279 频道 / 2303 行 / 581 可用；下一次每日 publish 会用最新状态重建
+- 自动任务：抓源 7 天、分批探测 2 小时、发布每天 08:30；collect/liveness 关闭
