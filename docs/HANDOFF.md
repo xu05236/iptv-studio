@@ -611,3 +611,35 @@ Actions 手动入口：
 5. 前端体验：频道详情、订阅页、移动端
 
 > 用户决定：暂不提高预算、暂不跑 collect；先做上面这些不耗额度的任务。
+
+---
+
+# 2026-10-30 中午 · EPG 批量映射 / D1 清理 / 线路池
+
+## EPG 批量映射（5f9353c）
+
+- `/api/admin/epg/coverage` 支持 `group` 过滤
+- 新增 `POST /api/admin/epg/bind-bulk`（最多 500 条，校验频道/别名归属，D1 批量写入）
+- 后台「EPG 映射」加分组 chip + 批量粘贴（`频道ID => EPG名`）+ 填入当前列表
+- 实测：缺失 484，`group=央视` 只剩 1；绑定/删除测试通过
+
+## D1 空频道清理
+
+- `cleanup-empty`：删除 3751 个，保留 712（542 个发布频道 + 170 个有手工别名）
+- 发布索引仍 542
+
+## 线路池（87fe4f4）
+
+- 新增 **candidate** 池：alive 但分辨率未知（测活通过、质量待确认），不计入 premium
+  - 当前 candidate 21 条；premium 474 → 454；backup 0
+  - 口径说明：按“分辨率未知”定义；若按“只测过 1 次”定义会接近全部（数据里 passCount 多为 0/1）
+- `/pool/lines` 支持 `subscriptionId`：按订阅的 line_keys / channel_ids / groups 过滤
+  - 实测临时订阅（cctv1）42 条，筛选结果 42/42
+- 频道筛选改为全局可搜索（datalist），不再只能选当前分组
+- 速度筛选统一为 Mbps（表格本来就是 Mb/s）
+- 移动/恢复自动沿用 override，已验证 candidate → backup → reset
+
+## 未完成
+
+- 删除 / 墓碑：需要 D1 `line_tombstones` 表 + runner 导入过滤 + 后台按钮
+- candidate 需要 ffprobe 测出分辨率后才会进 premium
