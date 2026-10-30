@@ -654,4 +654,32 @@ Actions 手动入口：
 - EPG 从 98 → 58 是索引 3389 → 542 后的交集变化，不是 guide 丢失或 buildGuide 丢数据
 - 索引过滤 `stats.alive === 0`（publish.ts:107）会**有意排除**只有 suspect 的频道；是否保留“暂不可用”频道待产品决定
 - 17 个新源：12 个启用源全部有线路，9 个失败源已禁用；pending 4107 / quarantine 1786 / rejected 1423
-- P2 剩余：删除/墓碑、collect/probe/publish 拆分、pool 轻量测活、premium_backup、卫视/地方台 EPG 适配器
+- P2 剩余：删除/墓碑、collect/probe/publish 拆分、pool 轻量测活、卫视/地方台 EPG 适配器（premium_backup 已完成）
+
+---
+
+# 2026-10-30 中午 · 池驱动订阅
+
+## 实现
+
+- core 新增 `linePool.ts`：`buildPoolSnapshot()` / `dedupePoolLines()`
+  - 快照只保留测活通过的线路，按频道分 premium / backup / candidate
+  - 同一 URL 按 canonical URL 去重，优先 alive、再按最近探测时间；修掉了 `//host` 与 `http://host` 两种 urlKey 导致池里留下未测重复线的问题
+- runner 在 collect / export 发布时写 `state/pool.json`（约 500KB），不再预渲染 premium/premium_backup 订阅
+- Worker `renderSubscription`：premium / premium_backup 从快照渲染，并实时应用 `line_overrides`
+  - premium = 只用精品；premium_backup = 精品不足时用备用补位
+  - 预渲染文件在池模式下被忽略，避免旧文件覆盖 override
+- 订阅页新增「线路池模式」选择（精品池 / 精品 + 备用兜底），列表显示模式徽章
+- 修复 `updateSubscription` 只认 snake_case 的问题（camelCase 编辑之前会被静默忽略）
+
+## 验证
+
+- 池 premium 从 454 升到 **732**（去重后保留 alive 记录）；tree 704 频道
+- 现有「全部频道」订阅 M3U 609 条，头注释来自池渲染；override 一条到 backup 后该 URL 立即消失，恢复后回来
+- 临时 premium_backup 订阅（央视、每频道 2 条）29 条 M3U，创建/编辑/删除正常
+- 当前 `state/pool.json` 是本地按最新 state 生成的；下一轮 collect/export 会由 runner 自动重写
+
+## 备注
+
+- 池视图/快照现在都以「canonical URL + 优先 alive」去重，池 totals 与快照一致
+- 待办：删除/墓碑、线路留存、预算公平、pool 测活
