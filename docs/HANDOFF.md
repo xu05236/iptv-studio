@@ -883,3 +883,33 @@ Actions 手动入口：
 - 轻量测活不会延长完整测速的 TTL；完整 collect 仍按 lastProbeAt 到期做测速
 - 目前只测 alive 线路；suspect/pending 仍交给 collect
 - 单轮成本远低于完整探测：一次只剩 3 次 KV 写（lines/pool/log）
+
+---
+
+# 2026-10-30 下午 · 采集前轻量预筛
+
+## 实现
+
+- collect 在完整探测前增加预筛阶段：
+  - 候选：从未探测的 pending 线路 + 上次测活失败超过 6 小时的 suspect
+  - 用 `probeLiveness`（HLS 清单 / 2KB Range）先检查
+  - 失败：failCount +1、状态 suspect、写 `lastLivenessAt`、加入本轮 blocked（不占完整探测预算）；3 次失败判 dead
+  - 成功：只写 `lastLivenessAt`，继续进入完整测速/分辨率
+- `force=true` 时跳过预筛，保持“强制全量”语义
+- 新设置：
+  - `probePrefilterEnabled`（默认 true）
+  - `probePrefilterBudget`（默认 1200）
+- 概览页移除「快速测活」按钮；`probe` 命令保留，用于池内 alive 线路的日常体检/后续调度
+
+## 验证
+
+- 设置 API 返回 `probePrefilterEnabled=true / probePrefilterBudget=1200`
+- web bundle 已包含预筛开关和条数输入，旧「快速测活」按钮消失
+- 新增 2 个预筛单测：404 阻断、有效清单放行、关闭时不发请求
+- 全量 72 个测试通过
+
+## 说明
+
+- 预筛只覆盖 pending/suspect；alive 线路仍由 `probe` 命令（轻量测活）负责
+- 完整 collect 对 alive 的 TTL 逻辑不变
+- 预筛失败不直接 dead，避免临时抖动误杀
