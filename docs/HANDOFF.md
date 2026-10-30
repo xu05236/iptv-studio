@@ -1004,3 +1004,32 @@ Actions 手动入口：
 - 只新增了一条报告 `run-mvujr98t-jj53`（partial，少量探测失败，probed=100）
 - index `05:30:38Z` → `05:47:04Z`，导出 2723 行 / 787 可用
 - 72 个测试通过
+
+---
+
+# 2026-10-30 下午 · 信誉分展示与调度权重
+
+## 信誉分现在参与
+
+- 计算：每次 fetch 后按可用率、平均分、抓取成功率更新 `nextReputation`
+- 排序：`preProbeRank` 中占 10%
+- TTL：非 alive 线路复测按 `tierFor`（high 12h / normal 72h / low 168h）
+- **预算份额（新增）**：每轮 first-pass 按 tier 加权
+  - high 2x、normal 1x、low 0.6x
+  - 每个源仍至少 1 条，剩余预算再轮转
+
+## 展示
+
+- `GET /api/admin/lines` 返回 `sourceReputation/sourceTier`
+- `GET /api/admin/pool/lines` 同样返回
+- 检测中心行内显示「信誉 xx」徽章
+- 线路池来源列显示「信誉 xx」徽章
+- 采集站列表显示优质/正常/降权徽章 + 说明：信誉分综合可用率、线路质量、抓取成功率，影响探测排序、复测间隔和预算份额
+- 仪表盘原有优质/正常/降权计数保留
+
+## 验证
+
+- 线上 `/api/admin/lines` 已返回 `sourceReputation/sourceTier`（示例 Guovin 15.6 / low）
+- web bundle 已包含信誉说明和徽章
+- 新增单测：high 源 2x 份额（60 预算 → 30/15/15）
+- 73 个测试通过

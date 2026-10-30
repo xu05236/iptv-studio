@@ -282,6 +282,8 @@ poolRoutes.get('/lines', async (c) => {
       country: line.country,
       sourceId: line.sourceId,
       sourceName: line.sourceName,
+      sourceReputation: line.sourceReputation,
+      sourceTier: line.sourceTier,
       name: line.name,
       url: line.url,
       resolution: line.resolution,
