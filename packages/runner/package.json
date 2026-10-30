@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "collect": "tsx src/cli.ts collect",
-    "export": "tsx src/cli.ts export",
+    "fetch": "tsx src/cli.ts fetch",
     "probe": "tsx src/cli.ts probe",
+    "publish": "tsx src/cli.ts publish",
+    "liveness": "tsx src/cli.ts liveness",
+    "export": "tsx src/cli.ts export",
     "probe-lines": "tsx src/cli.ts probe-lines",
     "epg": "tsx src/cli.ts epg",
     "shots": "tsx src/cli.ts shots",

@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: 'collect = 抓取+测速+发布，export = 只重建导出，epg = 只更新节目单，probe = 线路池轻量测活，probe-lines = 指定线路全量探测'
+        description: 'collect=全流程，fetch=只抓源，probe=只测速，publish=只发布，export=重建导出，epg=只更新节目单，liveness=池内测活，probe-lines=指定线路探测'
         type: choice
-        options: [collect, export, epg, probe, probe-lines]
+        options: [collect, fetch, probe, publish, export, epg, liveness, probe-lines]
         default: collect
       budget:
         description: '本次测速条数（首轮建议 1200，稳定后再调大）'
@@ -71,8 +71,14 @@ jobs:
             npm run export -w @iptv/runner
           elif [ "${{ github.event.inputs.command || 'collect' }}" = "epg" ]; then
             npm run epg -w @iptv/runner
+          elif [ "${{ github.event.inputs.command || 'collect' }}" = "fetch" ]; then
+            npm run fetch -w @iptv/runner
           elif [ "${{ github.event.inputs.command || 'collect' }}" = "probe" ]; then
             npm run probe -w @iptv/runner
+          elif [ "${{ github.event.inputs.command || 'collect' }}" = "publish" ]; then
+            npm run publish -w @iptv/runner
+          elif [ "${{ github.event.inputs.command || 'collect' }}" = "liveness" ]; then
+            npm run liveness -w @iptv/runner
           elif [ "${{ github.event.inputs.command || 'collect' }}" = "probe-lines" ]; then
             npm run probe-lines -w @iptv/runner
           else

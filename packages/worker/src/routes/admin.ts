@@ -223,15 +223,9 @@ adminRoutes.get('/runs/:id/log', async (c) => {
 
 adminRoutes.post('/runs/dispatch', async (c) => {
   const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string; lineKeys?: string[] | string }>(c)) ?? {};
-  const command = body.command === 'export'
-    ? 'export'
-    : body.command === 'epg'
-      ? 'epg'
-      : body.command === 'probe'
-        ? 'probe'
-        : body.command === 'probe-lines'
-          ? 'probe-lines'
-          : 'collect';
+  const allowedCommands = new Set(['collect', 'export', 'epg', 'fetch', 'probe', 'publish', 'liveness', 'probe-lines']);
+  const requestedCommand = body.command ?? '';
+  const command = allowedCommands.has(requestedCommand) ? requestedCommand : 'collect';
   const force = Boolean(body.force);
   const settings = await loadSettings(c.env);
   const defaultBudget = force ? Math.max(6000, settings.probeBudget || 1200) : settings.probeBudget || 1200;

@@ -530,6 +530,305 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
   }
 }
 
+/** Build and persist the pool snapshot used by pool-driven subscriptions. */
+function poolSnapshotFor(remote: RemoteConfig, lines: LineEntry[], generatedAt: string) {
+  const registry = buildRegistry(remote);
+  return buildPoolSnapshot({
+    lines,
+    channels: registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: seed.group, tvgId: seed.tvgId, logo: seed.logo })),
+    maxLinesPerChannel: remote.settings.maxLinesPerChannel,
+    generatedAt,
+  });
+}
+
+async function syncSourceStats(
+  api: ApiClient,
+  remote: RemoteConfig,
+  lines: LineEntry[],
+  collected: CollectedSource[],
+): Promise<void> {
+  const stats = remote.sources.map((source) => {
+    const sourceLines = lines.filter((line) => line.sourceId === source.id);
+    const aliveLines = sourceLines.filter((line) => line.status === 'alive');
+    const item = collected.find((entry) => entry.source.id === source.id);
+    const reputation = nextReputation({
+      previous: source.reputation,
+      alive: aliveLines.length,
+      total: sourceLines.length,
+      avgScore: mean(aliveLines.map((line) => line.score)),
+      fetchOk: Boolean(item?.fetched && !item.error),
+      consecutiveFailures: item?.error ? 1 : 0,
+    });
+    return {
+      sourceId: source.id,
+      fetched: Boolean(item?.fetched || item?.notModified),
+      parsed: sourceLines.length,
+      alive: aliveLines.length,
+      dead: sourceLines.filter((line) => line.status === 'dead').length,
+      avgSpeedKbps: mean(aliveLines.map((line) => line.speedKbps ?? 0)),
+      avgLatencyMs: mean(aliveLines.map((line) => line.latencyMs ?? 0)),
+      etag: item?.etag ?? source.etag,
+      lastModified: item?.lastModified ?? source.last_modified,
+      error: item?.error,
+      reputation,
+      tier: tierFor(reputation),
+    };
+  });
+  await api.post('/api/admin/sync/sources', { stats });
+}
+
+/** Phase 1: fetch sources, normalize into the line pool, sync source health. */
+async function runFetchPhase(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+  const tombstones = await loadTombstones(api);
+  let report: RunReport = {
+    id: runId, trigger: 'manual', status: 'running', startedAt,
+    sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0, durationMs: 0, warnings: [],
+  };
+
+  try {
+    const remote = await loadRemoteConfig(api);
+    const settings = remote.settings;
+    const previousState = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    report.sources = remote.sources.length;
+    const sourceId = (process.env.SOURCE_ID ?? '').trim();
+    const targetSources = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
+    if (sourceId && !targetSources.length) throw new Error(`采集站不存在或已停用：${sourceId}`);
+
+    const collected = await collectAll(targetSources, store, logger);
+    const registry = buildRegistry(remote);
+    const sources = new Map(remote.sources.map((source) => [source.id, source]));
+    const retentionDays = Math.max(0, envNumber('LINE_RETENTION_DAYS') ?? settings.lineRetentionDays ?? 30);
+    const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso(), tombstones, retentionDays);
+    const lines = normalized.lines;
+    await store.put('state/lines.json', JSON.stringify({ generatedAt: nowIso(), lines }), 'application/json');
+    await syncSourceStats(api, remote, lines, collected);
+
+    const alive = lines.filter((line) => line.status === 'alive').length;
+    const logKey = await writeLog(store, runId, logger);
+    report = {
+      ...report,
+      status: collected.some((item) => item.error) ? 'partial' : 'success',
+      finishedAt: nowIso(),
+      channels: remote.channels.length,
+      lines: lines.length,
+      alive,
+      dead: lines.length - alive,
+      durationMs: Date.now() - startedMs,
+      logKey,
+      warnings: collected.filter((item) => item.error).slice(0, 10).map((item) => `${item.source.name}: ${item.error}`),
+    };
+    await finishRun(api, report);
+    logger.info('抓取阶段完成', { lines: lines.length, alive, sourceId: sourceId || undefined });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('抓取阶段失败', { error: message });
+    report = { ...report, status: 'failed', finishedAt: nowIso(), error: message, durationMs: Date.now() - startedMs };
+    try { report.logKey = await writeLog(store, runId, logger); } catch { /* ignore */ }
+    await finishRun(api, report);
+    throw error;
+  }
+}
+
+/** Phase 2: probe the persisted line pool (full speed/resolution), no fetch/publish. */
+async function runProbePhase(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+  let report: RunReport = {
+    id: runId, trigger: 'manual', status: 'running', startedAt,
+    sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0, durationMs: 0, warnings: [],
+  };
+
+  try {
+    const remote = await loadRemoteConfig(api);
+    const settings = remote.settings;
+    const previousState = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const lines = previousState?.lines ?? [];
+    if (!lines.length) throw new Error('没有线路状态，请先运行 fetch');
+    report.sources = remote.sources.length;
+
+    const sourceId = (process.env.SOURCE_ID ?? '').trim();
+    const configuredBudget = config.probeBudget || settings.probeBudget;
+    const force = process.env.PROBE_FORCE === '1' || process.env.PROBE_FORCE === 'true';
+    const baseCandidates = sourceId ? lines.filter((line) => line.sourceId === sourceId) : lines;
+    const blockedByLiveness = force
+      ? new Set<string>()
+      : await prefilterLiveness(baseCandidates, settings, config.concurrency || settings.concurrency || 32, logger);
+    const probeCandidates = baseCandidates.filter((line) => !blockedByLiveness.has(line.key));
+    const premium = new Set<string>();
+    const byChannel = new Map<string, LineEntry[]>();
+    for (const line of probeCandidates) {
+      if (line.status !== 'alive') continue;
+      const bucket = byChannel.get(line.channelId) ?? [];
+      bucket.push(line);
+      byChannel.set(line.channelId, bucket);
+    }
+    for (const bucket of byChannel.values()) {
+      bucket.sort(compareLines).slice(0, Math.max(1, settings.maxLinesPerChannel)).forEach((line) => premium.add(line.key));
+    }
+    const sources = new Map(remote.sources.map((source) => [source.id, source]));
+    const allDue = planProbes(probeCandidates, sources, settings, Number.MAX_SAFE_INTEGER, new Date(), force, premium);
+    const budget = configuredBudget > 0 ? Math.min(configuredBudget, allDue.length) : allDue.length;
+    const planned = allDue.slice(0, budget);
+    logger.info('测速计划', { due: allDue.length, budget, capped: allDue.length > budget, force, premium: premium.size, sourceId: sourceId || undefined });
+
+    const aliveBefore = probeCandidates.filter((line) => line.status === 'alive').length;
+    const summary = await runProbes(planned, settings, config.concurrency || settings.concurrency, logger);
+    const aliveAfter = probeCandidates.filter((line) => line.status === 'alive').length;
+    if (aliveBefore >= 20 && summary.probed >= 100 && aliveAfter < aliveBefore * 0.5) {
+      throw new Error(`探测异常：可用线路 ${aliveBefore} → ${aliveAfter}，已放弃写入以保护现有订阅`);
+    }
+    const ffprobeLimit = Math.max(0, envNumber('FFPROBE_LIMIT') ?? settings.ffprobeLimit ?? 150);
+    if (ffprobeLimit > 0) await enrichResolutions(sourceId ? lines.filter((line) => line.sourceId === sourceId) : lines, ffprobeLimit, logger);
+
+    const generatedAt = nowIso();
+    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
+    const logKey = await writeLog(store, runId, logger);
+    const alive = lines.filter((line) => line.status === 'alive').length;
+    report = {
+      ...report,
+      status: summary.errors.length ? 'partial' : 'success',
+      finishedAt: nowIso(),
+      channels: remote.channels.length,
+      lines: lines.length,
+      alive,
+      dead: lines.length - alive,
+      probed: summary.probed,
+      bytes: summary.bytes,
+      durationMs: Date.now() - startedMs,
+      logKey,
+      warnings: summary.errors.slice(0, 10).map((item) => `${item.url}: ${item.error}`),
+    };
+    await finishRun(api, report);
+    logger.info('探测阶段完成', { probed: summary.probed, alive: summary.alive, dead: summary.dead, mb: Math.round(summary.bytes / 1024 / 1024) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('探测阶段失败', { error: message });
+    report = { ...report, status: 'failed', finishedAt: nowIso(), error: message, durationMs: Date.now() - startedMs };
+    try { report.logKey = await writeLog(store, runId, logger); } catch { /* ignore */ }
+    await finishRun(api, report);
+    throw error;
+  }
+}
+
+/** Phase 3: build artifacts, EPG, pool snapshot and publish; no fetch/probe. */
+async function runPublishPhase(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+  let report: RunReport = {
+    id: runId, trigger: 'manual', status: 'running', startedAt,
+    sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0, durationMs: 0, warnings: [],
+  };
+
+  try {
+    const remote = await loadRemoteConfig(api);
+    const settings = remote.settings;
+    const previousState = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const lines = previousState?.lines ?? [];
+    if (!lines.length) throw new Error('没有线路状态，请先运行 fetch/probe');
+    report.sources = remote.sources.length;
+
+    const registry = buildRegistry(remote);
+    const epg = await collectEpg(settings.epgUrls, registry, logger);
+    const output = buildArtifacts({
+      runId,
+      generatedAt: nowIso(),
+      registry,
+      lines,
+      settings,
+      rules: remote.rules,
+      epg: epg.data,
+      disabledChannelIds: new Set(remote.channels.filter((row) => row.enabled === false || row.enabled === 0).map((row) => row.id)),
+    });
+    const poolSnapshot = buildPoolSnapshot({
+      lines,
+      channels: registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: seed.group, tvgId: seed.tvgId, logo: seed.logo })),
+      maxLinesPerChannel: settings.maxLinesPerChannel,
+      generatedAt: output.catalog.generatedAt,
+    });
+    await publish(store, output, {
+      lines,
+      epgXml: epg.xml || undefined,
+      log: logger.toJSONL(),
+      runId,
+      generatedAt: output.catalog.generatedAt,
+      poolSnapshot,
+    }, logger);
+    await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, epg.data, logger);
+    await api.post('/api/admin/sync/channels', { channels: output.channels.map((channel) => ({ ...channel, aliases: [] })) });
+
+    const previousCatalog = await store.getJson<ExportCatalog>('state/prev.json');
+    const currentSnapshot = {
+      generatedAt: output.catalog.generatedAt,
+      channels: output.catalog.items.map((item) => ({
+        channel: { id: item.channel.id, name: item.channel.name, group: item.channel.group },
+        lines: item.lines,
+      })),
+    };
+    const diff = diffCatalogs(
+      previousCatalog
+        ? {
+            generatedAt: previousCatalog.generatedAt,
+            channels: previousCatalog.items.map((item) => ({
+              channel: { id: item.channel.id, name: item.channel.name, group: item.channel.group },
+              lines: item.lines,
+            })),
+          }
+        : null,
+      currentSnapshot,
+    );
+    logger.info('差异统计', {
+      channels: `${diff.channelsBefore}->${diff.channelsAfter}`,
+      alive: `${diff.aliveBefore}->${diff.aliveAfter}`,
+      added: diff.addedChannels.length,
+      removed: diff.removedChannels.length,
+    });
+    if (settings.notifyTelegram && config.telegram) {
+      const sent = await notifyTelegram(config.telegram.botToken, config.telegram.chatId, `<b>IPTV 日报</b>\n${formatDiff(diff)}`);
+      logger.info('Telegram 通知', { sent });
+    }
+    await store.put('state/prev.json', JSON.stringify(output.catalog), 'application/json; charset=utf-8');
+    const logKey = await writeLog(store, runId, logger);
+    report = {
+      ...report,
+      status: 'success',
+      finishedAt: nowIso(),
+      channels: output.index.totalChannels,
+      lines: output.index.totalLines,
+      alive: output.index.aliveLines,
+      dead: Math.max(0, output.index.totalLines - output.index.aliveLines),
+      durationMs: Date.now() - startedMs,
+      logKey,
+    };
+    await finishRun(api, report);
+    logger.info('发布阶段完成', { channels: report.channels, lines: report.lines, alive: report.alive });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('发布阶段失败', { error: message });
+    report = { ...report, status: 'failed', finishedAt: nowIso(), error: message, durationMs: Date.now() - startedMs };
+    try { report.logKey = await writeLog(store, runId, logger); } catch { /* ignore */ }
+    await finishRun(api, report);
+    throw error;
+  }
+}
+
 /**
  * Lightweight pool recheck: manifest/first-range only. Does not measure speed
  * or resolution, and does not touch lastProbeAt, so the full probe schedule
@@ -747,8 +1046,20 @@ async function runSelectedProbes(): Promise<void> {
 
 async function main(): Promise<void> {
   const command = process.argv[2] ?? 'collect';
-  if (command === 'probe') {
+  if (command === 'liveness') {
     await runLiveness();
+    return;
+  }
+  if (command === 'fetch') {
+    await runFetchPhase();
+    return;
+  }
+  if (command === 'probe') {
+    await runProbePhase();
+    return;
+  }
+  if (command === 'publish') {
+    await runPublishPhase();
     return;
   }
   if (command === 'probe-lines') {
