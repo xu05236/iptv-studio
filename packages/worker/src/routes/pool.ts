@@ -8,11 +8,12 @@ import {
   listChannels,
   listLineOverrides,
   listSources,
+  listSubscriptions,
   loadSettings,
   upsertLineOverride,
   type SubscriptionRow,
 } from '../db.js';
-import { fail, ok, randomId, randomToken, readJson } from '../lib/http.js';
+import { fail, ok, parseJsonField, randomId, randomToken, readJson } from '../lib/http.js';
 import { getJson } from '../lib/store.js';
 import { countryOfGroup } from '../lib/channelCountry.js';
 import { loadIndex } from '../lib/catalog.js';
@@ -21,7 +22,13 @@ export const poolRoutes = new Hono<AppEnv>();
 
 const PREMIUM_PER_CHANNEL = 12;
 
-type PoolName = 'premium' | 'backup' | 'pending' | 'quarantine' | 'rejected';
+type PoolName = 'premium' | 'backup' | 'candidate' | 'pending' | 'quarantine' | 'rejected';
+
+/** An alive line only counts as a premium/backup candidate once its quality is known. */
+function qualityConfirmed(line: LineEntry): boolean {
+  if (line.height && line.height > 0) return true;
+  return Boolean(line.resolution && !/unknown/i.test(line.resolution));
+}
 
 interface PoolLine extends LineEntry {
   pool: PoolName;
@@ -73,6 +80,7 @@ async function loadPool(env: Env) {
       if (!line.lastProbeAt) autoPool = 'pending';
       else if (line.status === 'dead') autoPool = 'rejected';
       else if (line.status === 'suspect') autoPool = 'quarantine';
+      else if (line.status === 'alive' && !qualityConfirmed(line)) autoPool = 'candidate';
       else if (premium < Math.max(1, Math.min(PREMIUM_PER_CHANNEL, settings.maxLinesPerChannel * 2))) {
         autoPool = 'premium';
         premium++;
@@ -118,7 +126,7 @@ async function loadPool(env: Env) {
     }
   }
   for (const line of lines) {
-    const item = counts.get(line.channelId) ?? { premium: 0, backup: 0, pending: 0, quarantine: 0, rejected: 0 };
+    const item = counts.get(line.channelId) ?? { premium: 0, backup: 0, candidate: 0, pending: 0, quarantine: 0, rejected: 0 };
     item[line.pool]++;
     counts.set(line.channelId, item);
   }
@@ -170,8 +178,29 @@ poolRoutes.get('/lines', async (c) => {
   const page = Math.max(1, Number(c.req.query('page') ?? 1) || 1);
   const limit = Math.min(200, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));
   const minRank = resolution ? qualityRank(resolution as Quality) : -1;
+  const subscriptionId = (c.req.query('subscriptionId') ?? '').trim();
+
+  // "View the lines this subscription would actually use" needs the same
+  // channel/group/key scope as the playlist renderer, not just a text search.
+  let subscriptionLineKeys: Set<string> | null = null;
+  let subscriptionChannels: string[] = [];
+  let subscriptionGroups: string[] = [];
+  let subscriptionExclude: string[] = [];
+  if (subscriptionId) {
+    const subscription = (await listSubscriptions(c.env)).find((item) => item.id === subscriptionId);
+    if (!subscription) return fail('订阅不存在', 404);
+    const keys = parseJsonField<string[]>(subscription.line_keys, []);
+    subscriptionLineKeys = keys.length ? new Set(keys) : null;
+    subscriptionChannels = parseJsonField<string[]>(subscription.channel_ids, []);
+    subscriptionGroups = parseJsonField<string[]>(subscription.groups, []);
+    subscriptionExclude = parseJsonField<string[]>(subscription.exclude_groups, []);
+  }
 
   const filtered = lines.filter((line) => {
+    if (subscriptionLineKeys && !subscriptionLineKeys.has(line.key)) return false;
+    if (!subscriptionLineKeys && subscriptionChannels.length && !subscriptionChannels.includes(line.channelId)) return false;
+    if (!subscriptionLineKeys && subscriptionGroups.length && !subscriptionGroups.includes(line.group)) return false;
+    if (!subscriptionLineKeys && subscriptionExclude.includes(line.group)) return false;
     if (country && line.country !== country) return false;
     if (group && line.group !== group) return false;
     if (channelId && line.channelId !== channelId) return false;
@@ -226,7 +255,7 @@ poolRoutes.get('/lines', async (c) => {
   });
 });
 
-const VALID_POOLS = new Set(['premium', 'backup', 'pending', 'quarantine', 'rejected']);
+const VALID_POOLS = new Set(['premium', 'backup', 'candidate', 'pending', 'quarantine', 'rejected']);
 
 poolRoutes.post('/override', async (c) => {
   const body = (await readJson<{ keys?: unknown; pool?: unknown; reason?: unknown }>(c)) ?? {};

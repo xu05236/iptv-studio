@@ -11,6 +11,7 @@ const POOLS = [
   { value: '', label: '全部池' },
   { value: 'premium', label: '精品池' },
   { value: 'backup', label: '备用池' },
+  { value: 'candidate', label: '候选池（待确认质量）' },
   { value: 'pending', label: '待测池' },
   { value: 'quarantine', label: '待复测' },
   { value: 'rejected', label: '已淘汰' },
@@ -20,6 +21,7 @@ const POOL_LABEL: Record<string, string> = Object.fromEntries(POOLS.map((item) =
 interface PoolCounts {
   premium: number;
   backup: number;
+  candidate: number;
   pending: number;
   quarantine: number;
   rejected: number;
@@ -72,6 +74,7 @@ interface PoolLine {
 function poolTone(pool: string): 'green' | 'blue' | 'orange' | 'red' | undefined {
   if (pool === 'premium') return 'green';
   if (pool === 'backup') return 'blue';
+  if (pool === 'candidate') return 'orange';
   if (pool === 'rejected') return 'red';
   if (pool === 'pending' || pool === 'quarantine') return 'orange';
   return undefined;
@@ -81,9 +84,12 @@ export function Pool() {
   const queryClient = useQueryClient();
   const { show } = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkPool, setBulkPool] = useState('backup');  const [country, setCountry] = useState('');
+  const [bulkPool, setBulkPool] = useState('backup');
+  const [country, setCountry] = useState('');
   const [group, setGroup] = useState('');
   const [channelId, setChannelId] = useState('');
+  const [channelQuery, setChannelQuery] = useState('');
+  const [subscriptionId, setSubscriptionId] = useState('');
   const [pool, setPool] = useState('');
   const [transport, setTransport] = useState('');
   const [resolution, setResolution] = useState('');
@@ -97,23 +103,41 @@ export function Pool() {
     queryFn: () => api.get<{ countries: PoolTreeCountry[] }>('/api/admin/pool/tree'),
   });
 
+  const subscriptions = useQuery({
+    queryKey: ['admin', 'subscriptions'],
+    queryFn: () => api.get<{ items: Array<{ id: string; name: string }> }>('/api/admin/subscriptions'),
+  });
+
+  // The old channel picker only listed channels of the selected group, so it
+  // could not be used as a real filter. Search across every pool channel.
+  const allChannels = useMemo(
+    () =>
+      (tree.data?.countries ?? []).flatMap((countryItem) =>
+        countryItem.groups.flatMap((groupItem) =>
+          groupItem.channels.map((channel) => ({ id: channel.id, name: channel.name, group: groupItem.group })),
+        ),
+      ),
+    [tree.data],
+  );
+
   const countryItem = tree.data?.countries.find((item) => item.country === country);
   const groups = countryItem?.groups ?? [];
-  const groupItem = groups.find((item) => item.group === group);
-  const channels = groupItem?.channels ?? [];
+
+  const minSpeedKbps = minSpeed ? String(Math.max(0, Math.round(Number(minSpeed) * 1000))) : '';
 
   const params = useMemo(() => {
     const value = new URLSearchParams({ page: String(page), limit: String(pageSize) });
     if (country) value.set('country', country);
     if (group) value.set('group', group);
     if (channelId) value.set('channelId', channelId);
+    if (subscriptionId) value.set('subscriptionId', subscriptionId);
     if (pool) value.set('pool', pool);
     if (transport) value.set('transport', transport);
     if (resolution) value.set('resolution', resolution);
-    if (minSpeed) value.set('minSpeed', minSpeed);
+    if (minSpeedKbps) value.set('minSpeed', minSpeedKbps);
     if (search.trim()) value.set('q', search.trim());
     return value.toString();
-  }, [country, group, channelId, pool, transport, resolution, minSpeed, search, page, pageSize]);
+  }, [country, group, channelId, subscriptionId, pool, transport, resolution, minSpeedKbps, search, page, pageSize]);
 
   const lines = useQuery({
     queryKey: ['admin', 'pool', 'lines', params],
@@ -160,7 +184,7 @@ export function Pool() {
           pool,
           transport,
           resolution,
-          minSpeed,
+          minSpeed: minSpeedKbps,
           q: search.trim(),
           keys: selected.size ? [...selected] : undefined,
         }),
@@ -195,7 +219,7 @@ export function Pool() {
         pool,
         transport,
         resolution,
-        minSpeed,
+        minSpeed: minSpeedKbps,
         q: search.trim(),
         keys: selected.size ? [...selected] : undefined,
       });
@@ -217,12 +241,14 @@ export function Pool() {
     setCountry(value);
     setGroup('');
     setChannelId('');
+    setChannelQuery('');
     resetPage();
   }
 
   function selectGroup(value: string): void {
     setGroup(value);
     setChannelId('');
+    setChannelQuery('');
     resetPage();
   }
 
@@ -236,7 +262,7 @@ export function Pool() {
         <div>
           <h1 className="large-title">线路池</h1>
           <p className="subhead" style={{ marginTop: 4 }}>
-            按现有国家 / 分组 / 频道查看线路；只读预览，移动和删除操作下一阶段开放。
+            按国家 / 分组 / 频道或订阅查看线路；可移动到其他池、恢复自动；candidate 为测活通过但质量待确认。
           </p>
         </div>
         <Button loading={tree.isFetching || lines.isFetching} onClick={() => { void tree.refetch(); void lines.refetch(); }}>
@@ -272,9 +298,28 @@ export function Pool() {
         <div className="row row--wrap" style={{ gap: 8, alignItems: 'flex-end' }}>
           <label className="stack stack--tight grow">
             <span className="caption">频道</span>
-            <select className="input" value={channelId} onChange={(event) => { setChannelId(event.target.value); resetPage(); }}>
-              <option value="">全部频道</option>
-              {channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name} ({Object.values(channel.counts).reduce((a, b) => a + b, 0)})</option>)}
+            <input
+              className="input"
+              list="pool-channel-options"
+              value={channelQuery}
+              placeholder="输入频道名或 ID"
+              onChange={(event) => {
+                const value = event.target.value;
+                setChannelQuery(value);
+                const match = allChannels.find((channel) => channel.name === value || channel.id === value);
+                setChannelId(match ? match.id : '');
+                resetPage();
+              }}
+            />
+            <datalist id="pool-channel-options">
+              {allChannels.map((channel) => <option key={channel.id} value={channel.name}>{channel.group}</option>)}
+            </datalist>
+          </label>
+          <label className="stack stack--tight grow">
+            <span className="caption">按订阅查看</span>
+            <select className="input" value={subscriptionId} onChange={(event) => { setSubscriptionId(event.target.value); resetPage(); }}>
+              <option value="">全部线路</option>
+              {(subscriptions.data?.items ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </label>
           <label className="stack stack--tight grow">
@@ -302,8 +347,8 @@ export function Pool() {
             </select>
           </label>
           <label className="stack stack--tight grow">
-            <span className="caption">最低速度 Kbps</span>
-            <input className="input" inputMode="numeric" value={minSpeed} onChange={(event) => { setMinSpeed(event.target.value); resetPage(); }} placeholder="不限" />
+            <span className="caption">最低速度 Mbps</span>
+            <input className="input" inputMode="decimal" value={minSpeed} onChange={(event) => { setMinSpeed(event.target.value); resetPage(); }} placeholder="不限（如 2）" />
           </label>
           <label className="stack stack--tight grow">
             <span className="caption">搜索</span>
