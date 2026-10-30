@@ -53,6 +53,8 @@ interface PoolLine {
   country: string;
   sourceId: string;
   sourceName: string;
+  sourceReputation: number;
+  sourceTier: 'high' | 'normal' | 'low';
   name: string;
   url: string;
   resolution?: string;
@@ -544,7 +546,12 @@ export function Pool() {
                       <div className="caption">{line.country} · {line.group}</div>
                     </td>
                     <td>
-                      <div className="truncate" style={{ maxWidth: 170 }}>{line.sourceName}</div>
+                      <div className="row" style={{ gap: 6 }}>
+                        <span className="truncate" style={{ maxWidth: 120 }}>{line.sourceName}</span>
+                        <Badge tone={line.sourceTier === 'high' ? 'green' : line.sourceTier === 'low' ? 'orange' : 'blue'}>
+                          信誉 {Math.round(line.sourceReputation)}
+                        </Badge>
+                      </div>
                       <div className="caption truncate" style={{ maxWidth: 170 }}>{line.name}</div>
                       {line.retained ? <Badge tone="orange">源已移除，保留中</Badge> : null}
                     </td>

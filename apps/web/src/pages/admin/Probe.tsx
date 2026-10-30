@@ -24,6 +24,8 @@ interface ProbeLine {
   url: string;
   sourceName?: string;
   sourceSite?: string;
+  sourceReputation?: number;
+  sourceTier?: 'high' | 'normal' | 'low';
 }
 
 interface LinesResponse {
@@ -285,7 +287,14 @@ export function Probe() {
                   <tr key={row.key}>
                     <td>
                       <div style={{ fontWeight: 600 }}>{row.channelName}</div>
-                      <div className="caption">{row.group} · {row.sourceName ?? row.sourceId}{row.sourceSite ? ` · ${row.sourceSite}` : ''}</div>
+                      <div className="caption" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span>{row.group} · {row.sourceName ?? row.sourceId}{row.sourceSite ? ` · ${row.sourceSite}` : ''}</span>
+                        {row.sourceReputation !== undefined ? (
+                          <Badge tone={row.sourceTier === 'high' ? 'green' : row.sourceTier === 'low' ? 'orange' : 'blue'}>
+                            信誉 {Math.round(row.sourceReputation)}
+                          </Badge>
+                        ) : null}
+                      </div>
                     </td>
                     <td><Badge tone={row.resolution ? 'blue' : 'default'}>{formatResolution(row.resolution)}</Badge></td>
                     <td>{formatSpeed(row.speedKbps)}</td>

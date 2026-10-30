@@ -58,4 +58,24 @@ describe('planProbes fair share', () => {
     expect(counts.get('b')).toBe(13);
     expect(counts.get('c')).toBe(13);
   });
+
+  it('gives high-reputation sources a larger share', () => {
+    const lines = [
+      ...Array.from({ length: 40 }, (_, index) => line('a', index)),
+      ...Array.from({ length: 40 }, (_, index) => line('b', index)),
+      ...Array.from({ length: 40 }, (_, index) => line('c', index)),
+    ];
+    const sources = new Map([
+      ['a', { id: 'a', tier: 'high', reputation: 90 } as unknown as SourceRecord],
+      ['b', { id: 'b', tier: 'normal', reputation: 50 } as unknown as SourceRecord],
+      ['c', { id: 'c', tier: 'normal', reputation: 50 } as unknown as SourceRecord],
+    ]);
+    const planned = planProbes(lines, sources, settings, 60, new Date('2026-10-30T00:00:00Z'), false);
+    const counts = new Map<string, number>();
+    for (const item of planned) counts.set(item.sourceId, (counts.get(item.sourceId) ?? 0) + 1);
+    expect(planned).toHaveLength(60);
+    expect(counts.get('a')).toBe(30);
+    expect(counts.get('b')).toBe(15);
+    expect(counts.get('c')).toBe(15);
+  });
 });

@@ -431,6 +431,8 @@ interface ProbeLine {
   url: string;
   sourceName?: string;
   sourceSite?: string;
+  sourceReputation?: number;
+  sourceTier?: 'high' | 'normal' | 'low';
 }
 
 /**
@@ -550,6 +552,8 @@ adminRoutes.get('/lines', async (c) => {
     ...row,
     sourceName: meta.get(row.sourceId)?.name ?? row.sourceId,
     sourceSite: meta.get(row.sourceId)?.site ?? '未知来源',
+    sourceReputation: meta.get(row.sourceId)?.reputation,
+    sourceTier: meta.get(row.sourceId)?.tier,
   }));
 
   return ok({ ready: true, summary, total: rows.length, items });

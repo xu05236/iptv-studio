@@ -81,6 +81,8 @@ interface PoolLine extends LineEntry {
   group: string;
   country: string;
   sourceName: string;
+  sourceReputation: number;
+  sourceTier: 'high' | 'normal' | 'low';
   tvgId?: string;
   logo?: string;
 }
@@ -139,6 +141,8 @@ async function loadPool(env: Env) {
         group,
         country,
         sourceName: sourceMap.get(line.sourceId)?.name ?? line.sourceId,
+        sourceReputation: sourceMap.get(line.sourceId)?.reputation ?? 50,
+        sourceTier: (sourceMap.get(line.sourceId)?.tier as PoolLine['sourceTier']) ?? 'normal',
         tvgId: channel.tvg_id ?? undefined,
         logo: channel.logo ?? undefined,
       });

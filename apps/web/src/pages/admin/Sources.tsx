@@ -231,6 +231,7 @@ export function Sources() {
         <div>
           <h1 className="large-title">采集站</h1>
           <p className="subhead" style={{ marginTop: 4 }}>这里列出所有采集来源（GitHub 项目 / 自建站点 / 上传文件），可启停、检查、抽样测速或删除。</p>
+          <p className="caption" style={{ marginTop: 4 }}>信誉分综合可用率、线路质量、抓取成功率：80+ 优质 / 50–79 正常 / &lt;50 降权，会影响探测排序、复测间隔和每轮预算份额。</p>
         </div>
         <Button variant="primary" onClick={() => setOpen(true)}>
           <Plus size={16} /> 添加采集站
@@ -312,7 +313,11 @@ export function Sources() {
                   {source.status === 'degraded' ? <Badge tone="red">抓取异常</Badge> : null}
                 </div>
                 <div className="caption" style={{ marginTop: 4 }}>
-                  {source.entry_count} 条 · {source.alive_count} 可用 · 信誉 {Math.round(source.reputation)} · 更新 {timeAgo(source.last_ok_at)} · 每 {source.refresh_hours ?? 24}h
+                  {source.entry_count} 条 · {source.alive_count} 可用 · 信誉 {Math.round(source.reputation)}
+                  <Badge tone={source.reputation >= 80 ? 'green' : source.reputation >= 50 ? 'blue' : 'orange'}>
+                    {source.reputation >= 80 ? '优质' : source.reputation >= 50 ? '正常' : '降权'}
+                  </Badge>
+                  · 更新 {timeAgo(source.last_ok_at)} · 每 {source.refresh_hours ?? 24}h
                   {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
                 </div>
                 {source.progress ? (

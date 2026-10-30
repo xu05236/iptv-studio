@@ -7,6 +7,7 @@ import {
   qualityRank,
   scoreLine,
   sleep,
+  tierFor,
   transition,
   type AppSettings,
   type LineEntry,
@@ -75,10 +76,17 @@ function fairShareBySource(
   queues.sort((a, b) => byPriority(a[0]!, b[0]!));
   if (queues.length <= 1) return candidates.sort(byPriority).slice(0, budget);
 
-  const share = Math.ceil(budget / queues.length);
   const picked: LineEntry[] = [];
+  const totalWeight = queues.reduce((sum, queue) => {
+    const tier = tierFor(sources.get(queue[0]!.sourceId)?.reputation ?? 50);
+    const weight = tier === 'high' ? 2 : tier === 'low' ? 0.6 : 1;
+    return sum + weight;
+  }, 0);
   for (const queue of queues) {
-    picked.push(...queue.splice(0, share));
+    const tier = tierFor(sources.get(queue[0]!.sourceId)?.reputation ?? 50);
+    const weight = tier === 'high' ? 2 : tier === 'low' ? 0.6 : 1;
+    const weightedShare = Math.max(1, Math.floor((budget * weight) / Math.max(1, totalWeight)));
+    picked.push(...queue.splice(0, weightedShare));
     if (picked.length >= budget) break;
   }
   while (picked.length < budget) {
