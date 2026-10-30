@@ -46,6 +46,60 @@ export function tierOf(source: SourceRecord | undefined): ProbeTier {
  * due, then everything that passed its tier TTL. A hard budget keeps a bad
  * source from eating the whole run.
  */
+/**
+ * Interleave candidates by source so one large site cannot consume the whole
+ * round. Each source gets a fair first-pass share; unused budget is then
+ * redistributed round-robin to sources that still have candidates.
+ */
+function fairShareBySource(
+  candidates: LineEntry[],
+  sources: Map<string, SourceRecord>,
+  budget: number,
+): LineEntry[] {
+  if (budget <= 0) return [];
+  const byPriority = (a: LineEntry, b: LineEntry): number =>
+    weightOf(a) - weightOf(b) || preProbeRank(b, sources) - preProbeRank(a, sources);
+
+  const groups = new Map<string, LineEntry[]>();
+  for (const line of candidates) {
+    const list = groups.get(line.sourceId) ?? [];
+    list.push(line);
+    groups.set(line.sourceId, list);
+  }
+  const queues = [...groups.values()].filter((list) => list.length > 0);
+  queues.sort((a, b) => byPriority(a[0]!, b[0]!));
+  if (queues.length <= 1) return candidates.sort(byPriority).slice(0, budget);
+
+  const share = Math.ceil(budget / queues.length);
+  const picked: LineEntry[] = [];
+  for (const queue of queues) {
+    picked.push(...queue.splice(0, share));
+    if (picked.length >= budget) break;
+  }
+  while (picked.length < budget) {
+    let moved = false;
+    for (const queue of queues) {
+      if (picked.length >= budget) break;
+      const next = queue.shift();
+      if (next) {
+        picked.push(next);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  picked.sort(byPriority);
+  return picked.slice(0, budget);
+}
+
+function weightOf(line: LineEntry): number {
+  if (!line.lastProbeAt) return 0;
+  if (line.status === 'suspect') return 1;
+  if (line.status === 'alive') return 2;
+  if (line.status === 'dead') return 4;
+  return 3;
+}
+
 export function planProbes(
   lines: LineEntry[],
   sources: Map<string, SourceRecord>,
@@ -74,16 +128,6 @@ export function planProbes(
     return force || isDueForProbe(line, tierOf(sources.get(line.sourceId)), now);
   });
 
-  const weight = (line: LineEntry): number => {
-    if (!line.lastProbeAt) return 0;
-    if (line.status === 'suspect') return 1;
-    if (line.status === 'alive') return 2;
-    // New lines beat dead-line revival: dead lines rarely come back, and new
-    // channels are what the daily run is trying to discover.
-    if (line.status === 'dead') return 4;
-    return 3;
-  };
-
   // Quality-first pre-filter: for a channel with 100 candidates only the best
   // 16 (by resolution, source reputation, prior score and freshness) are
   // allowed into this round. The rest stay in state and rotate in later.
@@ -98,9 +142,7 @@ export function planProbes(
     list.sort((a, b) => preProbeRank(b, sources) - preProbeRank(a, sources));
     selected.push(...list.slice(0, force ? list.length : perChannelCap));
   }
-  selected.sort((a, b) => weight(a) - weight(b) || preProbeRank(b, sources) - preProbeRank(a, sources));
-
-  return selected.slice(0, Math.max(0, budget));
+  return fairShareBySource(selected, sources, Math.max(0, budget));
 }
 
 export interface ProbeSummary {
