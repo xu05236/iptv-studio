@@ -224,7 +224,7 @@ adminRoutes.get('/runs/:id/log', async (c) => {
 
 adminRoutes.post('/runs/dispatch', async (c) => {
   const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string }>(c)) ?? {};
-  const command = body.command === 'export' ? 'export' : body.command === 'epg' ? 'epg' : 'collect';
+  const command = body.command === 'export' ? 'export' : body.command === 'epg' ? 'epg' : body.command === 'probe' ? 'probe' : 'collect';
   const force = Boolean(body.force);
   const settings = await loadSettings(c.env);
   const defaultBudget = force ? Math.max(6000, settings.probeBudget || 1200) : settings.probeBudget || 1200;

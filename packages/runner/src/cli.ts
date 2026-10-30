@@ -14,6 +14,7 @@ import {
   mapPool,
   nextReputation,
   normalizeUrlForDedupe,
+  probeLiveness,
   splitUrlHeaders,
   tierFor,
   withinRetention,
@@ -524,8 +525,139 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
   }
 }
 
+/**
+ * Lightweight pool recheck: manifest/first-range only. Does not measure speed
+ * or resolution, and does not touch lastProbeAt, so the full probe schedule
+ * stays intact. Only currently-alive lines are checked; failing three times
+ * demotes them like a full probe would.
+ */
+async function runLiveness(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+
+  let report: RunReport = {
+    id: runId,
+    trigger: 'manual',
+    status: 'running',
+    startedAt,
+    sources: 0,
+    channels: 0,
+    lines: 0,
+    alive: 0,
+    dead: 0,
+    probed: 0,
+    bytes: 0,
+    durationMs: 0,
+    warnings: [],
+  };
+
+  try {
+    const remote = await loadRemoteConfig(api);
+    const settings = remote.settings;
+    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const lines = previous?.lines ?? [];
+    const dueHours = Math.max(1, envNumber('LINE_LIVENESS_HOURS') ?? 24);
+    const budget = Math.max(1, envNumber('PROBE_BUDGET') ?? settings.probeBudget ?? 1200);
+    const now = Date.now();
+    const seen = new Set<string>();
+    const due = lines
+      .filter((line) => {
+        if (line.status !== 'alive') return false;
+        const last = line.lastLivenessAt ? Date.parse(line.lastLivenessAt) : 0;
+        if (last && now - last < dueHours * 3_600_000) return false;
+        const key = canonicalPoolUrl(line.url);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => {
+        const at = (line: LineEntry): number => Date.parse(line.lastLivenessAt ?? line.lastProbeAt ?? '') || 0;
+        return at(a) - at(b);
+      });
+    const selected = due.slice(0, budget);
+    logger.info('轻量测活计划', { due: due.length, budget: selected.length, hours: dueHours });
+
+    let alive = 0;
+    let failed = 0;
+    let skipped = 0;
+    const concurrency = Math.max(1, Math.min(config.concurrency || settings.concurrency || 32, 64));
+    await mapPool(selected, concurrency, async (line) => {
+      const result = await probeLiveness(line.url, { headers: line.headers });
+      if (result.inconclusive) {
+        skipped++;
+        return;
+      }
+      line.lastLivenessAt = new Date().toISOString();
+      if (result.ok) {
+        line.status = 'alive';
+        line.failCount = 0;
+        line.error = undefined;
+        alive++;
+        return;
+      }
+      line.failCount = Math.min(99, line.failCount + 1);
+      line.error = result.error?.slice(0, 200);
+      if (line.failCount >= 3) {
+        line.status = 'dead';
+        line.reviveAt = new Date(Date.now() + settings.deadReviveDays * 86_400_000).toISOString();
+      } else {
+        line.status = 'suspect';
+      }
+      failed++;
+    });
+    logger.info('轻量测活完成', { checked: selected.length, alive, failed, skipped });
+
+    const generatedAt = nowIso();
+    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    const poolSnapshot = buildPoolSnapshot({
+      lines,
+      channels: remote.channels.map((channel) => ({ id: channel.id, name: channel.name, group: channel.group_title ?? '其他', tvgId: channel.tvg_id, logo: channel.logo })),
+      maxLinesPerChannel: settings.maxLinesPerChannel,
+      generatedAt,
+    });
+    await store.put('state/pool.json', JSON.stringify(poolSnapshot), 'application/json');
+
+    const logKey = await writeLog(store, runId, logger);
+    const aliveTotal = lines.filter((line) => line.status === 'alive').length;
+    report = {
+      ...report,
+      status: 'success',
+      finishedAt: nowIso(),
+      sources: remote.sources.length,
+      channels: remote.channels.length,
+      lines: lines.length,
+      alive: aliveTotal,
+      dead: lines.length - aliveTotal,
+      probed: selected.length,
+      durationMs: Date.now() - startedMs,
+      logKey,
+    };
+    await finishRun(api, report);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('轻量测活失败', { error: message });
+    report = { ...report, status: 'failed', finishedAt: nowIso(), error: message, durationMs: Date.now() - startedMs };
+    try {
+      report.logKey = await writeLog(store, runId, logger);
+    } catch {
+      /* ignore */
+    }
+    await finishRun(api, report);
+    throw error;
+  }
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2] ?? 'collect';
+  if (command === 'probe') {
+    await runLiveness();
+    return;
+  }
   if (command === 'collect' || command === 'export') {
     await runCollect(command);
     return;

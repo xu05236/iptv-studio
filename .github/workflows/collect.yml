@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: 'collect = 抓取+测速+发布，export = 只重建导出，epg = 只更新节目单'
+        description: 'collect = 抓取+测速+发布，export = 只重建导出，epg = 只更新节目单，probe = 线路池轻量测活'
         type: choice
-        options: [collect, export, epg]
+        options: [collect, export, epg, probe]
         default: collect
       budget:
         description: '本次测速条数（首轮建议 1200，稳定后再调大）'
@@ -67,6 +67,8 @@ jobs:
             npm run export -w @iptv/runner
           elif [ "${{ github.event.inputs.command || 'collect' }}" = "epg" ]; then
             npm run epg -w @iptv/runner
+          elif [ "${{ github.event.inputs.command || 'collect' }}" = "probe" ]; then
+            npm run probe -w @iptv/runner
           else
             npm run collect -w @iptv/runner
           fi

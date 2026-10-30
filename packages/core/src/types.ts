@@ -126,6 +126,8 @@ export interface LineEntry {
   firstSeenAt: string;
   lastSeenAt: string;
   lastProbeAt?: string;
+  /** Last cheap manifest/range liveness check (pool recheck). */
+  lastLivenessAt?: string;
   /** Source no longer advertises this URL, but the tested line is kept for a while. */
   retained?: boolean;
   reviveAt?: string;

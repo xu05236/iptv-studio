@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowUpRight, Database, Download, PlayCircle, RefreshCw, RadioTower, Users } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowUpRight, Database, Download, PlayCircle, RefreshCw, RadioTower, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminStats, UsageSnapshot } from '../../lib/types';
 import { formatDuration, timeAgo } from '../../lib/format';
@@ -62,7 +62,7 @@ export function Dashboard() {
   });
 
   const dispatch = useMutation({
-    mutationFn: (command: 'collect' | 'export') => api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', { command }),
+    mutationFn: (command: 'collect' | 'export' | 'probe') => api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', { command }),
     onSuccess: (result) => {
       show(result.message);
       void queryClient.invalidateQueries({ queryKey: ['admin'] });
@@ -153,6 +153,9 @@ export function Dashboard() {
         <div className="row">
           <Button loading={dispatch.isPending} disabled={kvBlocked} onClick={() => dispatch.mutate('collect')}>
             <PlayCircle size={15} /> 立即采集
+          </Button>
+          <Button loading={dispatch.isPending} onClick={() => dispatch.mutate('probe')}>
+            <Activity size={15} /> 快速测活
           </Button>
           <Button loading={refreshUsage.isPending} onClick={() => refreshUsage.mutate()}>
             <RefreshCw size={15} /> 刷新用量
