@@ -34,6 +34,20 @@ import { enrichResolutions } from './pipeline/ffprobe.js';
 
 const EMPTY_EPG: EpgData = { channels: [], programmes: [] };
 
+interface StoredGuide {
+  channels?: Record<string, Array<{ title: string; start: number; stop?: number }>>;
+}
+
+function epgFromGuide(guide: StoredGuide | null): EpgData {
+  const channels: EpgData['channels'] = [];
+  const programmes: EpgData['programmes'] = [];
+  for (const [id, items] of Object.entries(guide?.channels ?? {})) {
+    channels.push({ id, names: [id] });
+    for (const item of items) programmes.push({ channelId: id, title: item.title, start: item.start, stop: item.stop });
+  }
+  return { channels, programmes };
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -409,6 +423,8 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
     logger.info('仅导出模式', { lines: lines.length });
     const exportFfprobeLimit = Number(process.env.FFPROBE_LIMIT ?? '150') || 0;
     if (exportFfprobeLimit > 0) await enrichResolutions(lines, exportFfprobeLimit, logger);
+    const previousGuide = await store.getJson<StoredGuide>('state/guide.json');
+    const exportEpg = epgFromGuide(previousGuide);
     const output = buildArtifacts({
       runId,
       generatedAt: nowIso(),
@@ -416,12 +432,12 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
       lines,
       settings,
       rules: remote.rules,
-      epg: EMPTY_EPG,
+      epg: exportEpg,
       disabledChannelIds: new Set(remote.channels.filter((row) => row.enabled === false || row.enabled === 0).map((row) => row.id)),
     });
     const logKey = await writeLog(store, runId, logger);
     await publish(store, output, { lines, log: logger.toJSONL(), runId, generatedAt: output.catalog.generatedAt }, logger);
-    await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, null, logger);
+    await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, exportEpg, logger);
     await api.post('/api/admin/sync/channels', { channels: output.channels.map((channel) => ({ ...channel, aliases: [] })) });
     report = {
       ...report,
