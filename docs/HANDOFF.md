@@ -639,6 +639,8 @@ Actions 手动入口：
 - 频道筛选改为全局可搜索（datalist），不再只能选当前分组
 - 速度筛选统一为 Mbps（表格本来就是 Mb/s）
 - 移动/恢复自动沿用 override，已验证 candidate → backup → reset
+- 池视图隐藏 D1 已删除的孤儿频道（3235 → **698**），新增「来源站」筛选（查看/导出/保存订阅），池顺序按生命周期重排并显示计数
+  - 隐藏孤儿后池总量：premium 454 / candidate 21 / pending 977 / quarantine 924 / rejected 635（孤儿线路仍在 state，但无频道身份、不可发布）
 
 ## 未完成
 
