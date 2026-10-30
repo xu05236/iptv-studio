@@ -310,6 +310,7 @@ function poolSnapshotFor(remote: RemoteConfig, lines: LineEntry[], generatedAt: 
 }
 
 const LIVENESS_RETRY_MS = 6 * 3_600_000;
+const UNPROBEABLE_URL = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
 
 function livenessReady(line: LineEntry, now: number): boolean {
   if (!line.lastLivenessAt) return true;
@@ -319,7 +320,7 @@ function livenessReady(line: LineEntry, now: number): boolean {
 /** Small summary consumed by the Worker scheduler; avoids parsing lines.json. */
 function poolStatsFor(remote: RemoteConfig, lines: LineEntry[]) {
   const channelIds = new Set(remote.channels.map((channel) => channel.id));
-  const valid = lines.filter((line) => channelIds.has(line.channelId));
+  const valid = lines.filter((line) => channelIds.has(line.channelId) && !UNPROBEABLE_URL.test(line.url));
   const now = Date.now();
   const nowDate = new Date(now);
   return {
@@ -667,6 +668,7 @@ function parsePhaseOrder(value: string): Array<'pending' | 'quarantine' | 'rejec
 }
 
 function phaseMatches(line: LineEntry, phase: 'pending' | 'quarantine' | 'rejected', now: number, forced: boolean): boolean {
+  if (UNPROBEABLE_URL.test(line.url)) return false;
   if (phase === 'pending') return !line.lastProbeAt && line.status === 'unknown';
   if (phase === 'quarantine') {
     if (line.status !== 'suspect') return false;
