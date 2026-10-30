@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPoolSnapshot, qualityConfirmed } from '../src/linePool.js';
+import { buildPoolSnapshot, dedupePoolLines, qualityConfirmed } from '../src/linePool.js';
 import type { LineEntry } from '../src/types.js';
 
 function line(overrides: Partial<LineEntry> & { url: string }): LineEntry {
@@ -17,6 +17,7 @@ function line(overrides: Partial<LineEntry> & { url: string }): LineEntry {
     resolution: '1920x1080',
     height: 1080,
     speedKbps: 4000,
+    lastProbeAt: '2026-01-01T00:00:00Z',
     firstSeenAt: '2026-01-01T00:00:00Z',
     lastSeenAt: '2026-01-01T00:00:00Z',
     tags: [],
@@ -32,7 +33,8 @@ describe('buildPoolSnapshot', () => {
       line({ url: 'c', key: 'c', score: 70 }),
       line({ url: 'd', key: 'd', resolution: undefined, height: undefined, score: 95 }),
       line({ url: 'e', key: 'e', status: 'suspect' }),
-      line({ url: 'a2', key: 'a2', urlKey: 'a', score: 10 }),
+      line({ url: 'f', key: 'f', lastProbeAt: undefined }),
+      line({ url: 'a', key: 'a2', score: 10 }),
     ];
     const snapshot = buildPoolSnapshot({
       lines,
@@ -64,5 +66,25 @@ describe('qualityConfirmed', () => {
     expect(qualityConfirmed({ resolution: undefined, height: 720 })).toBe(true);
     expect(qualityConfirmed({ resolution: 'unknown' })).toBe(false);
     expect(qualityConfirmed({ resolution: undefined })).toBe(false);
+  });
+});
+
+describe('dedupePoolLines', () => {
+  it('collapses scheme variants and prefers the alive record', () => {
+    const lines = [
+      line({ url: '//host/live.m3u8', key: 'a', status: 'unknown', lastProbeAt: undefined }),
+      line({ url: 'http://host/live.m3u8', key: 'b', status: 'alive', score: 90 }),
+    ];
+    const deduped = dedupePoolLines(lines);
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]?.key).toBe('b');
+    expect(deduped[0]?.status).toBe('alive');
+  });
+
+  it('prefers the newer probe when both are alive', () => {
+    const older = line({ url: 'http://host/x', key: 'old', lastProbeAt: '2026-01-01T00:00:00Z' });
+    const newer = line({ url: 'http://host/x', key: 'new', lastProbeAt: '2026-10-01T00:00:00Z' });
+    const deduped = dedupePoolLines([older, newer]);
+    expect(deduped[0]?.key).toBe('new');
   });
 });

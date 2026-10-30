@@ -33,6 +33,44 @@ export function qualityConfirmed(line: Pick<LineEntry, 'resolution' | 'height'>)
   return Boolean(line.resolution && !/unknown/i.test(line.resolution));
 }
 
+/**
+ * The same stream is often advertised by several sources. State keeps one row
+ * per source, and their urlKey formats disagree (`//host/path` vs `http://…`),
+ * so collapse by a canonical URL and keep the most useful record: alive first,
+ * then the most recently probed.
+ */
+export function dedupePoolLines(lines: LineEntry[]): LineEntry[] {
+  const canonical = (url: string): string => {
+    const trimmed = url.trim();
+    if (trimmed.startsWith('//')) return `http:${trimmed}`;
+    return trimmed;
+  };
+  const rank: Record<string, number> = { alive: 3, suspect: 2, unknown: 1, dead: 0 };
+  const best = new Map<string, LineEntry>();
+  for (const line of lines) {
+    const key = canonical(line.url);
+    const current = best.get(key);
+    if (!current) {
+      best.set(key, line);
+      continue;
+    }
+    const lineRank = rank[line.status] ?? 0;
+    const currentRank = rank[current.status] ?? 0;
+    if (lineRank !== currentRank) {
+      if (lineRank > currentRank) best.set(key, line);
+      continue;
+    }
+    const lineProbe = line.lastProbeAt ?? '';
+    const currentProbe = current.lastProbeAt ?? '';
+    if (lineProbe !== currentProbe) {
+      if (lineProbe > currentProbe) best.set(key, line);
+      continue;
+    }
+    if ((line.score ?? 0) > (current.score ?? 0)) best.set(key, line);
+  }
+  return [...best.values()];
+}
+
 export interface BuildPoolSnapshotInput {
   lines: LineEntry[];
   channels: PoolChannelMeta[];
@@ -48,12 +86,9 @@ export interface BuildPoolSnapshotInput {
 export function buildPoolSnapshot(input: BuildPoolSnapshotInput): PoolSnapshot {
   const channelMap = new Map(input.channels.map((channel) => [channel.id, channel]));
   const byChannel = new Map<string, LineEntry[]>();
-  const seenUrls = new Set<string>();
 
-  for (const line of input.lines) {
+  for (const line of dedupePoolLines(input.lines)) {
     if (!channelMap.has(line.channelId)) continue;
-    if (seenUrls.has(line.urlKey)) continue;
-    seenUrls.add(line.urlKey);
     const list = byChannel.get(line.channelId) ?? [];
     list.push(line);
     byChannel.set(line.channelId, list);
@@ -70,6 +105,9 @@ export function buildPoolSnapshot(input: BuildPoolSnapshotInput): PoolSnapshot {
     const backup: LineEntry[] = [];
     const candidate: LineEntry[] = [];
     for (const line of lines) {
+      // A line without a probe timestamp was never tested; the pool treats it
+      // as pending, so it must not leak into premium/backup either.
+      if (!line.lastProbeAt) continue;
       if (line.status !== 'alive') continue;
       if (!qualityConfirmed(line)) {
         candidate.push(line);

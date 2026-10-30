@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { channelLogo, compareLines, qualityOf, qualityRank, type LineEntry, type Quality } from '@iptv/core';
+import { channelLogo, compareLines, dedupePoolLines, qualityOf, qualityRank, type LineEntry, type Quality } from '@iptv/core';
 import type { AppEnv, Env } from '../env.js';
 import {
   audit,
@@ -57,12 +57,9 @@ async function loadPool(env: Env) {
   const sourceMap = new Map(sources.map((source) => [source.id, source]));
   const overrideMap = new Map(overrides.map((row) => [row.line_key, row]));
   const byChannel = new Map<string, LineEntry[]>();
-  const seenUrls = new Set<string>();
-  for (const line of state?.lines ?? []) {
-    // A URL can be reported by multiple sources; dedupe the pool view and
-    // premium ranking by URL rather than counting it several times.
-    if (seenUrls.has(line.url)) continue;
-    seenUrls.add(line.url);
+  // A URL can be reported by multiple sources; keep the alive/newest record so
+  // a stale untested duplicate cannot hide the tested one.
+  for (const line of dedupePoolLines(state?.lines ?? [])) {
     const list = byChannel.get(line.channelId) ?? [];
     list.push(line);
     byChannel.set(line.channelId, list);
