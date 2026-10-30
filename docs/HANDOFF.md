@@ -713,3 +713,13 @@ Actions 手动入口：
 
 - 删除（非墓碑）不阻止源刷新重新导入；要永久阻止必须用墓碑
 - runner 的“导入跳过墓碑”要等下一轮 collect 才能实测
+
+---
+
+# 2026-10-30 下午 · 线路留存
+
+- `normalize()`：源刷新成功时，不再立刻删掉它不再列出的 URL；已测线路保留 **LINE_RETENTION_DAYS**（默认 30 天，collect.yml 可用仓库变量覆盖）
+- 只保留有探测记录、且 `lastSeenAt` 在窗口内的线路；墓碑永不保留；源被禁用/删除时不保留
+- 保留的线路带 `retained: true`，继续参与探测和订阅；池表格显示「源已移除，保留中」
+- 超过保留期后自然淘汰；源重新列出同 URL 时恢复为正常线路（不继承 retained 标记）
+- 验证：`withinRetention` 单测通过；线上池 API 已有 `retained` 字段、web bundle 已有徽章；真实留存要等下一轮 collect 遇到“源丢弃 URL”才能观察
