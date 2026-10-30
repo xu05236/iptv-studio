@@ -609,6 +609,7 @@ Actions 手动入口：
 3. EPG 映射批量导入/按分组：补 484 个缺节目单的 alive 频道，只写 D1
 4. 清理旧 64 桶 key：48 次 KV delete，释放存储（16 桶已完整）
 5. 前端体验：频道详情、订阅页、移动端
+6. **卫视/地方台 EPG 官方源适配器（ROADMAP P2-1）**：湖南 / 浙江 / 江苏 / 东方 / 北京，复用 `core/src/epg/cctv.ts` 的 `parseXxxEpg + runner 抓取` 模式；先做 3–5 个台验证收益
 
 > 用户决定：暂不提高预算、暂不跑 collect；先做上面这些不耗额度的任务。
 
@@ -643,3 +644,12 @@ Actions 手动入口：
 
 - 删除 / 墓碑：需要 D1 `line_tombstones` 表 + runner 导入过滤 + 后台按钮
 - candidate 需要 ffprobe 测出分辨率后才会进 premium
+- **卫视/地方台 EPG 官方源适配器（ROADMAP P2-1）**：CCTV 已接 CNTV JSON；卫视/地方台仍全靠 XMLTV，候选湖南/浙江/江苏/东方/北京，接口不公开、湖南需签名，先做 3–5 个台
+
+## 上个会话遗留清单核对（2026-10-30 中午）
+
+- P0：guide 58 频道 / 772 条节目，coverage 58/542，最新 export `run-mvuc1sra-4pgn` success；HANDOFF 已补
+- EPG 从 98 → 58 是索引 3389 → 542 后的交集变化，不是 guide 丢失或 buildGuide 丢数据
+- 索引过滤 `stats.alive === 0`（publish.ts:107）会**有意排除**只有 suspect 的频道；是否保留“暂不可用”频道待产品决定
+- 17 个新源：12 个启用源全部有线路，9 个失败源已禁用；pending 4107 / quarantine 1786 / rejected 1423
+- P2 剩余：删除/墓碑、collect/probe/publish 拆分、pool 轻量测活、premium_backup、卫视/地方台 EPG 适配器
