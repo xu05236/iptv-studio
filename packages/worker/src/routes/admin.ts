@@ -372,8 +372,8 @@ adminRoutes.get('/schedule', async (c) => {
 const TASK_PHASES = ['pending', 'quarantine', 'rejected'] as const;
 const TASK_PHASE_LABEL: Record<string, string> = {
   pending: '待测（从未探测）',
-  quarantine: '待复测（suspect）',
-  rejected: '已淘汰（dead）',
+  quarantine: '待复测（到期）',
+  rejected: '已淘汰（可复活）',
 };
 
 /** Derived detection task board for the overview page. */

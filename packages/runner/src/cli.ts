@@ -314,12 +314,15 @@ function poolStatsFor(remote: RemoteConfig, lines: LineEntry[]) {
   const channelIds = new Set(remote.channels.map((channel) => channel.id));
   const valid = lines.filter((line) => channelIds.has(line.channelId));
   const now = Date.now();
+  const nowDate = new Date(now);
   return {
     generatedAt: new Date().toISOString(),
     total: valid.length,
     pending: valid.filter((line) => !line.lastProbeAt).length,
-    quarantine: valid.filter((line) => line.status === 'suspect').length,
-    rejected: valid.filter((line) => line.status === 'dead' && (!line.reviveAt || Date.parse(line.reviveAt) <= now)).length,
+    // Only lines whose TTL is due; otherwise the scheduler would keep dispatching
+    // batches that immediately go idle.
+    quarantine: valid.filter((line) => line.status === 'suspect' && isDueForProbe(line, 'normal', nowDate)).length,
+    rejected: valid.filter((line) => line.status === 'dead' && line.failCount < 5 && (!line.reviveAt || Date.parse(line.reviveAt) <= now)).length,
     alive: valid.filter((line) => line.status === 'alive').length,
     dead: valid.filter((line) => line.status === 'dead').length,
   };
@@ -612,6 +615,7 @@ async function runProbePhase(): Promise<void> {
     const generatedAt = nowIso();
     await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
     await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
+    await writePoolStats(store, remote, lines);
     const logKey = await writeLog(store, runId, logger);
     const alive = lines.filter((line) => line.status === 'alive').length;
     report = {
@@ -700,6 +704,7 @@ async function runBatchProbe(): Promise<void> {
       : order.find((candidate) => !paused.has(candidate) && validPhase(candidate));
     if (!phase) {
       logger.info('分批探测空闲：没有待测线路');
+      await writePoolStats(store, remote, lines);
       report = { ...report, status: 'success', finishedAt: nowIso(), channels: remote.channels.length, lines: lines.length, durationMs: Date.now() - startedMs };
       await finishRun(api, report);
       return;
@@ -958,6 +963,7 @@ async function runLiveness(): Promise<void> {
       generatedAt,
     });
     await store.put('state/pool.json', JSON.stringify(poolSnapshot), 'application/json');
+    await writePoolStats(store, remote, lines);
 
     const logKey = await writeLog(store, runId, logger);
     const aliveTotal = lines.filter((line) => line.status === 'alive').length;
