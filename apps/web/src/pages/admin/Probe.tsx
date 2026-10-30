@@ -52,6 +52,10 @@ interface LivenessItem {
   inconclusive: boolean;
 }
 
+/** Worker allows ~50 subrequests per call, so batch the preview client-side. */
+const LIVENESS_BATCH = 25;
+const LIVENESS_MAX = 200;
+
 export function Probe() {
   const { show } = useToast();
   const [search, setSearch] = useState('');
@@ -92,6 +96,7 @@ export function Probe() {
   const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(totalItems / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pagedItems = visibleItems;
+  const livenessTargets = pagedItems.slice(0, LIVENESS_MAX);
 
   useEffect(() => {
     setPage(1);
@@ -110,7 +115,15 @@ export function Probe() {
   });
 
   const quickLiveness = useMutation({
-    mutationFn: (keys: string[]) => api.post<{ results: LivenessItem[] }>('/api/admin/lines/liveness', { keys }),
+    mutationFn: async (keys: string[]) => {
+      const results: LivenessItem[] = [];
+      for (let offset = 0; offset < keys.length; offset += LIVENESS_BATCH) {
+        const chunk = keys.slice(offset, offset + LIVENESS_BATCH);
+        const response = await api.post<{ results: LivenessItem[] }>('/api/admin/lines/liveness', { keys: chunk });
+        results.push(...response.results);
+      }
+      return { results };
+    },
     onSuccess: (res) => {
       setLivenessResults(res.results);
       setPassedSelected(new Set(res.results.filter((item) => item.ok && !item.inconclusive).map((item) => item.key)));
@@ -142,10 +155,11 @@ export function Probe() {
           <Button onClick={() => setOpenTester(true)}><Zap size={15} /> 单条探测</Button>
           <Button
             loading={quickLiveness.isPending}
-            disabled={!pagedItems.length}
-            onClick={() => quickLiveness.mutate(pagedItems.slice(0, 30).map((row) => row.key))}
+            disabled={!livenessTargets.length}
+            title={`分 ${Math.max(1, Math.ceil(livenessTargets.length / LIVENESS_BATCH))} 批检查，单次最多 ${LIVENESS_MAX} 条`}
+            onClick={() => quickLiveness.mutate(livenessTargets.map((row) => row.key))}
           >
-            <Activity size={15} /> 快速测活（当前页）
+            <Activity size={15} /> 快速测活（{livenessTargets.length} 条）
           </Button>
           <Button variant="primary" loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'collect' })}>
             <PlayCircle size={15} /> 全量检测
@@ -226,6 +240,8 @@ export function Probe() {
             <option value={20}>20</option>
             <option value={30}>30</option>
             <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
             <option value="all">全部</option>
           </select>
         </label>
