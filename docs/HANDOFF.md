@@ -913,3 +913,36 @@ Actions 手动入口：
 - 预筛只覆盖 pending/suspect；alive 线路仍由 `probe` 命令（轻量测活）负责
 - 完整 collect 对 alive 的 TTL 逻辑不变
 - 预筛失败不直接 dead，避免临时抖动误杀
+
+---
+
+# 2026-10-30 下午 · 检测中心：快速测活 + 选中全量
+
+## 实现
+
+- 新接口 `POST /api/admin/lines/liveness`：
+  - 最多 30 个 key（Worker 子请求限制）
+  - 只读预览，不修改 state
+  - 返回每条 `ok/status/latencyMs/error/inconclusive`
+- 检测中心新增「快速测活（当前页）」按钮：
+  - 对当前页最多 30 条做轻量测活
+  - 弹窗展示通过 / 失败 / 跳过（rtsp 等无法测活）
+  - 通过项默认勾选，可手动取消
+  - 「对选中 N 条做全量检测」→ dispatch `probe-lines`
+- 新 runner 命令 `probe-lines`：
+  - 从 `LINE_KEYS` 读取指定 key，做完整测速/分辨率
+  - 更新 `state/lines.json` + `state/pool.json` + 日志/报告
+- Actions `collect.yml` 新增 `line_keys` 输入和 `probe-lines` command
+- dispatch API 接受 `lineKeys`（最多 50）
+
+## 验证
+
+- 对 3 条 alive 线路快速测活：2 条通过、1 条 403
+- 用通过的 2 个 key dispatch `probe-lines`：run `41006550097` success，报告 `probed=2`
+- web bundle 已包含「快速测活（当前页）」和结果弹窗
+- 72 个测试通过
+
+## 限制
+
+- 单次快速测活最多 30 条（Worker 子请求限制）；大批量请用 collect 前置预筛
+- `probe-lines` 不走预算/TTL，只测显式选中的 key
