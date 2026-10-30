@@ -1093,3 +1093,23 @@ Actions 手动入口：
 
 - 台标覆盖依赖 fanmingming 台标包；个别地方台/自定义频道没有对应 `tvgId` 时仍会回退首字
 - D1 频道行会在下次 publish 的 `sync/channels` 中补上 `tvg_id/logo`（upsert 使用 COALESCE）
+
+## 多台标源（2026-10-30 晚补充）
+
+前台 `ChannelLogo` 回退链扩为：
+
+1. `cdn.jsdelivr.net/gh/fanmingming/live@main/tv/`
+2. `fastly.jsdelivr.net/...`
+3. `gcore.jsdelivr.net/...`
+4. `testingcf.jsdelivr.net/...`
+5. `ghproxy.net/https://raw.githubusercontent.com/...`
+6. `gh-proxy.com/https://raw.githubusercontent.com/...`
+7. `8u8m/live-fanmingming` fork
+8. `bxtww/live` fork
+9. `bonnie180/live-m3u8` fork
+10. `vircloud/TVLogo`
+11. GitHub raw
+
+- 实测 `CCTV1.png`：前 10 个源均返回 200；raw 在当前网络超时，所以放最后
+- 前端 bundle 已确认包含 Fastly / ghproxy / 8u8m / vircloud 等源
+- 说明：订阅文件里的 `tvg-logo` 仍是单个 jsDelivr URL；若播放器也需要多源，需要后续加 Worker 台标代理
