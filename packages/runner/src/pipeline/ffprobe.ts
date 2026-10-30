@@ -39,16 +39,22 @@ function runFfprobe(line: LineEntry): Promise<ProbeStream | null> {
   });
 }
 
+const NON_HTTP = /^(rtmp|rtmps|rtsp):\/\//i;
+
 /**
  * Fill in real video dimensions with ffprobe.
  *
- * HLS master playlists often omit RESOLUTION (or the source is a bare media
- * playlist), so the HTTP probe alone leaves many lines at "unknown". We only
- * spend ffprobe time on lines that are alive and still missing a resolution.
+ * HLS master playlists often omit RESOLUTION, and RTMP/RTSP cannot be checked by
+ * the HTTP probe at all. ffprobe is the only truthful source for those, and a
+ * successful ffprobe also proves the stream is alive.
  */
 export async function enrichResolutions(lines: LineEntry[], limit: number, logger: RunLogger): Promise<number> {
   const targets = lines
-    .filter((line) => line.status === 'alive' && !line.resolution && /^https?:/i.test(line.url))
+    .filter((line) => {
+      if (line.resolution) return false;
+      if (NON_HTTP.test(line.url)) return true;
+      return line.status === 'alive' && /^https?:/i.test(line.url);
+    })
     .slice(0, Math.max(0, limit));
 
   if (!targets.length) {
@@ -68,6 +74,12 @@ export async function enrichResolutions(lines: LineEntry[], limit: number, logge
       line.width = stream.width;
       line.height = stream.height;
       line.resolution = `${stream.width}x${stream.height}`;
+      if (NON_HTTP.test(line.url)) {
+        line.status = 'alive';
+        line.failCount = 0;
+        line.error = undefined;
+        line.lastProbeAt = new Date().toISOString();
+      }
       if (stream.avg_frame_rate) {
         const [num, den] = stream.avg_frame_rate.split('/').map(Number);
         if (num && den) line.frameRate = Math.round((num / den) * 100) / 100;
