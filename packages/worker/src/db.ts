@@ -637,7 +637,14 @@ export async function updateFeedback(env: Env, id: string, status: string): Prom
 
 export async function loadSettings(env: Env): Promise<AppSettings> {
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'app'").first<{ value: string }>();
-  return { ...DEFAULT_SETTINGS, ...parseJsonField<Partial<AppSettings>>(row?.value, {}) };
+  const stored = parseJsonField<Record<string, unknown>>(row?.value, {});
+  // Only keep keys that still exist in AppSettings, so retired knobs do not
+  // leak back into the admin UI or the runner.
+  const settings: Record<string, unknown> = { ...DEFAULT_SETTINGS };
+  for (const key of Object.keys(DEFAULT_SETTINGS)) {
+    if (key in stored) settings[key] = stored[key];
+  }
+  return settings as unknown as AppSettings;
 }
 
 export async function saveSettings(env: Env, patch: Partial<AppSettings>): Promise<AppSettings> {
