@@ -683,3 +683,33 @@ Actions 手动入口：
 
 - 池视图/快照现在都以「canonical URL + 优先 alive」去重，池 totals 与快照一致
 - 待办：删除/墓碑、线路留存、预算公平、pool 测活
+
+---
+
+# 2026-10-30 下午 · 删除 / 墓碑
+
+## 实现
+
+- D1 `line_tombstones`（migration `0012_line_tombstones.sql`）
+  - 本机没有 CLOUDFLARE_API_TOKEN，`wrangler d1 migrations` 跑不了
+  - 增加幂等接口 `POST /api/admin/db/ensure-tombstones`，部署后调用一次完成建表；新环境仍走 migration
+- 池接口：
+  - `GET /api/admin/pool/tombstones`
+  - `POST /api/admin/pool/delete`：只从 state 删除，源刷新可能回来
+  - `POST /api/admin/pool/tombstone`：删除 + 永久墓碑，支持 `keys`（池内线路）或 `urls`（手动）
+  - `POST /api/admin/pool/untombstone`：解除墓碑（不会恢复已删线路，等下一轮导入）
+- 删除会同时过滤 `state/lines.json` 和 `state/pool.json`，订阅下一请求立即生效
+- 订阅渲染排除墓碑 URL，ETag 包含墓碑版本；runner collect 读取墓碑，导入阶段直接跳过
+- 后台：批量「删除」「墓碑」按钮 + 「墓碑列表」Sheet（可解除）
+
+## 验证
+
+- URL 墓碑后，现有订阅 M3U 立即不再包含该线路；解除后恢复
+- keys 墓碑：rejected 636 → 635，`removed=1`，墓碑列表可见
+- 测试产生的墓碑已清理，当前 0 条
+- 线上 bundle 已包含「墓碑列表」
+
+## 注意
+
+- 删除（非墓碑）不阻止源刷新重新导入；要永久阻止必须用墓碑
+- runner 的“导入跳过墓碑”要等下一轮 collect 才能实测
