@@ -561,3 +561,43 @@ Actions 手动入口：
 - 一次只做一个明确小任务
 - 不要重复跑部署轮询；CI success 即可
 - 若出现 `MALFORMED_RESPONSE`，停止复杂工具调用，改小步
+
+---
+
+# 2026-10-30 上午 · 验证与修复
+
+## 采集与数据
+
+- 08:40 collect（预算 1200，手动）：run `40981115326` 发布成功，状态 partial（9 个源抓取失败）
+- 12 个新源成功导入：Guovin、yyfxz×3、all-7990、156.238×2、iptv.445569、gchust、baoyj 等
+- 09:07 / 09:15 / 09:22 三次运行非本会话触发（collect → export → collect budget=1）
+- 09:15 起公开索引只发布有 alive 的频道（`fb34a7c`）：频道 3389 → **542**
+- 当前：频道 **542** / 线路 **2723** / 可用 **787**；EPG 覆盖 **58/542**（有 alive 且能匹配节目单的交集）
+- 09:22 的 collect 合并 EPG 588 频道 / 19,235 条节目，guide 数据正常，58 是交集不是丢失
+- 已禁用 9 个连续失败的源：140.83、61.160、124.223、124.222、219.146、catvod、jsnzkpg、stymei、paste c-net
+- 启用源降为 12 个，全部有线路；下一轮 collect 应为 success
+
+## 本轮修复
+
+- `19b177f` EPG 改为返回原始 XML，由 Cloudflare 压一次；补 `Vary: Accept-Encoding`；runner 不再写 `.xml.gz`（之前是双层 gzip）
+- `bac2642` `putArtifact` 用 `getWithMetadata` 代替 `KV.list`；新增单测断言 list=0（lists 1k/天是真正瓶颈）
+- `0ca73f5` 后台 KV 卡片和全局告警增加 lists 指标
+- `9653aec` 线路池导出用 `channelLogo()` 从 tvg-id 合成台标
+- `46e2315` export 不再用 24h guide 重建每订阅 EPG（否则 2.5 天会被截成 24h）
+- 非本会话：`43344d1` export 保留 guide（已验证覆盖率不变）、`fb34a7c` 索引只含有 alive 的频道
+
+## 验证结果
+
+- 16 桶分片：`state/bucket/` 只有 0–15 被重写，旧 16–63 未动；抽样频道详情 0 个 404
+- CCTV1 当前节目与央视官方接口一致（08:36《生活早参考-特别节目（生活圈）》）；38 条节目 0 重复、0 重叠
+- 线路池：premium 474 / backup 1 / pending 4107 / quarantine 1786 / rejected 1423；晋升 0 次（没有缺口）
+- 自定义订阅、池导出、分页正常；导出 M3U 已带台标
+- export run `40989845454` success；guide 覆盖率保持 58/542
+- KV 今日约 161 写 / 139 list / 304 读 / 47 delete；受控测试 3 次上传只 +2 list，list 修复生效
+
+## 待办
+
+- 预算暂不提高（用户决定），pending/quarantine 等下一轮再消化
+- 下一轮 collect 验证：源清理后 run 为 success、per-sub EPG 恢复 2.5 天
+- 当前 per-sub EPG 是 export 后的 24h 版本，下次 collect 会恢复完整
+- P2：墓碑自动清理、collect/probe/publish 拆分、pool 轻量测活、`premium_backup` 模式
