@@ -1112,4 +1112,31 @@ Actions 手动入口：
 
 - 实测 `CCTV1.png`：前 10 个源均返回 200；raw 在当前网络超时，所以放最后
 - 前端 bundle 已确认包含 Fastly / ghproxy / 8u8m / vircloud 等源
-- 说明：订阅文件里的 `tvg-logo` 仍是单个 jsDelivr URL；若播放器也需要多源，需要后续加 Worker 台标代理
+- 说明：订阅文件里的 `tvg-logo` 现在也改走 `https://站点/api/public/logo/:id.png`，由 Worker 多源取图并缓存
+
+---
+
+# 2026-10-30 晚 · Worker 台标代理
+
+## 实现
+
+- 新增 `GET /api/public/logo/:id.png`
+  - 服务端按顺序尝试 jsDelivr / Fastly / Gcore / testingcf / ghproxy / gh-proxy / 8u8m / bxtww / bonnie180 / vircloud / GitHub raw
+  - 只接受 `image/*`、单图 ≤2MB、5 秒超时
+  - 命中后写入 Cloudflare Cache：图片 7 天、404 1 小时
+  - ID 限制 `[A-Za-z0-9._+-]`，不可作为任意 URL 代理
+- catalog / index / shards 和订阅导出统一使用代理地址
+- 自定义频道台标（非 fanmingming 系）继续保留原 URL；已知生成台标（含 jsDelivr/fork/vircloud）会被代理替换
+
+## 验证
+
+- `GET /api/public/logo/CCTV1.png`：首次 `200 image/png 10923`，约 3 秒；第二次 `cf-cache-status: HIT`，约 1.5 秒
+- 重新 publish 后 `/api/public/channels` 返回 `https://iptv.xu05236.dpdns.org/api/public/logo/CCTV12.png`
+- 订阅 `/sub/<token>.m3u` 的 `tvg-logo` 已变为代理地址
+- 77 个测试通过
+
+## 说明
+
+- 首次请求可能较慢（要逐个源尝试）；之后走边缘缓存
+- 如果某 ID 在所有源都不存在，404 会缓存 1 小时，避免反复回源
+- 播放器只需访问一个稳定地址，不再依赖它自己能否访问 jsDelivr
