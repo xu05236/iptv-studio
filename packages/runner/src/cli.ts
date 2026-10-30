@@ -342,7 +342,7 @@ async function runCollect(command: 'collect' | 'export'): Promise<void> {
 
       // Mass probing can get the runner IP briefly rate-limited by Cloudflare
       // edges. Cool down before the upload burst so publishing starts clean.
-      const cooldown = Math.max(0, envNumber('PUBLISH_COOLDOWN_MS') ?? settings.publishCooldownMs ?? 60_000);
+      const cooldown = Math.max(0, envNumber('PUBLISH_COOLDOWN_MS') ?? 60_000);
       if (cooldown > 0) {
         logger.info('发布前冷却', { seconds: Math.round(cooldown / 1000) });
         await new Promise((resolve) => setTimeout(resolve, cooldown));

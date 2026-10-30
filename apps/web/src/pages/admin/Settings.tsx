@@ -136,14 +136,11 @@ export function SettingsPage() {
             <div className="grow"><Field label="每频道每轮最多探测" hint="防止单个大频道吃掉整轮预算"><input className="input" inputMode="numeric" value={form.probePerChannel ?? 24} onChange={(event) => set('probePerChannel', Number(event.target.value))} /></Field></div>
           </div>
           <div className="row">
-            <div className="grow"><Field label="超时 (ms)"><input className="input" inputMode="numeric" value={form.probeTimeoutMs} onChange={(event) => set('probeTimeoutMs', Number(event.target.value))} /></Field></div>
-            <div className="grow"><Field label="预热丢弃字节"><input className="input" inputMode="numeric" value={form.warmupBytes} onChange={(event) => set('warmupBytes', Number(event.target.value))} /></Field></div>
-            <div className="grow"><Field label="采样时长 (ms)"><input className="input" inputMode="numeric" value={form.sampleMs} onChange={(event) => set('sampleMs', Number(event.target.value))} /></Field></div>
-          </div>
-          <div className="row">
-            <div className="grow"><Field label="ffprobe 每轮补全条数" hint="只补 alive 且缺分辨率的线路；0 = 关闭"><input className="input" inputMode="numeric" value={form.ffprobeLimit ?? 150} onChange={(event) => set('ffprobeLimit', Number(event.target.value))} /></Field></div>
-            <div className="grow"><Field label="发布前冷却（秒）" hint="批量探测后等待一段时间再上传，避免边缘限速"><input className="input" inputMode="numeric" value={Math.round((form.publishCooldownMs ?? 60_000) / 1000)} onChange={(event) => set('publishCooldownMs', Math.max(0, Number(event.target.value) || 0) * 1000)} /></Field></div>
+            <div className="grow"><Field label="ffprobe 每轮补全条数" hint="每轮最多用 ffprobe 实测多少条缺分辨率的 alive 线路；调大更完整但整轮更慢，0 = 关闭"><input className="input" inputMode="numeric" value={form.ffprobeLimit ?? 150} onChange={(event) => set('ffprobeLimit', Number(event.target.value))} /></Field></div>
             <div className="grow"><Field label="线路留存天数" hint="源刷新不再列出后，已测线路仍保留的天数"><input className="input" inputMode="numeric" value={form.lineRetentionDays ?? 30} onChange={(event) => set('lineRetentionDays', Number(event.target.value))} /></Field></div>
+          </div>
+          <div className="caption">
+            超时 9 秒、预热丢弃 512 KB、采样 1.5 秒、发布前冷却 60 秒已内置（调这些会影响误判率和测速准确性，不建议开放）。
           </div>
           <Field label="失效线路复活天数" hint="连续 3 次失败判定失效，到期后允许复测一次">
             <input className="input" inputMode="numeric" value={form.deadReviveDays} onChange={(event) => set('deadReviveDays', Number(event.target.value))} />

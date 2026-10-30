@@ -18,6 +18,11 @@ import type { RunLogger } from '../logger.js';
 
 const UNPROBEABLE = /^(rtsp|rtmp|rtmps|rtsp|udp|rtp):\/\//i;
 const MAX_INTERVAL_HOURS = 30 * 24;
+// Probe measurement knobs are intentionally code-level: changing them affects
+// false-dead rates and speed accuracy, not day-to-day operations.
+const PROBE_TIMEOUT_MS = 9_000;
+const PROBE_WARMUP_BYTES = 512 * 1024;
+const PROBE_SAMPLE_MS = 1_500;
 
 /** Each successful recheck extends the interval by 3 days, capped at 30 days. */
 function adaptiveHours(line: LineEntry, baseHours: number): number {
@@ -229,9 +234,9 @@ async function probeOnce(line: LineEntry, settings: AppSettings, checkedAt: stri
   try {
     return await probeStream(line.url, {
       headers: line.headers,
-      timeoutMs: settings.probeTimeoutMs,
-      warmupBytes: settings.warmupBytes,
-      sampleMs: settings.sampleMs,
+      timeoutMs: PROBE_TIMEOUT_MS,
+      warmupBytes: PROBE_WARMUP_BYTES,
+      sampleMs: PROBE_SAMPLE_MS,
       maxBytes: 2_500_000,
     });
   } catch (error) {
