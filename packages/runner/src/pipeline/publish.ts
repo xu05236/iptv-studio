@@ -2,6 +2,7 @@ import {
   aggregateChannel,
   applyRules,
   bucketOf,
+  channelLogo,
   channelStats,
   compileRules,
   mapPool,
@@ -97,7 +98,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
       name: seed.name,
       group: seed.group,
       tvgId: seed.tvgId,
-      logo: seed.logo,
+      logo: channelLogo({ logo: seed.logo, tvgId: seed.tvgId, name: seed.name }, input.settings.logoBaseUrl),
       aliases: seed.aliases,
     };
     const applied = applyRules(channel, lines, compiled);
@@ -178,7 +179,13 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
     shards,
     guide,
     now: nowMap,
-    channels: seeds.map((seed) => ({ id: seed.id, name: seed.name, group: seed.group, tvgId: seed.tvgId, logo: seed.logo })),
+    channels: seeds.map((seed) => ({
+      id: seed.id,
+      name: seed.name,
+      group: seed.group,
+      tvgId: seed.tvgId,
+      logo: channelLogo({ logo: seed.logo, tvgId: seed.tvgId, name: seed.name }, input.settings.logoBaseUrl),
+    })),
     totalLines,
     aliveLines,
   };

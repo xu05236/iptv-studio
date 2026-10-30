@@ -82,8 +82,10 @@ function buildRegistry(config: RemoteConfig): ChannelRegistry {
       id: row.id,
       name: row.name,
       group,
-      tvgId: row.tvg_id ?? undefined,
-      logo: row.logo ?? undefined,
+      // D1 rows are often created before tvg-id/logo are known. Never let a
+      // null DB column overwrite the builtin seed's identifiers.
+      tvgId: row.tvg_id ?? builtin?.tvgId ?? undefined,
+      logo: row.logo ?? builtin?.logo ?? undefined,
       // aliases come from the dedicated /meta/aliases map below; the channel
       // list endpoint returns only an alias *count*
       aliases: [],

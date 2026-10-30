@@ -411,7 +411,13 @@ export class ChannelRegistry {
 
 /** Build a logo URL only when the channel has no explicit logo. */
 export function channelLogo(channel: { logo?: string | null; tvgId?: string | null; name: string }, baseUrl?: string | null): string | undefined {
-  if (channel.logo) return channel.logo;
+  if (channel.logo) {
+    // Old data may still point at the retired fanmingming host.
+    return channel.logo.replace(
+      /^https?:\/\/live\.fanmingming\.com\/tv\//i,
+      'https://cdn.jsdelivr.net/gh/fanmingming/live@main/tv/',
+    );
+  }
   if (!channel.tvgId) return undefined;
   // live.fanmingming.com is frequently unreachable; keep old settings working
   // by mapping its known base to the same pack on jsDelivr.
