@@ -11,18 +11,21 @@ export interface ReputationInput {
 
 /**
  * Source reputation = long-run availability + average line quality.
- * It feeds (a) probe frequency, (b) ranking weight, (c) the "全灭的源降权"
- * behaviour: a source that suddenly returns nothing loses trust slowly rather
- * than being deleted, so a bad day at the upstream does not kill it.
+ * `total` must be the number of **tested** lines (alive+dead+suspect), not all
+ * imported lines: otherwise a source with many pending lines looks broken.
  */
 export function nextReputation(input: ReputationInput): number {
-  const availability = input.total > 0 ? input.alive / input.total : 0;
+  const tested = Math.max(0, input.total);
+  const availability = tested > 0 ? input.alive / tested : 0.5;
   const quality = Math.max(0, Math.min(1, input.avgScore / 100));
-  let target = 100 * (0.72 * availability + 0.28 * quality);
+  let target = 100 * (0.75 * availability + 0.25 * quality);
+  if (!tested) target = 50;
   if (!input.fetchOk) target *= 0.45;
 
   const previous = Number.isFinite(input.previous) ? input.previous : 50;
-  let next = previous * 0.65 + target * 0.35;
+  let next = previous * 0.45 + target * 0.55;
+  // Recover from a historically low score once there is enough evidence.
+  if (tested >= 20 && target > 40) next = Math.max(next, target * 0.8);
   if (input.consecutiveFailures > 0) next -= Math.min(20, input.consecutiveFailures * 5);
   return Math.round(Math.max(0, Math.min(100, next)) * 10) / 10;
 }

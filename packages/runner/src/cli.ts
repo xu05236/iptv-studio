@@ -363,13 +363,16 @@ async function syncSourceStats(
   const stats = remote.sources.map((source) => {
     const sourceLines = lines.filter((line) => line.sourceId === source.id);
     const aliveLines = sourceLines.filter((line) => line.status === 'alive');
+    const testedLines = sourceLines.filter((line) => line.lastProbeAt && (line.status === 'alive' || line.status === 'dead' || line.status === 'suspect'));
     const item = collected.find((entry) => entry.source.id === source.id);
     const reputation = nextReputation({
       previous: source.reputation,
       alive: aliveLines.length,
-      total: sourceLines.length,
+      total: testedLines.length,
       avgScore: mean(aliveLines.map((line) => line.score)),
-      fetchOk: Boolean(item?.fetched && !item.error),
+      // A 304 or an interval skip means the source content is still valid; only
+      // a real fetch error should reduce reputation.
+      fetchOk: Boolean((item?.fetched || item?.notModified) && !item.error),
       consecutiveFailures: item?.error ? 1 : 0,
     });
     return {
