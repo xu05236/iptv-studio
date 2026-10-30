@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { probeStream, type AppSettings, type Rule } from '@iptv/core';
+import { mapPool, probeLiveness, probeStream, type AppSettings, type LineEntry, type Rule } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   applySourceStats,
@@ -24,8 +24,7 @@ import {
   type RuleRow,
 } from '../db.js';
 import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
-import { inferResolution } from '@iptv/core';
-import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
+import { inferResolution } from '@iptv/core';import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
 import { nextAutoCollectAt, parseCollectTimes } from '../lib/schedule.js';
@@ -223,8 +222,16 @@ adminRoutes.get('/runs/:id/log', async (c) => {
 });
 
 adminRoutes.post('/runs/dispatch', async (c) => {
-  const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string }>(c)) ?? {};
-  const command = body.command === 'export' ? 'export' : body.command === 'epg' ? 'epg' : body.command === 'probe' ? 'probe' : 'collect';
+  const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string; lineKeys?: string[] | string }>(c)) ?? {};
+  const command = body.command === 'export'
+    ? 'export'
+    : body.command === 'epg'
+      ? 'epg'
+      : body.command === 'probe'
+        ? 'probe'
+        : body.command === 'probe-lines'
+          ? 'probe-lines'
+          : 'collect';
   const force = Boolean(body.force);
   const settings = await loadSettings(c.env);
   const defaultBudget = force ? Math.max(6000, settings.probeBudget || 1200) : settings.probeBudget || 1200;
@@ -240,11 +247,17 @@ adminRoutes.post('/runs/dispatch', async (c) => {
 
   // GitHub rejects any input that is not declared in the workflow file, so only
   // send the keys collect.yml actually defines.
+  const lineKeys = Array.isArray(body.lineKeys)
+    ? body.lineKeys.filter((key): key is string => typeof key === 'string').slice(0, 50)
+    : typeof body.lineKeys === 'string'
+      ? body.lineKeys.split(/[\s,]+/).filter(Boolean).slice(0, 50)
+      : [];
   const result = await dispatchWorkflow(c.env, {
     command,
     force: force ? 'true' : 'false',
     budget: String(body.budget ?? defaultBudget),
     source_id: body.sourceId?.trim() ?? '',
+    line_keys: lineKeys.join(','),
   });
   await audit(c.env, c.get('actor'), 'run.dispatch', 'github', result);
   if (!result.ok) return fail(result.message, 400, 'dispatch_failed');
@@ -425,6 +438,34 @@ interface ProbeLine {
   sourceName?: string;
   sourceSite?: string;
 }
+
+/**
+ * On-demand liveness preview for the detection center. Runs at most 30 checks
+ * in one request (Workers subrequest limits) and does not mutate state.
+ */
+adminRoutes.post('/lines/liveness', async (c) => {
+  const body = await readJson<{ keys?: unknown }>(c);
+  const keys = Array.isArray(body?.keys)
+    ? [...new Set(body.keys.filter((key): key is string => typeof key === 'string').map((key) => key.trim()).filter(Boolean))].slice(0, 30)
+    : [];
+  if (!keys.length) return fail('keys 不能为空');
+  const state = await getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json');
+  const byKey = new Map((state?.lines ?? []).map((line) => [line.key, line]));
+  const selected = keys.map((key) => byKey.get(key)).filter((line): line is LineEntry => Boolean(line));
+  if (!selected.length) return fail('线路不存在', 404);
+  const results = await mapPool(selected, 8, async (line) => {
+    const result = await probeLiveness(line.url, { headers: line.headers });
+    return {
+      key: line.key,
+      ok: result.ok,
+      status: result.status ?? null,
+      latencyMs: result.latencyMs,
+      error: result.error ?? null,
+      inconclusive: Boolean(result.inconclusive),
+    };
+  });
+  return ok({ results });
+});
 
 adminRoutes.get('/lines', async (c) => {
   const data = await getJson<{ generatedAt: string; items: ProbeLine[] }>(c.env, 'state/probe.json');

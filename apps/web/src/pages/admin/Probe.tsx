@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Copy, Gauge, PlayCircle, RefreshCw, Search, Zap } from 'lucide-react';
+import { Activity, Copy, Gauge, PlayCircle, RefreshCw, Search, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../../lib/api';
 import type { RunItem } from '../../lib/types';
@@ -43,6 +43,15 @@ interface LinesResponse {
   items: ProbeLine[];
 }
 
+interface LivenessItem {
+  key: string;
+  ok: boolean;
+  status: number | null;
+  latencyMs: number;
+  error: string | null;
+  inconclusive: boolean;
+}
+
 export function Probe() {
   const { show } = useToast();
   const [search, setSearch] = useState('');
@@ -52,6 +61,9 @@ export function Probe() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number | 'all'>(10);
   const [openTester, setOpenTester] = useState(false);
+  const [livenessOpen, setLivenessOpen] = useState(false);
+  const [livenessResults, setLivenessResults] = useState<LivenessItem[]>([]);
+  const [passedSelected, setPassedSelected] = useState<Set<string>>(new Set());
   const [url, setUrl] = useState('');
   const [ua, setUa] = useState('');
   const [referer, setReferer] = useState('');
@@ -91,9 +103,19 @@ export function Probe() {
   });
 
   const dispatch = useMutation({
-    mutationFn: (input: { command: 'collect' | 'export' | 'epg'; force?: boolean; sourceId?: string }) =>
+    mutationFn: (input: { command: 'collect' | 'export' | 'epg' | 'probe-lines'; force?: boolean; sourceId?: string; lineKeys?: string[] }) =>
       api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', input),
     onSuccess: (res) => show(res.message),
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const quickLiveness = useMutation({
+    mutationFn: (keys: string[]) => api.post<{ results: LivenessItem[] }>('/api/admin/lines/liveness', { keys }),
+    onSuccess: (res) => {
+      setLivenessResults(res.results);
+      setPassedSelected(new Set(res.results.filter((item) => item.ok && !item.inconclusive).map((item) => item.key)));
+      setLivenessOpen(true);
+    },
     onError: (error: Error) => show(error.message, 'error'),
   });
 
@@ -118,6 +140,13 @@ export function Probe() {
         </div>
         <div className="row row--wrap">
           <Button onClick={() => setOpenTester(true)}><Zap size={15} /> 单条探测</Button>
+          <Button
+            loading={quickLiveness.isPending}
+            disabled={!pagedItems.length}
+            onClick={() => quickLiveness.mutate(pagedItems.slice(0, 30).map((row) => row.key))}
+          >
+            <Activity size={15} /> 快速测活（当前页）
+          </Button>
           <Button variant="primary" loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'collect' })}>
             <PlayCircle size={15} /> 全量检测
           </Button>
@@ -304,6 +333,75 @@ export function Probe() {
               {result.error ? <div className="caption" style={{ color: 'var(--red)' }}>{result.error}</div> : null}
             </div>
           ) : null}
+        </div>
+      </Sheet>
+
+      <Sheet
+        open={livenessOpen}
+        onClose={() => setLivenessOpen(false)}
+        title="快速测活结果"
+        subtitle={`${livenessResults.length} 条 · 通过 ${livenessResults.filter((item) => item.ok && !item.inconclusive).length} 条`}
+        footer={
+          <Button
+            block
+            variant="primary"
+            disabled={!passedSelected.size}
+            loading={dispatch.isPending}
+            onClick={() => {
+              dispatch.mutate({ command: 'probe-lines', lineKeys: [...passedSelected] });
+              setLivenessOpen(false);
+            }}
+          >
+            对选中 {passedSelected.size} 条做全量检测
+          </Button>
+        }
+      >
+        <div className="stack">
+          <div className="caption">勾选要进入全量测速的线路；失败或无法测活的不默认勾选。</div>
+          {livenessResults.map((item) => {
+            const row = pagedItems.find((entry) => entry.key === item.key);
+            if (item.inconclusive) {
+              return (
+                <div key={item.key} className="list__row" style={{ alignItems: 'center', gap: 8 }}>
+                  <div className="grow">
+                    <div>{row?.channelName ?? item.key}</div>
+                    <div className="caption">{item.error ?? '无法在 HTTP 环境测活'}</div>
+                  </div>
+                  <Badge tone="orange">跳过</Badge>
+                </div>
+              );
+            }
+            if (item.ok) {
+              return (
+                <label key={item.key} className="list__row" style={{ alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={passedSelected.has(item.key)}
+                    onChange={(event) => {
+                      const next = new Set(passedSelected);
+                      if (event.target.checked) next.add(item.key);
+                      else next.delete(item.key);
+                      setPassedSelected(next);
+                    }}
+                  />
+                  <div className="grow">
+                    <div>{row?.channelName ?? item.key}</div>
+                    <div className="caption">{row?.sourceName ?? row?.sourceId} · {item.latencyMs} ms</div>
+                  </div>
+                  <Badge tone="green">通过</Badge>
+                </label>
+              );
+            }
+            return (
+              <div key={item.key} className="list__row" style={{ alignItems: 'center', gap: 8 }}>
+                <div className="grow">
+                  <div>{row?.channelName ?? item.key}</div>
+                  <div className="caption" style={{ color: 'var(--red)' }}>{item.error ?? '失败'}</div>
+                </div>
+                <Badge tone="red">失败</Badge>
+              </div>
+            );
+          })}
         </div>
       </Sheet>
     </div>

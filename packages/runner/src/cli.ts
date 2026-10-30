@@ -657,10 +657,102 @@ async function runLiveness(): Promise<void> {
   }
 }
 
+/** Full speed/resolution probe for an explicit set of line keys (detection center). */
+async function runSelectedProbes(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+  const keys = new Set(
+    String(process.env.LINE_KEYS ?? '')
+      .split(/[\s,]+/)
+      .map((key) => key.trim())
+      .filter(Boolean),
+  );
+
+  let report: RunReport = {
+    id: runId,
+    trigger: 'manual',
+    status: 'running',
+    startedAt,
+    sources: 0,
+    channels: 0,
+    lines: 0,
+    alive: 0,
+    dead: 0,
+    probed: 0,
+    bytes: 0,
+    durationMs: 0,
+    warnings: [],
+  };
+
+  try {
+    if (!keys.size) throw new Error('LINE_KEYS 不能为空');
+    const remote = await loadRemoteConfig(api);
+    const settings = remote.settings;
+    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const lines = previous?.lines ?? [];
+    const selected = lines.filter((line) => keys.has(line.key));
+    if (!selected.length) throw new Error('选中的线路不存在或已被删除');
+    logger.info('选中线路探测计划', { requested: keys.size, matched: selected.length });
+
+    const concurrency = Math.max(1, Math.min(config.concurrency || settings.concurrency || 32, 64));
+    const summary = await runProbes(selected, settings, concurrency, logger);
+    logger.info('选中线路探测完成', { probed: summary.probed, alive: summary.alive, suspect: summary.suspect, dead: summary.dead });
+
+    const generatedAt = nowIso();
+    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    const poolSnapshot = buildPoolSnapshot({
+      lines,
+      channels: remote.channels.map((channel) => ({ id: channel.id, name: channel.name, group: channel.group_title ?? '其他', tvgId: channel.tvg_id, logo: channel.logo })),
+      maxLinesPerChannel: settings.maxLinesPerChannel,
+      generatedAt,
+    });
+    await store.put('state/pool.json', JSON.stringify(poolSnapshot), 'application/json');
+
+    const logKey = await writeLog(store, runId, logger);
+    const aliveTotal = lines.filter((line) => line.status === 'alive').length;
+    report = {
+      ...report,
+      status: 'success',
+      finishedAt: nowIso(),
+      sources: remote.sources.length,
+      channels: remote.channels.length,
+      lines: lines.length,
+      alive: aliveTotal,
+      dead: lines.length - aliveTotal,
+      probed: summary.probed,
+      bytes: summary.bytes,
+      durationMs: Date.now() - startedMs,
+      logKey,
+      warnings: summary.errors.slice(0, 10).map((item) => `${item.url}: ${item.error}`),
+    };
+    await finishRun(api, report);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('选中线路探测失败', { error: message });
+    report = { ...report, status: 'failed', finishedAt: nowIso(), error: message, durationMs: Date.now() - startedMs };
+    try {
+      report.logKey = await writeLog(store, runId, logger);
+    } catch {
+      /* ignore */
+    }
+    await finishRun(api, report);
+    throw error;
+  }
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2] ?? 'collect';
   if (command === 'probe') {
     await runLiveness();
+    return;
+  }
+  if (command === 'probe-lines') {
+    await runSelectedProbes();
     return;
   }
   if (command === 'collect' || command === 'export') {

@@ -7,6 +7,7 @@
     "collect": "tsx src/cli.ts collect",
     "export": "tsx src/cli.ts export",
     "probe": "tsx src/cli.ts probe",
+    "probe-lines": "tsx src/cli.ts probe-lines",
     "epg": "tsx src/cli.ts epg",
     "shots": "tsx src/cli.ts shots",
     "usage": "tsx src/usage.ts",
