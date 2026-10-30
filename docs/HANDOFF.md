@@ -847,3 +847,39 @@ Actions 手动入口：
 - `loadSettings` 现在只回填 `DEFAULT_SETTINGS` 里仍存在的键，旧字段（probeTimeoutMs / warmupBytes / sampleMs / publishCooldownMs / autoCollectBudget）不会回显，保存后彻底清掉
 - 设置页加了说明：「超时 9 秒、预热 512 KB、采样 1.5 秒、发布前冷却 60 秒已内置」
 - 验证：API 不再返回旧键；web bundle 已无旧输入项，含内置说明；69 个测试通过
+
+---
+
+# 2026-10-30 下午 · 线路池轻量测活
+
+## 实现
+
+- core 新增 `probeLiveness()`：
+  - HLS：只拉清单，校验 `#EXTM3U`
+  - HTTP/TS：只取前 2KB（Range）
+  - 超时 5 秒；rtsp/rtmp/udp 返回 inconclusive，不判死
+  - 不做测速、不做分辨率
+- 新命令 `npm run probe -w @iptv/runner`：
+  - 只检查 `status=alive` 的线路，按 `lastLivenessAt` 到期（默认 24 小时，`LINE_LIVENESS_HOURS` 可覆盖）
+  - 预算用 `PROBE_BUDGET` / settings.probeBudget，URL 去重
+  - 成功：状态 alive、failCount 清零、写 `lastLivenessAt`；**不动 lastProbeAt**，完整测速排期不变
+  - 失败：failCount +1；3 次 → dead + 复活时间，否则 suspect
+  - 写回 `state/lines.json` + 重新生成 `state/pool.json` + 运行日志/报告
+- 入口：
+  - Actions `collect.yml` 的 command 增加 `probe`
+  - 后台仪表盘新增「快速测活」按钮
+  - dispatch API 接受 `command=probe`
+- 新增 `lastLivenessAt` 字段
+
+## 验证
+
+- 实测 dispatch `probe` budget=2：run `41005060726` success，报告 `probed=2`
+- 2 条线路写入新的 `lastLivenessAt`，状态 alive
+- `state/pool.json` 已重新生成
+- 70 个测试通过（新增 liveness inconclusive 用例）
+
+## 说明
+
+- 轻量测活不会延长完整测速的 TTL；完整 collect 仍按 lastProbeAt 到期做测速
+- 目前只测 alive 线路；suspect/pending 仍交给 collect
+- 单轮成本远低于完整探测：一次只剩 3 次 KV 写（lines/pool/log）
