@@ -24,6 +24,20 @@ import { matchLogoFile } from './logoFiles.js';
 
 const GROUP_ORDER = ['央视', '卫视', '地方', '港澳台', '国际', '4K', '影视频道', '体育', '少儿', '纪录', '新闻', '音乐', '付费', '其他'];
 
+type LogoSeed = { name: string; logo?: string | null; tvgId?: string | null };
+
+function logoForSeed(seed: LogoSeed, input: BuildInput): string | undefined {
+  const matched = !seed.logo && !seed.tvgId ? matchLogoFile(seed.name, input.logoFiles ?? []) : undefined;
+  const nameLogo = matched
+    ? `https://cdn.jsdelivr.net/gh/fanmingming/live@main/tv/${encodeURIComponent(matched)}`
+    : undefined;
+  return channelLogo(
+    { logo: seed.logo ?? nameLogo, tvgId: seed.tvgId, name: seed.name },
+    input.settings.logoBaseUrl,
+    input.logoProxyBase,
+  );
+}
+
 export interface BuildInput {
   runId: string;
   generatedAt: string;
@@ -103,15 +117,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
       name: seed.name,
       group: seed.group,
       tvgId: seed.tvgId,
-      logo: channelLogo(
-        {
-          logo: seed.logo ?? matchLogoFile(seed.name, input.logoFiles ?? []) ?? undefined,
-          tvgId: seed.tvgId,
-          name: seed.name,
-        },
-        input.settings.logoBaseUrl,
-        input.logoProxyBase,
-      ),
+      logo: logoForSeed(seed, input),
       aliases: seed.aliases,
     };
     const applied = applyRules(channel, lines, compiled);
@@ -197,11 +203,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
       name: seed.name,
       group: seed.group,
       tvgId: seed.tvgId,
-      logo: channelLogo(
-        { logo: seed.logo ?? matchLogoFile(seed.name, input.logoFiles ?? []) ?? undefined, tvgId: seed.tvgId, name: seed.name },
-        input.settings.logoBaseUrl,
-        input.logoProxyBase,
-      ),
+      logo: logoForSeed(seed, input),
     })),
     totalLines,
     aliveLines,

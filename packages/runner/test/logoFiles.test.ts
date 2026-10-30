@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { matchLogoFile, normalizeLogoName } from '../src/pipeline/logoFiles.js';
 
 describe('logo file matching', () => {
-  const files = ['金鹰卡通.png', '湖南电影.png', 'TVBS亚洲.png', 'CCTV1.png', '新疆卫视.png'];
+  const files = ['金鹰卡通.png', '湖南电影.png', 'TVBS亚洲.png', 'CCTV1.png', '新疆卫视.png', '精选.png'];
 
   it('normalizes resolution and punctuation', () => {
     expect(normalizeLogoName('金鹰卡通 (576p)')).toBe('金鹰卡通');
@@ -17,5 +17,6 @@ describe('logo file matching', () => {
 
   it('returns undefined when nothing is close', () => {
     expect(matchLogoFile('乐至综合', files)).toBeUndefined();
+    expect(matchLogoFile('2021精选5首DJ', files)).toBeUndefined();
   });
 });

@@ -24,6 +24,7 @@ export function matchLogoFile(name: string, files: string[]): string | undefined
     .filter((item) => item.base.length >= 2)
     .map((item) => {
       if (item.base === target) return { ...item, score: 1000 };
+      if (item.base.length < 3 || target.length < 3) return { ...item, score: 0 };
       if (item.base.includes(target)) return { ...item, score: 500 - (item.base.length - target.length) };
       if (target.includes(item.base)) return { ...item, score: 400 - (target.length - item.base.length) };
       return { ...item, score: 0 };
