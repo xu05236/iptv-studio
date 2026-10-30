@@ -96,7 +96,7 @@ export function SettingsPage() {
       <Card>
         <div className="title-3">基础</div>
         <div className="stack" style={{ marginTop: 12 }}>
-          <Field label="台标基础地址" hint="订阅自带 tvg-logo 优先；缺失时按 tvg-id 拼接。旧 fanmingming 地址会自动改用 jsDelivr 镜像，前台还会多源回退。">
+          <Field label="台标基础地址" hint="订阅或源自带 tvg-logo 优先；缺失时按 tvg-id 拼接。旧 fanmingming 地址会自动改用 jsDelivr；前台还会依次回退 Fastly / Gcore / testingcf / ghproxy / gh-proxy / 多个 fork / vircloud / GitHub raw。">
             <input className="input" value={form.logoBaseUrl} onChange={(event) => set('logoBaseUrl', event.target.value)} />
           </Field>
           <div className="row">
