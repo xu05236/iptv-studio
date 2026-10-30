@@ -755,3 +755,38 @@ Actions 手动入口：
 
 - GitHub Actions / Worker cron 的**运行时刻**仍是工作流/部署配置，后台改不了；后台能改的是探测参数、留存和发布行为
 - 触发时的 `budget` 输入仍优先；后台 `probeBudget` 只在未显式指定预算时生效
+
+---
+
+# 2026-10-30 下午 · 自动采集调度（默认关闭）
+
+## 实现
+
+- Worker cron 增加 `*/5 * * * *` 调度检查；原 `17 */6 * * *` housekeeping 保留
+  - `scheduled` 按 `controller.cron` 分流
+- `AppSettings` 新增：
+  - `autoCollectEnabled`（默认 false）
+  - `autoCollectTimes`（默认 `08:30`，北京时间，多个用逗号）
+  - `autoCollectBudget`（默认 1200）
+- 到点逻辑：最近一次计划时间在 15 分钟窗口内、且该 slot 未尝试过，才 dispatch collect
+- 保护：
+  - KV 写入 ≥920 跳过
+  - 最近 collect 仍在 `queued/in_progress` 跳过
+  - 同一 slot 尝试后写 `state/schedule.json`，不会每 5 分钟重试
+- `GET /api/admin/schedule` 返回开关、时刻、预算、下次/上次、结果
+- 后台「自动采集」卡片：开关、每天时刻、自动预算、下次/上次展示
+- 保存时校验 HH:mm 格式；非法返回 400
+
+## 验证
+
+- 默认关闭：`nextAt=null`
+- 开启 `08:30,20:30` 后 `nextAt` 正确算出 20:30 北京时间（12:30Z）
+- `25:00` 被 400 拒绝
+- 验证后已恢复默认：关闭 + `08:30` + 1200
+
+## 建议
+
+- 每天 **08:30 北京时间**（UTC 00:30，额度重置后）
+- 自动预算先 **1200**，不 force
+- 先跑几天看 KV/ Actions 用量，再考虑加 20:30 第二班
+- 自动采集只影响 collect；清理 cron 与 usage 快照的节奏不变
