@@ -103,6 +103,8 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
     if (!applied.lines.length) continue;
 
     const aggregated = aggregateChannel(applied.channel, applied.lines, { maxCatalogLines: 40 });
+    const stats = channelStats(aggregated.lines);
+    if (stats.alive === 0) continue;
     const exportLines = selectLines(aggregated.lines, {
       maxLines: input.settings.maxLinesPerChannel,
       maxPerSource: input.settings.maxLinesPerSource,
@@ -113,7 +115,6 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
     });
     if (!exportLines.length) continue;
 
-    const stats = channelStats(aggregated.lines);
     totalLines += aggregated.lines.length;
     aliveLines += stats.alive;
 
