@@ -9,10 +9,10 @@ import { timeAgo } from '../../lib/format';
 const DEFAULT_PAGE_SIZE = 10;
 const POOLS = [
   { value: '', label: '全部池' },
+  { value: 'pending', label: '待测池' },
+  { value: 'candidate', label: '候选池' },
   { value: 'premium', label: '精品池' },
   { value: 'backup', label: '备用池' },
-  { value: 'candidate', label: '候选池（待确认质量）' },
-  { value: 'pending', label: '待测池' },
   { value: 'quarantine', label: '待复测' },
   { value: 'rejected', label: '已淘汰' },
 ];
@@ -90,6 +90,7 @@ export function Pool() {
   const [channelId, setChannelId] = useState('');
   const [channelQuery, setChannelQuery] = useState('');
   const [subscriptionId, setSubscriptionId] = useState('');
+  const [sourceId, setSourceId] = useState('');
   const [pool, setPool] = useState('');
   const [transport, setTransport] = useState('');
   const [resolution, setResolution] = useState('');
@@ -108,15 +109,35 @@ export function Pool() {
     queryFn: () => api.get<{ items: Array<{ id: string; name: string }> }>('/api/admin/subscriptions'),
   });
 
+  const sources = useQuery({
+    queryKey: ['admin', 'sources'],
+    queryFn: () => api.get<{ items: Array<{ id: string; name: string; enabled: boolean }> }>('/api/admin/sources'),
+  });
+
+  const poolTotals = useMemo(() => {
+    const totals: PoolCounts = { premium: 0, backup: 0, candidate: 0, pending: 0, quarantine: 0, rejected: 0 };
+    const keys = Object.keys(totals) as Array<keyof PoolCounts>;
+    for (const countryItem of tree.data?.countries ?? []) {
+      for (const groupItem of countryItem.groups) {
+        for (const channel of groupItem.channels) {
+          for (const key of keys) totals[key] += channel.counts[key] ?? 0;
+        }
+      }
+    }
+    return totals;
+  }, [tree.data]);
+
   // The old channel picker only listed channels of the selected group, so it
   // could not be used as a real filter. Search across every pool channel.
   const allChannels = useMemo(
     () =>
-      (tree.data?.countries ?? []).flatMap((countryItem) =>
-        countryItem.groups.flatMap((groupItem) =>
-          groupItem.channels.map((channel) => ({ id: channel.id, name: channel.name, group: groupItem.group })),
-        ),
-      ),
+      (tree.data?.countries ?? [])
+        .flatMap((countryItem) =>
+          countryItem.groups.flatMap((groupItem) =>
+            groupItem.channels.map((channel) => ({ id: channel.id, name: channel.name, group: groupItem.group })),
+          ),
+        )
+        .sort((a, b) => a.group.localeCompare(b.group, 'zh-CN') || a.name.localeCompare(b.name, 'zh-CN')),
     [tree.data],
   );
 
@@ -131,13 +152,14 @@ export function Pool() {
     if (group) value.set('group', group);
     if (channelId) value.set('channelId', channelId);
     if (subscriptionId) value.set('subscriptionId', subscriptionId);
+    if (sourceId) value.set('sourceId', sourceId);
     if (pool) value.set('pool', pool);
     if (transport) value.set('transport', transport);
     if (resolution) value.set('resolution', resolution);
     if (minSpeedKbps) value.set('minSpeed', minSpeedKbps);
     if (search.trim()) value.set('q', search.trim());
     return value.toString();
-  }, [country, group, channelId, subscriptionId, pool, transport, resolution, minSpeedKbps, search, page, pageSize]);
+  }, [country, group, channelId, subscriptionId, sourceId, pool, transport, resolution, minSpeedKbps, search, page, pageSize]);
 
   const lines = useQuery({
     queryKey: ['admin', 'pool', 'lines', params],
@@ -181,6 +203,7 @@ export function Pool() {
           country,
           group,
           channelId,
+          sourceId,
           pool,
           transport,
           resolution,
@@ -216,6 +239,7 @@ export function Pool() {
         country,
         group,
         channelId,
+        sourceId,
         pool,
         transport,
         resolution,
@@ -316,16 +340,27 @@ export function Pool() {
             </datalist>
           </label>
           <label className="stack stack--tight grow">
-            <span className="caption">按订阅查看</span>
+            <span className="caption">按订阅</span>
             <select className="input" value={subscriptionId} onChange={(event) => { setSubscriptionId(event.target.value); resetPage(); }}>
-              <option value="">全部线路</option>
+              <option value="">全部订阅</option>
               {(subscriptions.data?.items ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <label className="stack stack--tight grow">
+            <span className="caption">来源站</span>
+            <select className="input" value={sourceId} onChange={(event) => { setSourceId(event.target.value); resetPage(); }}>
+              <option value="">全部来源</option>
+              {(sources.data?.items ?? []).filter((item) => item.enabled).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </label>
           <label className="stack stack--tight grow">
             <span className="caption">池</span>
             <select className="input" value={pool} onChange={(event) => { setPool(event.target.value); resetPage(); }}>
-              {POOLS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              {POOLS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.value ? `${item.label} (${poolTotals[item.value as keyof PoolCounts] ?? 0})` : item.label}
+                </option>
+              ))}
             </select>
           </label>
           <label className="stack stack--tight grow">
@@ -356,6 +391,10 @@ export function Pool() {
           </label>
         </div>
       </Card>
+
+      <div className="caption" style={{ padding: '0 2px' }}>
+        待测 = 从未探测；候选 = 测活通过但质量待确认；精品 = 默认导出；备用 = 精品不足时补位；待复测 = 上次探测失败；已淘汰 = 连续失败。
+      </div>
 
       <div className="row row--between">
         <div className="caption"><Filter size={13} /> 共 {lines.data?.total ?? 0} 条线路</div>

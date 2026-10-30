@@ -71,7 +71,11 @@ async function loadPool(env: Env) {
   const lines: PoolLine[] = [];
   for (const [channelId, list] of byChannel) {
     const channel = channelMap.get(channelId);
-    const group = channel?.group_title ?? '其他';
+    // Channels removed by the empty-channel cleanup still have lines in the
+    // state file, but they have no identity/group any more and cannot be
+    // published or subscribed. Hide them instead of showing raw x- ids.
+    if (!channel) continue;
+    const group = channel.group_title ?? '其他';
     const country = countryOfGroup(group);
     const sorted = [...list].sort(compareLines);
     let premium = 0;
@@ -94,12 +98,12 @@ async function loadPool(env: Env) {
         overridden: Boolean(override),
         reason: override?.reason ?? undefined,
         transport: line.url.startsWith('https:') ? 'direct' : 'relay',
-        channelName: channel?.name ?? channelId,
+        channelName: channel.name,
         group,
         country,
         sourceName: sourceMap.get(line.sourceId)?.name ?? line.sourceId,
-        tvgId: channel?.tvg_id ?? undefined,
-        logo: channel?.logo ?? undefined,
+        tvgId: channel.tvg_id ?? undefined,
+        logo: channel.logo ?? undefined,
       });
     }
   }
@@ -170,6 +174,7 @@ poolRoutes.get('/lines', async (c) => {
   const country = c.req.query('country') ?? '';
   const group = c.req.query('group') ?? '';
   const channelId = c.req.query('channelId') ?? '';
+  const sourceId = c.req.query('sourceId') ?? '';
   const pool = (c.req.query('pool') ?? '') as PoolName | '';
   const transport = c.req.query('transport') ?? '';
   const resolution = c.req.query('resolution') ?? '';
@@ -204,6 +209,7 @@ poolRoutes.get('/lines', async (c) => {
     if (country && line.country !== country) return false;
     if (group && line.group !== group) return false;
     if (channelId && line.channelId !== channelId) return false;
+    if (sourceId && line.sourceId !== sourceId) return false;
     if (pool && line.pool !== pool) return false;
     if (transport && line.transport !== transport) return false;
     if (minSpeed && (line.speedKbps ?? 0) < minSpeed) return false;
@@ -294,6 +300,7 @@ poolRoutes.post('/export', async (c) => {
   const country = String(body.country ?? '');
   const group = String(body.group ?? '');
   const channelId = String(body.channelId ?? '');
+  const sourceId = String(body.sourceId ?? '');
   const pool = String(body.pool ?? '');
   const transport = String(body.transport ?? '');
   const resolution = String(body.resolution ?? '');
@@ -307,6 +314,7 @@ poolRoutes.post('/export', async (c) => {
     if (country && line.country !== country) return false;
     if (group && line.group !== group) return false;
     if (channelId && line.channelId !== channelId) return false;
+    if (sourceId && line.sourceId !== sourceId) return false;
     if (pool && line.pool !== pool) return false;
     if (transport && line.transport !== transport) return false;
     if (minSpeed && (line.speedKbps ?? 0) < minSpeed) return false;
@@ -354,6 +362,7 @@ poolRoutes.post('/subscription', async (c) => {
   const country = String(body.country ?? '');
   const group = String(body.group ?? '');
   const channelId = String(body.channelId ?? '');
+  const sourceId = String(body.sourceId ?? '');
   const pool = String(body.pool ?? '');
   const transport = String(body.transport ?? '');
   const resolution = String(body.resolution ?? '');
@@ -366,6 +375,7 @@ poolRoutes.post('/subscription', async (c) => {
     if (country && line.country !== country) return false;
     if (group && line.group !== group) return false;
     if (channelId && line.channelId !== channelId) return false;
+    if (sourceId && line.sourceId !== sourceId) return false;
     if (pool && line.pool !== pool) return false;
     if (transport && line.transport !== transport) return false;
     if (minSpeed && (line.speedKbps ?? 0) < minSpeed) return false;
