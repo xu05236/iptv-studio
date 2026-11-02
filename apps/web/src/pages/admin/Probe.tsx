@@ -271,7 +271,7 @@ export function Probe() {
       {lines.data?.ready ? (
         <Card flush>
           <div className="table-wrap" style={{ border: 0 }}>
-            <table className="table" style={{ minWidth: 860 }}>
+            <table className="table table--cards">
               <thead>
                 <tr>
                   <th>频道</th>
@@ -287,7 +287,7 @@ export function Probe() {
               <tbody>
                 {pagedItems.map((row) => (
                   <tr key={row.key}>
-                    <td>
+                    <td data-label="频道">
                       <div style={{ fontWeight: 600 }}>{row.channelName}</div>
                       <div className="caption" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span>{row.group} · {row.sourceName ?? row.sourceId}{row.sourceSite ? ` · ${row.sourceSite}` : ''}</span>
@@ -296,18 +296,18 @@ export function Probe() {
                         ) : null}
                       </div>
                     </td>
-                    <td><Badge tone={row.resolution ? 'blue' : 'default'}>{formatResolution(row.resolution)}</Badge></td>
-                    <td>{formatSpeed(row.speedKbps)}</td>
-                    <td className="caption">{formatLatency(row.latencyMs)}</td>
-                    <td>
+                    <td data-label="分辨率"><Badge tone={row.resolution ? 'blue' : 'default'}>{formatResolution(row.resolution)}</Badge></td>
+                    <td data-label="速率">{formatSpeed(row.speedKbps)}</td>
+                    <td data-label="首字节" className="caption">{formatLatency(row.latencyMs)}</td>
+                    <td data-label="状态">
                       <Badge tone={statusTone(row.status)}>{statusLabel(row.status)}</Badge>
                       {row.status !== 'alive' && row.error ? <div className="caption" style={{ color: 'var(--red)', maxWidth: 170 }}>{row.error}</div> : null}
                     </td>
-                    <td className="caption">{timeAgo(row.lastProbeAt)}</td>
-                    <td className="mono" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td data-label="检测时间" className="caption">{timeAgo(row.lastProbeAt)}</td>
+                    <td data-label="线路" className="mono" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {row.url.replace(/^https?:\/\//, '').split('/')[0]}
                     </td>
-                    <td>
+                    <td data-label="">
                       <Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(row.url).then(() => show('已复制线路地址'))}>
                         <Copy size={13} />
                       </Button>
@@ -332,17 +332,17 @@ export function Probe() {
           <span className="caption"><Gauge size={13} /> Actions 写入</span>
         </div>
         <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
-          <table className="table">
+          <table className="table table--cards">
             <thead><tr><th>状态</th><th>触发</th><th>开始</th><th>测速</th><th>可用</th><th>耗时</th></tr></thead>
             <tbody>
               {(runs.data?.items ?? []).map((run) => (
                 <tr key={run.id}>
-                  <td><Badge tone={run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange'}>{run.status}</Badge></td>
-                  <td className="caption">{run.trigger}</td>
-                  <td className="caption">{timeAgo(run.started_at)}</td>
-                  <td>{run.probed}</td>
-                  <td>{run.alive}</td>
-                  <td className="caption">{formatDuration(run.duration_ms)}</td>
+                  <td data-label="状态"><Badge tone={run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange'}>{run.status}</Badge></td>
+                  <td data-label="触发" className="caption">{run.trigger}</td>
+                  <td data-label="开始" className="caption">{timeAgo(run.started_at)}</td>
+                  <td data-label="测速">{run.probed}</td>
+                  <td data-label="可用">{run.alive}</td>
+                  <td data-label="耗时" className="caption">{formatDuration(run.duration_ms)}</td>
                 </tr>
               ))}
             </tbody>
