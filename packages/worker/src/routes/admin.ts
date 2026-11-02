@@ -158,13 +158,14 @@ adminRoutes.get('/backup', async (c) => {
 });
 
 adminRoutes.get('/stats', async (c) => {
-  const [index, sources, channels, subscriptions, feedbackOpen, runs] = await Promise.all([
+  const [index, sources, channels, subscriptions, feedbackOpen, runs, pool] = await Promise.all([
     loadIndex(c.env),
     listSources(c.env),
     listChannels(c.env),
     listSubscriptions(c.env),
     countOpenFeedback(c.env),
     listRuns(c.env, 5),
+    getJson<Record<string, number>>(c.env, 'state/pool-stats.json'),
   ]);
 
   const reputation = { high: 0, normal: 0, low: 0 };
@@ -193,6 +194,13 @@ adminRoutes.get('/stats', async (c) => {
     channels: channels.length,
     subscriptions: subscriptions.length,
     feedbackOpen,
+    pool: {
+      total: Number(pool?.total ?? 0),
+      alive: Number(pool?.alive ?? 0),
+      pending: Number(pool?.pending ?? 0),
+      quarantine: Number(pool?.quarantine ?? 0),
+      generatedAt: pool?.generatedAt ?? null,
+    },
     runs,
   });
 });

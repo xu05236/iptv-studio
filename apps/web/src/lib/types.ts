@@ -102,6 +102,7 @@ export interface AdminStats {
   channels: number;
   subscriptions: number;
   feedbackOpen: number;
+  pool?: { total: number; alive: number; pending: number; quarantine: number; generatedAt: string | null };
   runs: RunItem[];
 }
 
