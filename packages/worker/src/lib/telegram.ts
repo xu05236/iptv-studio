@@ -1,0 +1,135 @@
+import type { Env } from '../env.js';
+import { getJson } from './store.js';
+import { loadTasks } from './tasks.js';
+
+const TASK_TYPE: Record<string, string> = {
+  collect: '完整采集',
+  fetch: '抓源',
+  publish: '发布',
+  probe: '测速',
+  'probe-batch': '分批探测',
+  'probe-lines': '指定探测',
+  liveness: '测活',
+  epg: '节目单',
+  export: '导出',
+};
+
+interface UsageState {
+  kv?: { reads?: number; writes?: number; lists?: number; storageBytes?: number };
+  d1?: { rowsRead?: number; rowsWritten?: number };
+  github?: { minutes?: number; runs?: number };
+}
+
+function shanghai(value?: string | null): string {
+  if (!value) return '未排期';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '未排期';
+  return date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+}
+
+function progressText(task: Awaited<ReturnType<typeof loadTasks>>[number]): string {
+  const { done, total, unit } = task.progress;
+  if (!total) return '';
+  return ` ${done}/${total}${unit ? ` ${unit}` : ''}`;
+}
+
+async function buildReply(env: Env, command: string): Promise<string> {
+  const [tasks, stats, usage, fetchState, publishState, probeState] = await Promise.all([
+    loadTasks(env),
+    getJson<Record<string, number>>(env, 'state/pool-stats.json'),
+    getJson<UsageState>(env, 'state/usage.json'),
+    getJson<{ nextRunAt?: string }>(env, 'state/fetch-schedule.json'),
+    getJson<{ nextRunAt?: string }>(env, 'state/publish-schedule.json'),
+    getJson<{ nextRunAt?: string }>(env, 'state/probe-schedule.json'),
+  ]);
+
+  if (command === '/help' || command === '/start') {
+    return [
+      'IPTV Studio 命令：',
+      '/status 概览',
+      '/tasks 当前任务',
+      '/usage 额度使用',
+    ].join('\n');
+  }
+
+  if (command === '/usage') {
+    const kv = usage?.kv;
+    const d1 = usage?.d1;
+    const gh = usage?.github;
+    return [
+      '📊 额度使用',
+      `KV 读 ${kv?.reads ?? 0} / 写 ${kv?.writes ?? 0} / 列表 ${kv?.lists ?? 0}`,
+      `D1 读 ${d1?.rowsRead ?? 0} / 写 ${d1?.rowsWritten ?? 0}`,
+      `GitHub 本月 ${gh?.minutes ?? 0} 分钟 / ${gh?.runs ?? 0} 次`,
+      `存储 ${Math.round((kv?.storageBytes ?? 0) / 1024 / 1024)} MB`,
+    ].join('\n');
+  }
+
+  if (command === '/tasks') {
+    const active = tasks.filter((task) => task.status === 'running' || task.status === 'queued' || task.status === 'paused');
+    if (!active.length) return '当前没有运行或排队的任务。';
+    return [
+      '🧵 当前任务',
+      ...active.map((task) => `${TASK_TYPE[task.type] ?? task.type} · ${task.status}${progressText(task)}\n${task.message ?? ''}`),
+    ].join('\n');
+  }
+
+  // /status and unknown commands: overview.
+  const running = tasks.find((task) => task.status === 'running');
+  const queued = tasks.filter((task) => task.status === 'queued').length;
+  return [
+    '📡 IPTV Studio 概览',
+    `运行：${running ? `${TASK_TYPE[running.type] ?? running.type}${progressText(running)}` : '无'}`,
+    `排队：${queued}`,
+    `线路：${stats?.total ?? 0} 总 / ${stats?.alive ?? 0} 可用 / ${stats?.pending ?? 0} 待测 / ${stats?.quarantine ?? 0} 待复测`,
+    `下次抓源：${shanghai(fetchState?.nextRunAt)}`,
+    `下次发布：${shanghai(publishState?.nextRunAt)}`,
+    `下次探测：${shanghai(probeState?.nextRunAt)}`,
+    '发送 /tasks 查看任务，/usage 查看额度。',
+  ].join('\n');
+}
+
+async function send(env: Env, text: string): Promise<void> {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chatId = env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 3500) }),
+  });
+}
+
+/** Poll Telegram once per scheduler tick and answer admin commands from the configured chat. */
+export async function runTelegramCommands(env: Env): Promise<void> {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chatId = env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  try {
+    const stored = await getJson<{ offset?: number }>(env, 'state/telegram-offset.json');
+    const offset = Number(stored?.offset ?? 0);
+    const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates?timeout=0&offset=${offset}`, {
+      method: 'GET',
+    });
+    const payload = (await response.json()) as {
+      ok?: boolean;
+      result?: Array<{ update_id: number; message?: { chat?: { id: number }; text?: string } }>;
+    };
+    if (!payload.ok || !payload.result?.length) return;
+
+    let nextOffset = offset;
+    for (const update of payload.result) {
+      nextOffset = Math.max(nextOffset, update.update_id + 1);
+      const message = update.message;
+      if (!message?.text || String(message.chat?.id) !== String(chatId)) continue;
+      const command = message.text.trim().split(/\s+/)[0].toLowerCase().replace(/@.*$/, '');
+      if (!command.startsWith('/')) continue;
+      await send(env, await buildReply(env, command));
+    }
+    if (nextOffset !== offset) {
+      await env.KV.put('state/telegram-offset.json', JSON.stringify({ offset: nextOffset }), { expirationTtl: 86_400 * 30 });
+    }
+  } catch {
+    // Telegram polling failures must not affect the scheduler.
+  }
+}
