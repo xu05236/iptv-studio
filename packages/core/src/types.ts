@@ -322,6 +322,8 @@ export const DEFAULT_EPG_URLS = [
   'https://raw.githubusercontent.com/fanmingming/live/main/e.xml',
   // epg.pw: numeric ids but reliable display names; merged as a second source.
   'https://epg.pw/xmltv/epg_CN.xml',
+  // 51zmt: covers several provincial channels (山西/陕西/三沙) missing above.
+  'http://epg.51zmt.top:8000/e.xml',
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
