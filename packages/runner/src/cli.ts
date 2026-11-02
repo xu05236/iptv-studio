@@ -605,7 +605,7 @@ async function publishPhase(
     added: diff.addedChannels.length,
     removed: diff.removedChannels.length,
   });
-  if (settings.notifyTelegram && config.telegram) {
+  if (settings.notifyTelegram && config.telegram && process.env.AUTO_PUBLISH !== 'true') {
     const sent = await notifyTelegram(config.telegram.botToken, config.telegram.chatId, `<b>IPTV 日报</b>\n${formatDiff(diff)}`);
     logger.info('Telegram 通知', { sent });
   }

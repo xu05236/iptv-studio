@@ -94,7 +94,8 @@ export function formatDiff(diff: CatalogDiff): string {
   const sign = (value: number): string => (value > 0 ? `+${value}` : String(value));
   lines.push(`📺 IPTV 日报 ${diff.currentAt.slice(0, 10)}`);
   lines.push(`频道 ${diff.channelsBefore} → ${diff.channelsAfter} (${sign(diff.channelsAfter - diff.channelsBefore)})`);
-  lines.push(`线路 ${diff.linesBefore} → ${diff.linesAfter}，可用 ${diff.aliveBefore} → ${diff.aliveAfter} (${sign(diff.aliveAfter - diff.aliveBefore)})`);
+  lines.push(`发布线路 ${diff.linesBefore} → ${diff.linesAfter}，可用 ${diff.aliveBefore} → ${diff.aliveAfter} (${sign(diff.aliveAfter - diff.aliveBefore)})`);
+  lines.push(`数据截至 ${diff.currentAt.replace('T', ' ').slice(0, 16)} UTC`);
 
   if (diff.addedChannels.length) {
     lines.push(`\n新增频道：${diff.addedChannels.slice(0, 8).map((item) => item.name).join('、')}`);

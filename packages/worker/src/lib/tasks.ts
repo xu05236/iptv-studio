@@ -346,6 +346,7 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
     source_id: next.payload.source_id ?? '',
     line_keys: next.payload.line_keys ?? '',
     phase: next.payload.phase ?? '',
+    auto_publish: next.payload.auto ?? '',
   });
   if (!result.ok) {
     next.status = 'failed';
