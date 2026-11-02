@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "iptv-studio",
+  "keep_vars": true,
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
   "observability": {
