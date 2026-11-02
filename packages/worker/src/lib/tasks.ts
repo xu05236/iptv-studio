@@ -246,7 +246,9 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
   const task = tasks.find((item) => item.id === taskId);
   if (!task) return;
   task.status = status;
-  task.message = status === 'done' ? (message ?? '完成') : (message ?? '失败');
+  task.message = status === 'done'
+    ? (message ?? (task.message?.includes('抓取完成') ? task.message : '完成'))
+    : (message ?? '失败');
   if (status === 'done' && task.progress.total > 0) task.progress.done = task.progress.total;
   task.finishedAt = new Date().toISOString();
   if (status === 'failed' && (task.retryCount ?? 0) < MAX_RETRIES && isTransientFailure(task.message)) {

@@ -426,10 +426,17 @@ async function fetchPhase(
   const sourceId = (process.env.SOURCE_ID ?? '').trim();
   const targetSources = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
   if (sourceId && !targetSources.length) throw new Error(`采集站不存在或已停用：${sourceId}`);
+  const startedMs = Date.now();
 
   const collected = await collectAll(targetSources, store, logger, (done, total, label) => {
     void reportTaskProgress(api, done, total, label ? `抓取 ${label}` : '抓取采集站');
   });
+  await reportTaskProgress(
+    api,
+    targetSources.length,
+    targetSources.length,
+    `抓取完成 · ${targetSources.length}/${targetSources.length} 个源 · 用时 ${Math.max(1, Math.round((Date.now() - startedMs) / 1000))}s`,
+  );
   const registry = buildRegistry(remote);
   const sources = new Map(remote.sources.map((source) => [source.id, source]));
   const retentionDays = Math.max(0, envNumber('LINE_RETENTION_DAYS') ?? settings.lineRetentionDays ?? 30);
