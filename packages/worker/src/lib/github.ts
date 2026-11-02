@@ -45,6 +45,38 @@ export async function dispatchWorkflow(
   return { ok: false, message: `触发失败 (${response.status}): ${text.slice(0, 300)}` };
 }
 
+export interface WorkflowRun {
+  id: number;
+  name?: string;
+  display_title?: string;
+  status: string;
+  conclusion: string | null;
+  created_at: string;
+  html_url?: string;
+}
+
+export async function listWorkflowRuns(env: Env, perPage = 30): Promise<WorkflowRun[]> {
+  if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) return [];
+  const workflow = env.GITHUB_WORKFLOW || 'collect.yml';
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/${workflow}/runs?per_page=${perPage}&event=workflow_dispatch`,
+      {
+        headers: {
+          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'iptv-studio-worker',
+        },
+      },
+    );
+    if (!response.ok) return [];
+    const data = (await response.json()) as { workflow_runs?: WorkflowRun[] };
+    return data.workflow_runs ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function workflowRunStatus(env: Env): Promise<unknown> {
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) return null;
   const workflow = env.GITHUB_WORKFLOW || 'collect.yml';

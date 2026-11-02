@@ -1,4 +1,5 @@
-name: Collect & Probe
+name: Collect
+run-name: "IPTV ${{ inputs.command || 'collect' }} ${{ inputs.task_id || '' }}" & Probe
 
 on:
   # Automatic collection is intentionally disabled. Run manually when the KV

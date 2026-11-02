@@ -3,6 +3,7 @@ import type { Env } from '../src/env.js';
 
 vi.mock('../src/lib/github.js', () => ({
   dispatchWorkflow: vi.fn(async () => ({ ok: true, message: 'ok' })),
+  listWorkflowRuns: vi.fn(async () => []),
 }));
 
 import { dispatchWorkflow } from '../src/lib/github.js';

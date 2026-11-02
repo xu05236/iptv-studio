@@ -1,6 +1,6 @@
 import type { Env } from '../env.js';
 import { getJson } from './store.js';
-import { dispatchWorkflow } from './github.js';
+import { dispatchWorkflow, listWorkflowRuns } from './github.js';
 
 export type TaskSource = 'schedule' | 'manual' | 'detection' | 'source' | 'cli';
 export type TaskStatus = 'scheduled' | 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
@@ -18,11 +18,26 @@ export interface Task {
   startedAt?: string;
   finishedAt?: string;
   runId?: string;
+  lastHeartbeatAt?: string;
+  retryCount?: number;
+  githubRunId?: number;
 }
 
 const KEY = 'state/tasks.json';
 const MAX_FINISHED = 30;
-const STALE_MS = 45 * 60_000;
+const MAX_RETRIES = 2;
+const WATCHDOG_MS: Record<string, number> = {
+  collect: 30 * 60_000,
+  fetch: 15 * 60_000,
+  publish: 10 * 60_000,
+  probe: 10 * 60_000,
+  'probe-batch': 10 * 60_000,
+  'probe-lines': 15 * 60_000,
+  epg: 10 * 60_000,
+  export: 10 * 60_000,
+  liveness: 15 * 60_000,
+  'cleanup-orphans': 10 * 60_000,
+};
 const LOCK_ID = 'queue';
 const LOCK_TTL_MS = 60_000;
 
@@ -159,6 +174,73 @@ async function notifyTaskFailure(env: Env, task: Task, message?: string): Promis
   }
 }
 
+/** True for failures that are likely to succeed on a retry. */
+function isTransientFailure(message: string): boolean {
+  return /timeout|timed out|ETIMEDOUT|ECONN|network|fetch failed|502|503|504|超时|连接|服务器|rate limit|no run|未找到 GitHub run/i.test(message);
+}
+
+/** Remove a failed task and enqueue a fresh attempt with the same payload. */
+function retryTask(tasks: Task[], task: Task, reason: string): Task | null {
+  const nextRetry = (task.retryCount ?? 0) + 1;
+  if (nextRetry > MAX_RETRIES) {
+    task.status = 'failed';
+    task.message = `${reason}，重试次数已用尽`;
+    task.finishedAt = new Date().toISOString();
+    return null;
+  }
+  const index = tasks.findIndex((item) => item.id === task.id);
+  if (index >= 0) tasks.splice(index, 1);
+  const retry: Task = {
+    ...task,
+    id: `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    status: 'queued',
+    progress: { done: 0, total: task.progress.total, unit: task.progress.unit },
+    message: `自动重试 ${nextRetry}/${MAX_RETRIES}：${reason}`,
+    createdAt: new Date().toISOString(),
+    startedAt: undefined,
+    finishedAt: undefined,
+    lastHeartbeatAt: undefined,
+    githubRunId: undefined,
+    retryCount: nextRetry,
+  };
+  tasks.push(retry);
+  return retry;
+}
+
+/** Match running tasks to their GitHub run and release heartbeat-only stalls. */
+async function reconcileRunningTasks(env: Env, tasks: Task[]): Promise<void> {
+  const running = tasks.filter((task) => task.status === 'running');
+  if (!running.length) return;
+  const runs = await listWorkflowRuns(env);
+  if (!runs.length) return;
+  const now = Date.now();
+  for (const task of [...running]) {
+    const age = now - Date.parse(task.startedAt ?? task.createdAt);
+    if (age < 2 * 60_000) continue;
+    const run = runs.find((candidate) => `${candidate.name ?? ''} ${candidate.display_title ?? ''}`.includes(task.id));
+    if (!run) {
+      if (age > 10 * 60_000) {
+        const retry = retryTask(tasks, task, '未找到 GitHub run');
+        if (!retry) await notifyTaskFailure(env, task, task.message);
+      }
+      continue;
+    }
+    task.githubRunId = run.id;
+    if (run.status === 'completed') {
+      if (run.conclusion === 'success') task.lastHeartbeatAt = new Date().toISOString();
+      else {
+        const retry = retryTask(tasks, task, `GitHub run ${run.conclusion ?? '失败'}`);
+        if (!retry) await notifyTaskFailure(env, task, task.message);
+      }
+    } else if (run.status === 'queued' && age > 15 * 60_000) {
+      const retry = retryTask(tasks, task, 'GitHub run 排队超时');
+      if (!retry) await notifyTaskFailure(env, task, task.message);
+    } else {
+      task.lastHeartbeatAt = new Date().toISOString();
+    }
+  }
+}
+
 async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed', message?: string): Promise<void> {
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
@@ -167,6 +249,12 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
   task.message = status === 'done' ? (message ?? '完成') : (message ?? '失败');
   if (status === 'done' && task.progress.total > 0) task.progress.done = task.progress.total;
   task.finishedAt = new Date().toISOString();
+  if (status === 'failed' && (task.retryCount ?? 0) < MAX_RETRIES && isTransientFailure(task.message)) {
+    const retry = retryTask(tasks, task, task.message);
+    await saveTasks(env, tasks);
+    if (retry) await notifyTaskFailure(env, retry, `任务失败，已自动重试：${task.message}`);
+    return;
+  }
   await saveTasks(env, tasks);
   if (status === 'failed') await notifyTaskFailure(env, task, task.message);
 }
@@ -182,6 +270,7 @@ async function progressTaskCore(env: Env, taskId: string, done: number, total?: 
   task.progress.done = Math.max(0, done);
   if (total && total > 0) task.progress.total = total;
   if (message) task.message = message;
+  task.lastHeartbeatAt = new Date().toISOString();
   await saveTasks(env, tasks);
 }
 
@@ -194,17 +283,29 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
   const tasks = await loadTasks(env);
   const now = Date.now();
   let changed = false;
-  for (const task of tasks) {
-    if (task.status === 'running' && task.startedAt && now - Date.parse(task.startedAt) > STALE_MS) {
-      task.status = 'failed';
-      task.message = '超时未完成，自动释放队列';
-      task.finishedAt = new Date().toISOString();
+  await reconcileRunningTasks(env, tasks);
+  changed = true;
+  const retryFailed: Task[] = [];
+  const retried: Task[] = [];
+  for (const task of [...tasks]) {
+    if (task.status !== 'running') continue;
+    const last = Date.parse(task.lastHeartbeatAt ?? task.startedAt ?? task.createdAt);
+    const limit = WATCHDOG_MS[task.type] ?? 15 * 60_000;
+    if (now - last > limit) {
+      const retry = retryTask(tasks, task, `${Math.max(1, Math.round((now - last) / 60_000))} 分钟无心跳`);
+      if (retry) retried.push(retry);
+      else retryFailed.push(task);
       changed = true;
     }
   }
+  const notify = async (): Promise<void> => {
+    for (const task of retried) await notifyTaskFailure(env, task, task.message);
+    for (const task of retryFailed) await notifyTaskFailure(env, task, task.message);
+  };
   const running = tasks.find((task) => task.status === 'running');
   if (running) {
     if (changed) await saveTasks(env, tasks);
+    await notify();
     return { task: running, message: '已有任务在运行' };
   }
   const queued = tasks
@@ -213,6 +314,7 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
   const next = queued[0];
   if (!next) {
     if (changed) await saveTasks(env, tasks);
+    await notify();
     return { message: '队列为空' };
   }
 
@@ -227,6 +329,7 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
 
   next.status = 'running';
   next.startedAt = new Date().toISOString();
+  next.lastHeartbeatAt = next.startedAt;
   await saveTasks(env, tasks);
 
   const result = await dispatchWorkflow(env, {
@@ -245,8 +348,10 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
   } else {
     next.message = '已派发';
   }
+  next.lastHeartbeatAt = new Date().toISOString();
   await saveTasks(env, tasks);
   if (!result.ok) await notifyTaskFailure(env, next, result.message);
+  await notify();
   return { task: next, message: result.ok ? '已派发' : result.message };
 }
 
