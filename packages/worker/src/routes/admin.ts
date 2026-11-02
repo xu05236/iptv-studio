@@ -353,6 +353,20 @@ adminRoutes.post('/db/clean-logo-names', async (c) => {
   return ok({ cleaned });
 });
 
+adminRoutes.post('/notify/test', async (c) => {
+  const token = c.env.TELEGRAM_BOT_TOKEN;
+  const chatId = c.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return fail('未配置 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID', 400);
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text: '✅ IPTV Studio 通知测试成功' }),
+  });
+  const result = (await response.json()) as { ok?: boolean; description?: string };
+  if (!result.ok) return fail(`Telegram 返回：${result.description ?? response.status}`, 502);
+  return ok({ sent: true });
+});
+
 adminRoutes.get('/settings', async (c) => {
   const settings = await loadSettings(c.env);
   return ok({ settings, publicBaseUrl: c.env.PUBLIC_BASE_URL ?? new URL(c.req.url).origin });
