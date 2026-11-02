@@ -205,7 +205,7 @@ async function collectAll(
   sources: SourceRecord[],
   store: ArtifactStore,
   logger: RunLogger,
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: (done: number, total: number, label?: string) => void,
 ): Promise<CollectedSource[]> {
   let done = 0;
   return mapPool(sources, 4, async (source) => {
@@ -223,7 +223,7 @@ async function collectAll(
       } satisfies CollectedSource;
     } finally {
       done++;
-      onProgress?.(done, sources.length);
+      onProgress?.(done, sources.length, source.name);
     }
   });
 }
@@ -407,8 +407,8 @@ async function fetchPhase(
   const targetSources = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
   if (sourceId && !targetSources.length) throw new Error(`采集站不存在或已停用：${sourceId}`);
 
-  const collected = await collectAll(targetSources, store, logger, (done, total) => {
-    void reportTaskProgress(api, done, total);
+  const collected = await collectAll(targetSources, store, logger, (done, total, label) => {
+    void reportTaskProgress(api, done, total, label ? `抓取 ${label}` : '抓取采集站');
   });
   const registry = buildRegistry(remote);
   const sources = new Map(remote.sources.map((source) => [source.id, source]));
@@ -507,11 +507,11 @@ async function publishPhase(
   const settings = remote.settings;
   const registry = buildRegistry(remote);
   const logoFiles = await loadLogoFiles(store, logger);
-  await reportTaskProgress(api, 0, 4);
+  await reportTaskProgress(api, 0, 5, '准备发布');
   const epg = epgMode === 'fetch'
     ? await collectEpg(settings.epgUrls, registry, logger)
     : { xml: null, programmes: 0, data: epgFromGuide(await store.getJson<StoredGuide>('state/guide.json')) };
-  await reportTaskProgress(api, 1, 4);
+  await reportTaskProgress(api, 1, 5, 'EPG 已准备');
 
   const output = buildArtifacts({
     runId,
@@ -525,7 +525,7 @@ async function publishPhase(
     logoProxyBase: `${config.publicBaseUrl.replace(/\/+$/, '')}/api/public/logo`,
     logoFiles,
   });
-  await reportTaskProgress(api, 2, 4);
+  await reportTaskProgress(api, 2, 5, '频道聚合完成');
   const logKey = await writeLog(store, runId, logger);
   const poolSnapshot = buildPoolSnapshot({
     lines,
@@ -541,12 +541,13 @@ async function publishPhase(
     generatedAt: output.catalog.generatedAt,
     poolSnapshot,
   }, logger);
-  await reportTaskProgress(api, 3, 4);
+  await reportTaskProgress(api, 3, 5, '产物写入完成');
   // A guide-based export keeps the existing per-subscription XMLTV untouched:
   // rebuilding from the compact guide would truncate schedules.
   await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, epgMode === 'fetch' ? epg.data : null, logger);
-  await reportTaskProgress(api, 4, 4);
+  await reportTaskProgress(api, 4, 5, '订阅生成完成');
   await api.post('/api/admin/sync/channels', { channels: output.channels.map((channel) => ({ ...channel, aliases: [] })) });
+  await reportTaskProgress(api, 5, 5, '频道元数据同步完成');
 
   const previousCatalog = await store.getJson<ExportCatalog>('state/prev.json');
   const currentSnapshot = {
@@ -1042,10 +1043,10 @@ async function runLiveness(): Promise<void> {
   }
 }
 
-async function reportTaskProgress(api: ApiClient, done: number, total: number): Promise<void> {
+async function reportTaskProgress(api: ApiClient, done: number, total: number, message?: string): Promise<void> {
   const taskId = process.env.TASK_ID;
   if (!taskId) return;
-  await api.post(`/api/admin/tasks/${taskId}/progress`, { done, total }).catch(() => undefined);
+  await api.post(`/api/admin/tasks/${taskId}/progress`, { done, total, message }).catch(() => undefined);
 }
 
 /** Full speed/resolution probe for an explicit set of line keys (detection center). */

@@ -543,9 +543,9 @@ adminRoutes.patch('/tasks/:id', async (c) => {
 });
 
 adminRoutes.post('/tasks/:id/progress', async (c) => {
-  const body = await readJson<{ done?: number; total?: number }>(c);
+  const body = await readJson<{ done?: number; total?: number; message?: string }>(c);
   if (!body || !Number.isFinite(body.done)) return fail('缺少进度');
-  await progressTask(c.env, c.req.param('id'), Number(body.done), Number(body.total) || undefined);
+  await progressTask(c.env, c.req.param('id'), Number(body.done), Number(body.total) || undefined, typeof body.message === 'string' ? body.message : undefined);
   return ok({ ok: true });
 });
 

@@ -105,12 +105,13 @@ export async function finishTask(env: Env, taskId: string, status: 'done' | 'fai
   if (status === 'failed') await notifyTaskFailure(env, task, task.message);
 }
 
-export async function progressTask(env: Env, taskId: string, done: number, total?: number): Promise<void> {
+export async function progressTask(env: Env, taskId: string, done: number, total?: number, message?: string): Promise<void> {
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
   if (!task) return;
   task.progress.done = Math.max(0, done);
   if (total && total > 0) task.progress.total = total;
+  if (message) task.message = message;
   await saveTasks(env, tasks);
 }
 
