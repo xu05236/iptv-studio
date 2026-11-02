@@ -3,11 +3,12 @@ import type { Env } from '../env.js';
 import { audit, loadSettings } from '../db.js';
 import { workflowRunStatus } from './github.js';
 import { getJson } from './store.js';
-import { createTask, dispatchNext } from './tasks.js';
+import { createTask, dispatchNext, loadTasks } from './tasks.js';
 
 /** Beijing is UTC+8 with no DST; the scheduler stores local HH:mm and matches in UTC. */
 const BEIJING_OFFSET_MS = 8 * 3_600_000;
 const RUN_WINDOW_MS = 15 * 60_000;
+const AUTO_PUBLISH_INTERVAL_MS = 2 * 3_600_000;
 
 export interface CollectTime {
   hour: number;
@@ -182,9 +183,33 @@ export async function runScheduler(env: Env): Promise<void> {
   const at = Date.now();
   if (await runFetchWatch(env, settings, at)) enqueued = true;
   if (await runProbeWatch(env, settings, at)) enqueued = true;
+  await runAutoPublishAfterProbe(env, settings, at);
   // Always drain the queue, even when no scheduled task was newly enqueued.
   // Otherwise manual/source tasks can sit queued until the next schedule event.
   await dispatchNext(env);
+}
+
+/**
+ * Probe only updates the line pool. If the pool is newer than the published
+ * catalog, publish automatically, but at most once every two hours so hourly
+ * probes cannot exhaust the KV write budget.
+ */
+async function runAutoPublishAfterProbe(env: Env, settings: AppSettings, now: number): Promise<boolean> {
+  if (!settings.autoPublishEnabled) return false;
+  const [index, pool, last, tasks] = await Promise.all([
+    getJson<{ generatedAt?: string }>(env, 'state/index.json'),
+    getJson<{ generatedAt?: string }>(env, 'state/pool-stats.json'),
+    getJson<{ at?: string }>(env, 'state/auto-publish-after-probe.json'),
+    loadTasks(env),
+  ]);
+  if (!index?.generatedAt || !pool?.generatedAt) return false;
+  if (Date.parse(pool.generatedAt) <= Date.parse(index.generatedAt)) return false;
+  if (now - Date.parse(last?.at ?? '') < AUTO_PUBLISH_INTERVAL_MS) return false;
+  if (tasks.some((task) => task.type === 'publish' && (task.status === 'queued' || task.status === 'running'))) return false;
+  const task = await createTask(env, { type: 'publish', source: 'schedule', priority: 40, payload: { auto: 'after-probe' } });
+  await env.KV.put('state/auto-publish-after-probe.json', JSON.stringify({ at: new Date(now).toISOString(), taskId: task.id }));
+  await audit(env, 'scheduler', 'schedule.auto-publish-after-probe', task.id);
+  return true;
 }
 
 interface IntervalState {

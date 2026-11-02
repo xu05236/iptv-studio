@@ -246,15 +246,19 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
   const task = tasks.find((item) => item.id === taskId);
   if (!task) return;
   task.status = status;
-  task.message = status === 'done'
-    ? (message ?? (/抓取完成|分批探测完成/.test(task.message ?? '') ? task.message : '完成'))
+  const taskMessage = status === 'done'
+    ? (message ?? (/抓取完成|分批探测完成/.test(task.message ?? '') ? task.message! : '完成'))
     : (message ?? '失败');
+  task.message = taskMessage;
   if (status === 'done' && task.progress.total > 0) task.progress.done = task.progress.total;
   task.finishedAt = new Date().toISOString();
-  if (status === 'failed' && (task.retryCount ?? 0) < MAX_RETRIES && isTransientFailure(task.message)) {
-    const retry = retryTask(tasks, task, task.message);
+  if (status === 'done' && task.type === 'publish') {
+    await env.KV.put('state/auto-publish-after-probe.json', JSON.stringify({ at: task.finishedAt, taskId: task.id }));
+  }
+  if (status === 'failed' && (task.retryCount ?? 0) < MAX_RETRIES && isTransientFailure(taskMessage)) {
+    const retry = retryTask(tasks, task, taskMessage);
     await saveTasks(env, tasks);
-    if (retry) await notifyTaskFailure(env, retry, `任务失败，已自动重试：${task.message}`);
+    if (retry) await notifyTaskFailure(env, retry, `任务失败，已自动重试：${taskMessage}`);
     return;
   }
   await saveTasks(env, tasks);
