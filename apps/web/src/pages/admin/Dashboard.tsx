@@ -329,6 +329,16 @@ export function Dashboard() {
         <Stat value={stats.subscriptions} label="订阅出口" />
       </div>
 
+      <div className="row row--between row--wrap">
+        <div className="caption">
+          已发布 {stats.index.generatedAt ? formatSnapshot(stats.index.generatedAt) : '—'}
+          {stats.pool?.generatedAt ? ` · 线路池 ${formatSnapshot(stats.pool.generatedAt)}` : ''}
+        </div>
+        <Button size="sm" variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
+          发布更新
+        </Button>
+      </div>
+
       {stats.pool?.generatedAt && stats.index.generatedAt && Date.parse(stats.pool.generatedAt) > Date.parse(stats.index.generatedAt) ? (
         <Card>
           <div className="row row--between row--wrap" style={{ gap: 10 }}>
