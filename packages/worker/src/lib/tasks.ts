@@ -247,7 +247,7 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
   if (!task) return;
   task.status = status;
   task.message = status === 'done'
-    ? (message ?? (task.message?.includes('抓取完成') ? task.message : '完成'))
+    ? (message ?? (/抓取完成|分批探测完成/.test(task.message ?? '') ? task.message : '完成'))
     : (message ?? '失败');
   if (status === 'done' && task.progress.total > 0) task.progress.done = task.progress.total;
   task.finishedAt = new Date().toISOString();

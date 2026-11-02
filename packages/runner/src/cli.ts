@@ -803,18 +803,20 @@ async function runBatchProbe(): Promise<void> {
     }
     picked.sort((a, b) => (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
     const selected = picked.slice(0, batchSize);
+    const phaseLabel = phase === 'pending' ? '待测' : phase === 'quarantine' ? '待复测' : '待复活';
     logger.info('分批探测计划', { phase, candidates: candidates.length, batch: selected.length, batchSize, forced: Boolean(forcedPhase) });
 
     const blocked = phase === 'rejected'
       ? new Set<string>()
       : await prefilterLiveness(selected, settings, config.concurrency || settings.concurrency || 32, logger);
     const probeList = selected.filter((line) => !blocked.has(line.key));
-    await reportTaskProgress(api, 0, selected.length);
+    await reportTaskProgress(api, 0, selected.length, `分批探测 · ${phaseLabel} · 本批 ${selected.length} 条`);
     const summary = await runProbes(probeList, settings, config.concurrency || settings.concurrency, logger, (done) => {
-      void reportTaskProgress(api, done, selected.length);
+      void reportTaskProgress(api, done, selected.length, `分批探测 · ${phaseLabel} · ${done}/${selected.length}`);
     });
     const ffprobeLimit = Math.max(0, envNumber('FFPROBE_LIMIT') ?? settings.ffprobeLimit ?? 150);
     if (ffprobeLimit > 0) await enrichResolutions(probeList, ffprobeLimit, logger);
+    await reportTaskProgress(api, selected.length, selected.length, `分批探测完成 · ${phaseLabel} · 测 ${probeList.length} 条 · 可用 ${summary.alive}`);
     logger.info('分批探测完成', { phase, checked: selected.length, probed: summary.probed, alive: summary.alive, dead: summary.dead });
 
     const generatedAt = nowIso();

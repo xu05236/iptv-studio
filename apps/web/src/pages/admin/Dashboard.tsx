@@ -329,6 +329,20 @@ export function Dashboard() {
         <Stat value={stats.subscriptions} label="订阅出口" />
       </div>
 
+      {stats.pool?.generatedAt && stats.index.generatedAt && Date.parse(stats.pool.generatedAt) > Date.parse(stats.index.generatedAt) ? (
+        <Card>
+          <div className="row row--between row--wrap" style={{ gap: 10 }}>
+            <div className="grow">
+              <div style={{ fontWeight: 600 }}>线路池已更新，尚未发布到前台</div>
+              <div className="caption">探测结果只更新线路池；发布后频道、订阅和节目单才会变化。</div>
+            </div>
+            <Button variant="primary" loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
+              发布更新
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <div className="row row--between row--wrap">
           <div className="row" style={{ gap: 6 }}>
