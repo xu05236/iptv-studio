@@ -112,8 +112,29 @@ export async function handleTelegramUpdate(
   await send(env, await buildReply(env, command));
 }
 
+const COMMANDS = [
+  { command: 'status', description: '概览：任务、线路、下次运行' },
+  { command: 'tasks', description: '当前运行和排队任务' },
+  { command: 'usage', description: 'KV / D1 / GitHub 额度' },
+  { command: 'help', description: '命令帮助' },
+];
+
+async function configureMenu(token: string, chatId: string): Promise<void> {
+  const scope = { type: 'chat', chat_id: Number(chatId) };
+  await fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ scope, commands: COMMANDS }),
+  });
+  await fetch(`https://api.telegram.org/bot${token}/setChatMenuButton`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: Number(chatId), menu_button: { type: 'commands' } }),
+  });
+}
+
 /** Register a webhook for instant replies; polling becomes a fallback only. */
-export async function registerTelegramWebhook(env: Env): Promise<{ url: string }> {
+export async function registerTelegramWebhook(env: Env): Promise<{ url: string; menu: boolean }> {
   const token = env.TELEGRAM_BOT_TOKEN;
   const baseUrl = env.PUBLIC_BASE_URL;
   if (!token) throw new Error('未配置 TELEGRAM_BOT_TOKEN');
@@ -128,7 +149,14 @@ export async function registerTelegramWebhook(env: Env): Promise<{ url: string }
   const result = (await response.json()) as { ok?: boolean; description?: string };
   if (!result.ok) throw new Error(result.description ?? `Telegram HTTP ${response.status}`);
   await env.KV.put('state/telegram-webhook.json', JSON.stringify({ secret, url }), { expirationTtl: 86_400 * 365 });
-  return { url };
+  let menu = false;
+  try {
+    if (env.TELEGRAM_CHAT_ID) await configureMenu(token, env.TELEGRAM_CHAT_ID);
+    menu = true;
+  } catch {
+    // The webhook still works even if the client menu cannot be updated.
+  }
+  return { url, menu };
 }
 
 export async function verifyTelegramSecret(env: Env, header: string | null): Promise<boolean> {
