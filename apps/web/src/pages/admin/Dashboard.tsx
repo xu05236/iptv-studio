@@ -680,6 +680,7 @@ export function Dashboard() {
             </tbody>
           </table>
         </div>
+        <div className="caption show-mobile" style={{ padding: '8px 14px' }}>← 左右滑动查看完整表格 →</div>
       </Card>
     </div>
   );

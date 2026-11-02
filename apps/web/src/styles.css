@@ -1301,6 +1301,76 @@ button {
   display: initial;
 }
 
+@media (max-width: 640px) {
+  .page,
+  .page--admin {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .large-title {
+    font-size: 28px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .stat {
+    padding: 12px;
+  }
+
+  .stat__value {
+    font-size: 26px;
+  }
+
+  .admin-mobile-nav {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .row {
+    gap: 8px;
+  }
+
+  .btn {
+    padding: 8px 11px;
+    font-size: 13px;
+  }
+
+  .caption {
+    overflow-wrap: anywhere;
+  }
+
+  .table-wrap {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  .table {
+    min-width: 620px;
+    font-size: 12.5px;
+  }
+
+  .table th,
+  .table td {
+    padding: 8px 10px;
+  }
+
+  .table th:first-child,
+  .table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--bg-elev);
+  }
+
+  .sheet {
+    max-height: 92dvh;
+  }
+}
+
 @media (min-width: 720px) {
   .show-mobile {
     display: none;
