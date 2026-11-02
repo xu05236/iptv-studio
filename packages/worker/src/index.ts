@@ -13,7 +13,7 @@ import { poolRoutes } from './routes/pool.js';
 import { relayRoutes } from './routes/relay.js';
 import { runCron } from './cron.js';
 import { runScheduler } from './lib/schedule.js';
-import { runTelegramCommands } from './lib/telegram.js';
+import { handleTelegramUpdate, runTelegramCommands, verifyTelegramSecret } from './lib/telegram.js';
 import { dispatchWorkflow } from './lib/github.js';
 
 const app = new Hono<AppEnv>();
@@ -75,6 +75,15 @@ app.route('/api/admin/subscriptions', subscriptionRoutes);
 app.route('/api/admin/pool', poolRoutes);
 app.route('/api/admin', adminRoutes);
 app.route('/relay', relayRoutes);
+
+app.post('/api/telegram/webhook', async (c) => {
+  const secret = c.req.header('x-telegram-bot-api-secret-token') ?? null;
+  if (!(await verifyTelegramSecret(c.env, secret))) return c.json({ ok: false }, 401);
+  const update = await c.req.json().catch(() => null);
+  if (update) await handleTelegramUpdate(c.env, update);
+  return c.json({ ok: true });
+});
+
 app.route('/', artifactRoutes);
 
 app.notFound((c) => {
@@ -89,8 +98,7 @@ app.onError((error, c) => {
 });
 
 export default {
-  fetch: app.fetch,
-  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  fetch: app.fetch,  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (controller.cron === '17 */6 * * *') ctx.waitUntil(runCron(env));
     else ctx.waitUntil(Promise.all([runScheduler(env), runTelegramCommands(env)]).then(() => undefined));
   },

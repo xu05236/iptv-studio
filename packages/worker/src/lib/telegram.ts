@@ -100,11 +100,48 @@ async function send(env: Env, text: string): Promise<void> {
   });
 }
 
+export async function handleTelegramUpdate(
+  env: Env,
+  update: { message?: { chat?: { id: number }; text?: string } },
+): Promise<void> {
+  const chatId = env.TELEGRAM_CHAT_ID;
+  const message = update.message;
+  if (!chatId || !message?.text || String(message.chat?.id) !== String(chatId)) return;
+  const command = message.text.trim().split(/\s+/)[0].toLowerCase().replace(/@.*$/, '');
+  if (!command.startsWith('/')) return;
+  await send(env, await buildReply(env, command));
+}
+
+/** Register a webhook for instant replies; polling becomes a fallback only. */
+export async function registerTelegramWebhook(env: Env): Promise<{ url: string }> {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const baseUrl = env.PUBLIC_BASE_URL;
+  if (!token) throw new Error('未配置 TELEGRAM_BOT_TOKEN');
+  if (!baseUrl) throw new Error('未配置 PUBLIC_BASE_URL');
+  const secret = crypto.randomUUID().replace(/-/g, '');
+  const url = `${baseUrl.replace(/\/+$/, '')}/api/telegram/webhook`;
+  const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url, secret_token: secret, allowed_updates: ['message'] }),
+  });
+  const result = (await response.json()) as { ok?: boolean; description?: string };
+  if (!result.ok) throw new Error(result.description ?? `Telegram HTTP ${response.status}`);
+  await env.KV.put('state/telegram-webhook.json', JSON.stringify({ secret, url }), { expirationTtl: 86_400 * 365 });
+  return { url };
+}
+
+export async function verifyTelegramSecret(env: Env, header: string | null): Promise<boolean> {
+  const stored = await getJson<{ secret?: string }>(env, 'state/telegram-webhook.json');
+  return Boolean(stored?.secret && header === stored.secret);
+}
+
 /** Poll Telegram once per scheduler tick and answer admin commands from the configured chat. */
 export async function runTelegramCommands(env: Env): Promise<void> {
   const token = env.TELEGRAM_BOT_TOKEN;
   const chatId = env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
+  if (await getJson<{ secret?: string }>(env, 'state/telegram-webhook.json')) return;
   try {
     const stored = await getJson<{ offset?: number }>(env, 'state/telegram-offset.json');
     const offset = Number(stored?.offset ?? 0);
@@ -120,11 +157,7 @@ export async function runTelegramCommands(env: Env): Promise<void> {
     let nextOffset = offset;
     for (const update of payload.result) {
       nextOffset = Math.max(nextOffset, update.update_id + 1);
-      const message = update.message;
-      if (!message?.text || String(message.chat?.id) !== String(chatId)) continue;
-      const command = message.text.trim().split(/\s+/)[0].toLowerCase().replace(/@.*$/, '');
-      if (!command.startsWith('/')) continue;
-      await send(env, await buildReply(env, command));
+      await handleTelegramUpdate(env, update);
     }
     if (nextOffset !== offset) {
       await env.KV.put('state/telegram-offset.json', JSON.stringify({ offset: nextOffset }), { expirationTtl: 86_400 * 30 });

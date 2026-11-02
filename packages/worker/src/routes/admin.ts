@@ -24,9 +24,11 @@ import {
   type RuleRow,
 } from '../db.js';
 import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
-import { inferResolution } from '@iptv/core';import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
-import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask } from '../lib/tasks.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
+import { inferResolution } from '@iptv/core';
+import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
+import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask } from '../lib/tasks.js';
+import { registerTelegramWebhook } from '../lib/telegram.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
 import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, parseCollectTimes } from '../lib/schedule.js';
 import { sourceMetaMap } from '../lib/source.js';
@@ -365,6 +367,14 @@ adminRoutes.get('/notify/chats', async (c) => {
     if (chat) chats.set(chat.id, { id: chat.id, type: chat.type, name: chat.title ?? chat.first_name ?? chat.username });
   }
   return ok({ chats: [...chats.values()] });
+});
+
+adminRoutes.post('/notify/webhook', async (c) => {
+  try {
+    return ok(await registerTelegramWebhook(c.env));
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : String(error), 502);
+  }
 });
 
 adminRoutes.post('/notify/test', async (c) => {
