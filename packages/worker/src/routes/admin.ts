@@ -199,9 +199,19 @@ adminRoutes.get('/stats', async (c) => {
 
 adminRoutes.get('/runs', async (c) => {
   const limit = Math.max(1, Math.min(Number(c.req.query('limit') ?? 20), 100));
-  const runs = await listRuns(c.env, limit);
+  const [runs, tasks] = await Promise.all([listRuns(c.env, limit), loadTasks(c.env)]);
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
   return ok({
-    items: runs.map((run) => ({ ...run, warnings: parseJsonField<string[]>(run.warnings, []) })),
+    items: runs.map((run) => {
+      const task = run.task_id ? taskById.get(run.task_id) : undefined;
+      return {
+        ...run,
+        task_type: task?.type ?? null,
+        task_source: task?.source ?? null,
+        task_message: task?.message ?? null,
+        warnings: parseJsonField<string[]>(run.warnings, []),
+      };
+    }),
   });
 });
 

@@ -6,6 +6,19 @@ import type { RunItem } from '../../lib/types';
 import { formatBytes, formatDateTime, formatDuration, timeAgo } from '../../lib/format';
 import { Badge, Button, Card, Sheet, Skeleton, useToast } from '../../components/ui';
 
+const TASK_LABEL: Record<string, string> = {
+  collect: '完整采集',
+  fetch: '抓源',
+  publish: '发布',
+  probe: '测速',
+  'probe-batch': '分批探测',
+  'probe-lines': '指定探测',
+  liveness: '测活',
+  epg: '节目单',
+  export: '导出',
+  'cleanup-orphans': '孤儿清理',
+};
+
 export function Runs() {
   const { show } = useToast();
   const queryClient = useQueryClient();
@@ -87,12 +100,16 @@ export function Runs() {
         <div className="table-wrap" style={{ border: 0 }}>
           <table className="table">
             <thead>
-              <tr><th>状态</th><th>触发</th><th>开始</th><th>频道</th><th>线路 / 可用</th><th>已测</th><th>流量</th><th>耗时</th><th /></tr>
+              <tr><th>状态</th><th>任务</th><th>触发</th><th>开始</th><th>频道</th><th>线路 / 可用</th><th>已测</th><th>流量</th><th>耗时</th><th /></tr>
             </thead>
             <tbody>
               {(data?.items ?? []).map((run) => (
                 <tr key={run.id}>
                   <td><Badge tone={run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange'}>{run.status}</Badge></td>
+                  <td>
+                    <div>{run.task_type ? TASK_LABEL[run.task_type] ?? run.task_type : '—'}</div>
+                    {run.task_source ? <div className="caption">{run.task_source}</div> : null}
+                  </td>
                   <td className="caption">{run.trigger}</td>
                   <td className="caption">{timeAgo(run.started_at)}</td>
                   <td>{run.channels}</td>
@@ -104,7 +121,7 @@ export function Runs() {
                 </tr>
               ))}
               {!isLoading && !data?.items.length ? (
-                <tr><td colSpan={9}><div className="caption" style={{ padding: 16 }}>还没有运行记录，去检测中心触发一次采集。</div></td></tr>
+                <tr><td colSpan={10}><div className="caption" style={{ padding: 16 }}>还没有运行记录，去检测中心触发一次采集。</div></td></tr>
               ) : null}
             </tbody>
           </table>

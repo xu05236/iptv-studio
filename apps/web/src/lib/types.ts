@@ -69,6 +69,10 @@ export interface SourceItem {
 
 export interface RunItem {
   id: string;
+  task_id?: string | null;
+  task_type?: string | null;
+  task_source?: string | null;
+  task_message?: string | null;
   trigger: string;
   status: string;
   started_at: string;

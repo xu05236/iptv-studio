@@ -83,6 +83,7 @@ export interface RuleRow {
 
 export interface RunRow {
   id: string;
+  task_id: string | null;
   trigger: string;
   status: string;
   started_at: string;
@@ -570,6 +571,18 @@ export async function deleteRule(env: Env, id: string): Promise<void> {
 
 // ---------------------------------------------------------------- runs
 
+let runTaskColumnReady: Promise<void> | null = null;
+
+function ensureRunTaskColumn(env: Env): Promise<void> {
+  if (!runTaskColumnReady) {
+    runTaskColumnReady = env.DB.prepare('ALTER TABLE runs ADD COLUMN task_id TEXT')
+      .run()
+      .then(() => undefined)
+      .catch(() => undefined);
+  }
+  return runTaskColumnReady;
+}
+
 export async function listRuns(env: Env, limit = 20): Promise<RunRow[]> {
   const { results } = await env.DB.prepare('SELECT * FROM runs ORDER BY started_at DESC LIMIT ?').bind(limit).all<RunRow>();
   return results;
@@ -580,10 +593,12 @@ export async function getRun(env: Env, id: string): Promise<RunRow | null> {
 }
 
 export async function upsertRun(env: Env, report: RunReport): Promise<void> {
+  await ensureRunTaskColumn(env);
   await env.DB.prepare(
-    `INSERT INTO runs (id, trigger, status, started_at, finished_at, sources, channels, lines, alive, dead, probed, bytes, duration_ms, warnings, error, log_key, actor)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO runs (id, task_id, trigger, status, started_at, finished_at, sources, channels, lines, alive, dead, probed, bytes, duration_ms, warnings, error, log_key, actor)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
+       task_id = COALESCE(excluded.task_id, runs.task_id),
        status = excluded.status, finished_at = excluded.finished_at, sources = excluded.sources,
        channels = excluded.channels, lines = excluded.lines, alive = excluded.alive, dead = excluded.dead,
        probed = excluded.probed, bytes = excluded.bytes, duration_ms = excluded.duration_ms,
@@ -591,6 +606,7 @@ export async function upsertRun(env: Env, report: RunReport): Promise<void> {
   )
     .bind(
       report.id,
+      report.taskId ?? null,
       report.trigger,
       report.status,
       report.startedAt,
