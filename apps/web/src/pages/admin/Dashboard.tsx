@@ -651,27 +651,27 @@ export function Dashboard() {
           <Link to="/admin/runs" className="caption">全部记录</Link>
         </div>
         <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
-          <table className="table">
+          <table className="table table--cards">
             <thead>
               <tr><th>状态</th><th>任务</th><th>开始</th><th>频道</th><th>可用</th><th>已测</th><th>耗时</th></tr>
             </thead>
             <tbody>
               {stats.runs.map((run) => (
                 <tr key={run.id}>
-                  <td>
+                  <td data-label="状态">
                     <Badge tone={run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange'}>
                       {run.status === 'success' ? '成功' : run.status === 'partial' ? '部分' : run.status === 'running' ? '运行中' : '失败'}
                     </Badge>
                   </td>
-                  <td>
+                  <td data-label="任务">
                     <div>{run.task_type ? TASK_TYPE_LABEL[run.task_type] ?? run.task_type : '—'}</div>
                     {run.task_source ? <div className="caption">{run.task_source}</div> : null}
                   </td>
-                  <td className="caption">{timeAgo(run.started_at)}</td>
-                  <td>{run.channels}</td>
-                  <td>{run.alive}</td>
-                  <td>{run.probed}</td>
-                  <td className="caption">{formatDuration(run.duration_ms)}</td>
+                  <td data-label="开始" className="caption">{timeAgo(run.started_at)}</td>
+                  <td data-label="频道">{run.channels}</td>
+                  <td data-label="可用">{run.alive}</td>
+                  <td data-label="已测">{run.probed}</td>
+                  <td data-label="耗时" className="caption">{formatDuration(run.duration_ms)}</td>
                 </tr>
               ))}
               {!stats.runs.length ? (
@@ -680,7 +680,6 @@ export function Dashboard() {
             </tbody>
           </table>
         </div>
-        <div className="caption show-mobile" style={{ padding: '8px 14px' }}>← 左右滑动查看完整表格 →</div>
       </Card>
     </div>
   );

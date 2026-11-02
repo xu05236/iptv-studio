@@ -504,7 +504,7 @@ export function Pool() {
       ) : lines.data?.items.length ? (
         <Card>
           <div className="table-wrap" style={{ border: 0 }}>
-            <table className="table" style={{ minWidth: 900 }}>
+            <table className="table table--cards">
               <thead>
                 <tr>
                   <th>
@@ -530,7 +530,7 @@ export function Pool() {
               <tbody>
                 {lines.data.items.map((line) => (
                   <tr key={line.key}>
-                    <td>
+                    <td data-label="选择">
                       <input
                         type="checkbox"
                         checked={selected.has(line.key)}
@@ -542,22 +542,22 @@ export function Pool() {
                         }}
                       />
                     </td>
-                    <td>
+                    <td data-label="频道">
                       <div className="truncate" style={{ maxWidth: 180 }}>{line.channelName}</div>
                       <div className="caption">{line.country} · {line.group}</div>
                     </td>
-                    <td>
-                      <div className="row" style={{ gap: 6 }}>
+                    <td data-label="来源">
+                      <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
                         <span className="truncate" style={{ maxWidth: 120 }}>{line.sourceName}</span>
                         <ReputationBadge score={line.sourceReputation} />
                       </div>
                       <div className="caption truncate" style={{ maxWidth: 170 }}>{line.name}</div>
                       {line.retained ? <Badge tone="orange">源已移除，保留中</Badge> : null}
                     </td>
-                    <td>{formatResolution(line.resolution)}</td>
-                    <td>{line.speedKbps ? formatSpeed(line.speedKbps) : '—'}</td>
-                    <td><Badge tone={line.transport === 'direct' ? 'green' : 'orange'}>{line.transport === 'direct' ? '直连' : '需中继'}</Badge></td>
-                    <td>
+                    <td data-label="分辨率">{formatResolution(line.resolution)}</td>
+                    <td data-label="速度">{line.speedKbps ? formatSpeed(line.speedKbps) : '—'}</td>
+                    <td data-label="传输"><Badge tone={line.transport === 'direct' ? 'green' : 'orange'}>{line.transport === 'direct' ? '直连' : '需中继'}</Badge></td>
+                    <td data-label="池">
                       <select
                         className="input"
                         style={{ minWidth: 105, padding: '4px 6px' }}
@@ -584,8 +584,8 @@ export function Pool() {
                         </button>
                       ) : null}
                     </td>
-                    <td><Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge></td>
-                    <td className="caption">{line.lastProbeAt ? `${timeAgo(line.lastProbeAt)} · ${line.passCount ?? 0} 次通过` : '未测'}</td>
+                    <td data-label="状态"><Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge></td>
+                    <td data-label="检测" className="caption">{line.lastProbeAt ? `${timeAgo(line.lastProbeAt)} · ${line.passCount ?? 0} 次通过` : '未测'}</td>
                   </tr>
                 ))}
               </tbody>

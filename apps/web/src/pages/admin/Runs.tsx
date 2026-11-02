@@ -98,26 +98,26 @@ export function Runs() {
 
       <Card flush>
         <div className="table-wrap" style={{ border: 0 }}>
-          <table className="table">
+          <table className="table table--cards">
             <thead>
               <tr><th>状态</th><th>任务</th><th>触发</th><th>开始</th><th>频道</th><th>线路 / 可用</th><th>已测</th><th>流量</th><th>耗时</th><th /></tr>
             </thead>
             <tbody>
               {(data?.items ?? []).map((run) => (
                 <tr key={run.id}>
-                  <td><Badge tone={run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange'}>{run.status}</Badge></td>
-                  <td>
+                  <td data-label="状态"><Badge tone={run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange'}>{run.status}</Badge></td>
+                  <td data-label="任务">
                     <div>{run.task_type ? TASK_LABEL[run.task_type] ?? run.task_type : '—'}</div>
                     {run.task_source ? <div className="caption">{run.task_source}</div> : null}
                   </td>
-                  <td className="caption">{run.trigger}</td>
-                  <td className="caption">{timeAgo(run.started_at)}</td>
-                  <td>{run.channels}</td>
-                  <td>{run.lines} / {run.alive}</td>
-                  <td>{run.probed}</td>
-                  <td className="caption">{formatBytes(run.bytes)}</td>
-                  <td className="caption">{formatDuration(run.duration_ms)}</td>
-                  <td><Button size="sm" variant="ghost" onClick={() => void openRun(run)}><FileText size={14} /></Button></td>
+                  <td data-label="触发" className="caption">{run.trigger}</td>
+                  <td data-label="开始" className="caption">{timeAgo(run.started_at)}</td>
+                  <td data-label="频道">{run.channels}</td>
+                  <td data-label="线路 / 可用">{run.lines} / {run.alive}</td>
+                  <td data-label="已测">{run.probed}</td>
+                  <td data-label="流量" className="caption">{formatBytes(run.bytes)}</td>
+                  <td data-label="耗时" className="caption">{formatDuration(run.duration_ms)}</td>
+                  <td data-label=""><Button size="sm" variant="ghost" onClick={() => void openRun(run)}><FileText size={14} /></Button></td>
                 </tr>
               ))}
               {!isLoading && !data?.items.length ? (
@@ -126,7 +126,6 @@ export function Runs() {
             </tbody>
           </table>
         </div>
-        <div className="caption show-mobile" style={{ padding: '8px 14px' }}>← 左右滑动查看完整表格 →</div>
       </Card>
 
       <Sheet open={Boolean(selected)} onClose={() => setSelected(null)} title="运行详情" subtitle={selected?.id}>

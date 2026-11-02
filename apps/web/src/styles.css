@@ -1369,6 +1369,64 @@ button {
   .sheet {
     max-height: 92dvh;
   }
+
+  .table--cards {
+    min-width: 0;
+  }
+
+  .table--cards thead {
+    display: none;
+  }
+
+  .table--cards,
+  .table--cards tbody,
+  .table--cards tr,
+  .table--cards td {
+    display: block;
+    width: 100%;
+  }
+
+  .table--cards tr {
+    padding: 10px 12px;
+    border-bottom: 0.5px solid var(--sep);
+  }
+
+  .table--cards tr:last-child {
+    border-bottom: 0;
+  }
+
+  .table--cards td {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 3px 0;
+    border: 0;
+    text-align: right;
+  }
+
+  .table--cards td::before {
+    content: attr(data-label);
+    flex: none;
+    color: var(--label-3);
+    font-size: 11px;
+    font-weight: 600;
+    text-align: left;
+    padding-top: 2px;
+  }
+
+  .table--cards td[data-label=""]::before {
+    content: "";
+  }
+
+  .table--cards td:first-child {
+    position: static;
+    background: transparent;
+  }
+
+  .table--cards td > div {
+    text-align: right;
+  }
 }
 
 @media (min-width: 720px) {
