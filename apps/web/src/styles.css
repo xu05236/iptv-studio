@@ -1332,6 +1332,11 @@ button {
 
   .row {
     gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .row > .grow {
+    flex: 1 1 160px;
   }
 
   .btn {

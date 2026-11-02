@@ -139,19 +139,19 @@ export function SettingsPage() {
             <div className="grow"><Field label="并发数" hint="同时探测的线路数；越高越快，但过高容易误判或被源站限速"><input className="input" inputMode="numeric" value={form.concurrency} onChange={(event) => set('concurrency', Number(event.target.value))} /></Field></div>
           </div>
           <div className="table-wrap" style={{ marginTop: 4 }}>
-            <table className="table" style={{ minWidth: 640 }}>
+            <table className="table table--cards">
               <thead>
                 <tr><th>预算</th><th>探测耗时</th><th>整轮耗时</th><th>探测流量</th><th>KV 写入</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {BUDGET_TIERS.map((row) => (
                   <tr key={row.budget} style={row.budget === form.probeBudget ? { background: 'rgba(245, 165, 36, 0.08)' } : undefined}>
-                    <td>{row.budget}</td>
-                    <td>{row.probe}</td>
-                    <td>{row.run}</td>
-                    <td>{row.traffic}</td>
-                    <td>{row.kv}</td>
-                    <td>{row.actions}</td>
+                    <td data-label="预算">{row.budget}</td>
+                    <td data-label="探测耗时">{row.probe}</td>
+                    <td data-label="整轮耗时">{row.run}</td>
+                    <td data-label="探测流量">{row.traffic}</td>
+                    <td data-label="KV 写入">{row.kv}</td>
+                    <td data-label="Actions">{row.actions}</td>
                   </tr>
                 ))}
               </tbody>

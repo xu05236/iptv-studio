@@ -256,7 +256,7 @@ export function Sources() {
             <span className="caption">可用 / 解析 · UTC 日期</span>
           </div>
           <div className="table-wrap" style={{ marginTop: 10, border: 0 }}>
-            <table className="table" style={{ minWidth: 620 }}>
+            <table className="table table--cards">
               <thead>
                 <tr>
                   <th>采集站</th>
@@ -269,14 +269,14 @@ export function Sources() {
               <tbody>
                 {health.data.items.map((item) => (
                   <tr key={item.sourceId}>
-                    <td className="truncate" style={{ maxWidth: 160 }}>{item.name}</td>
+                    <td data-label="采集站" className="truncate" style={{ maxWidth: 160 }}>{item.name}</td>
                     {Array.from({ length: health.data.days }, (_, index) => {
                       const date = new Date(Date.now() - (health.data.days - 1 - index) * 86_400_000).toISOString().slice(0, 10);
                       const point = item.points.find((entry) => entry.day === date);
-                      if (!point) return <td key={date} className="caption">—</td>;
+                      if (!point) return <td key={date} data-label={date.slice(5)} className="caption">—</td>;
                       const pct = point.parsed ? Math.round((point.alive / point.parsed) * 100) : 0;
                       return (
-                        <td key={date} style={{ color: !point.fetched ? 'var(--red)' : pct >= 30 ? 'var(--green)' : 'var(--orange)' }}>
+                        <td key={date} data-label={date.slice(5)} style={{ color: !point.fetched ? 'var(--red)' : pct >= 30 ? 'var(--green)' : 'var(--orange)' }}>
                           {point.fetched ? `${point.alive}/${point.parsed}` : '失败'}
                           <div className="caption">{pct}%</div>
                         </td>
