@@ -580,6 +580,8 @@ async function publishPhase(
   await reportTaskProgress(api, 5, 5, '频道元数据同步完成');
 
   const previousCatalog = await store.getJson<ExportCatalog>('state/prev.json');
+  const reportBaseline = await store.getJson<ExportCatalog>('state/report-baseline.json');
+  const baselineCatalog = reportBaseline ?? previousCatalog;
   const currentSnapshot = {
     generatedAt: output.catalog.generatedAt,
     channels: output.catalog.items.map((item) => ({
@@ -588,10 +590,10 @@ async function publishPhase(
     })),
   };
   const diff = diffCatalogs(
-    previousCatalog
+    baselineCatalog
       ? {
-          generatedAt: previousCatalog.generatedAt,
-          channels: previousCatalog.items.map((item) => ({
+          generatedAt: baselineCatalog.generatedAt,
+          channels: baselineCatalog.items.map((item) => ({
             channel: { id: item.channel.id, name: item.channel.name, group: item.channel.group },
             lines: item.lines,
           })),
@@ -605,9 +607,12 @@ async function publishPhase(
     added: diff.addedChannels.length,
     removed: diff.removedChannels.length,
   });
-  if (settings.notifyTelegram && config.telegram && process.env.AUTO_PUBLISH !== 'true') {
-    const sent = await notifyTelegram(config.telegram.botToken, config.telegram.chatId, `<b>IPTV 日报</b>\n${formatDiff(diff)}`);
+  const telegram = config.telegram;
+  const shouldReport = settings.notifyTelegram && Boolean(telegram) && process.env.TRIGGER === 'schedule' && process.env.AUTO_PUBLISH !== 'true';
+  if (shouldReport && telegram) {
+    const sent = await notifyTelegram(telegram.botToken, telegram.chatId, `<b>IPTV 日报</b>\n${formatDiff(diff)}`);
     logger.info('Telegram 通知', { sent });
+    if (sent) await store.put('state/report-baseline.json', JSON.stringify(output.catalog), 'application/json; charset=utf-8');
   }
   await store.put('state/prev.json', JSON.stringify(output.catalog), 'application/json; charset=utf-8');
   return { output, logKey };
