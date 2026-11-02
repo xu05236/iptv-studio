@@ -377,8 +377,10 @@ async function syncSourceStats(
   remote: RemoteConfig,
   lines: LineEntry[],
   collected: CollectedSource[],
+  sourceId?: string,
 ): Promise<void> {
-  const stats = remote.sources.map((source) => {
+  const targets = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
+  const stats = targets.map((source) => {
     const sourceLines = lines.filter((line) => line.sourceId === source.id);
     const aliveLines = sourceLines.filter((line) => line.status === 'alive');
     const testedLines = sourceLines.filter((line) => line.lastProbeAt && (line.status === 'alive' || line.status === 'dead' || line.status === 'suspect'));
@@ -625,7 +627,7 @@ async function runFetchPhase(): Promise<void> {
     report.sources = remote.sources.length;
     const { lines, collected, sourceId } = await fetchPhase(api, remote, store, logger, previousState, tombstones);
     await store.put('state/lines.json', JSON.stringify({ generatedAt: nowIso(), lines }), 'application/json');
-    await syncSourceStats(api, remote, lines, collected);
+    await syncSourceStats(api, remote, lines, collected, sourceId);
 
     const alive = lines.filter((line) => line.status === 'alive').length;
     const logKey = await writeLog(store, runId, logger);
@@ -907,7 +909,7 @@ async function runCollectCombined(): Promise<void> {
 
     const { lines, collected, sourceId } = await fetchPhase(api, remote, store, logger, previousState, tombstones);
     const { summary } = await probePhase(lines, remote, config, logger, sourceId, true);
-    await syncSourceStats(api, remote, lines, collected);
+    await syncSourceStats(api, remote, lines, collected, sourceId);
     const { output, logKey } = await publishPhase(api, store, config, remote, lines, logger, runId, 'fetch');
 
     report = {
