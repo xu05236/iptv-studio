@@ -219,6 +219,8 @@ export function Probe() {
         </div>
       ) : null}
 
+      <details open className="filter-details">
+        <summary className="filter-summary">筛选条件</summary>
       <div className="row row--wrap" style={{ gap: 8 }}>
         <div className="search grow" style={{ minWidth: 220 }}>
           <Search size={16} className="search__icon" />
@@ -249,6 +251,7 @@ export function Probe() {
           </Button>
         ) : null}
       </div>
+      </details>
 
       <div className="row row--between row--wrap">
         <span className="caption">共 {totalItems} 条检测结果</span>

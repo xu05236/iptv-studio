@@ -365,6 +365,8 @@ export function Pool() {
       ) : null}
 
       <Card>
+        <details open className="filter-details">
+          <summary className="filter-summary">筛选条件</summary>
         <div className="row row--wrap" style={{ gap: 8, alignItems: 'flex-end' }}>
           <label className="stack stack--tight grow">
             <span className="caption">频道</span>
@@ -436,6 +438,7 @@ export function Pool() {
             <input className="input" value={search} onChange={(event) => { setSearch(event.target.value); resetPage(); }} placeholder="频道 / 源 / URL" />
           </label>
         </div>
+        </details>
       </Card>
 
       <div className="caption" style={{ padding: '0 2px' }}>

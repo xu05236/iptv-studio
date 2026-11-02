@@ -339,7 +339,7 @@ export function SettingsPage() {
         </div>
       </Card>
 
-      <Button block variant="primary" loading={save.isPending} onClick={() => save.mutate()}>保存全部设置</Button>
+      <Button block variant="primary" className="save-bar" loading={save.isPending} onClick={() => save.mutate()}>保存全部设置</Button>
     </div>
   );
 }

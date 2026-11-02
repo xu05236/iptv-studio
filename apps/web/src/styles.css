@@ -1193,6 +1193,10 @@ button {
 
 /* ---------------------------------------------------------- admin */
 
+.filter-summary {
+  display: none;
+}
+
 .admin {
   display: grid;
   grid-template-columns: 1fr;
@@ -1437,6 +1441,41 @@ button {
 @media (min-width: 720px) {
   .show-mobile {
     display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .filter-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 2px 0 10px;
+    list-style: none;
+  }
+
+  .filter-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .filter-summary::after {
+    content: "展开";
+    color: var(--label-3);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .filter-details[open] .filter-summary::after {
+    content: "收起";
+  }
+
+  .save-bar {
+    position: sticky;
+    bottom: calc(10px + var(--safe-b));
+    z-index: 20;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   }
 }
 
