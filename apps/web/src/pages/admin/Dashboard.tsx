@@ -291,8 +291,8 @@ export function Dashboard() {
           <Button loading={dispatch.isPending} disabled={kvBlocked} onClick={() => dispatch.mutate('collect')}>
             <PlayCircle size={15} /> 立即采集
           </Button>
-          <Button variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
-            发布更新
+          <Button loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
+            <RefreshCw size={15} /> 发布更新
           </Button>
           <Button loading={refreshUsage.isPending} onClick={() => refreshUsage.mutate()}>
             <RefreshCw size={15} /> 刷新用量
