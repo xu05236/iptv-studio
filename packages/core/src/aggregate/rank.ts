@@ -35,6 +35,7 @@ function freshnessScore(lastProbeAt?: string, now = Date.now()): number {
 
 export interface ScoreInput {
   speedKbps?: number;
+  latencyMs?: number;
   resolution?: string;
   height?: number;
   status: string;
@@ -57,15 +58,19 @@ export function scoreLine(input: ScoreInput, now = Date.now()): number {
   const reputation = Math.max(0, Math.min(1, (input.sourceReputation ?? 50) / 100));
   const protocol = input.protocol === 'hls' ? 1 : input.protocol === 'http' ? 0.9 : 0.7;
   const freshness = freshnessScore(input.lastProbeAt, now);
+  const latency = input.latencyMs && input.latencyMs > 0
+    ? 1 - Math.min(1, input.latencyMs / 2_000)
+    : 0.5;
   const loopPenalty = input.loop ? 0.55 : 1;
 
   const raw =
-    0.4 * speedScore(input.speedKbps) +
-    0.24 * quality +
+    0.36 * speedScore(input.speedKbps) +
+    0.08 * latency +
+    0.22 * quality +
     0.14 * reliability +
-    0.1 * reputation +
-    0.07 * protocol +
-    0.05 * freshness;
+    0.10 * reputation +
+    0.06 * protocol +
+    0.04 * freshness;
 
   return Math.round(Math.max(0, Math.min(100, raw * 100 * loopPenalty)) * 10) / 10;
 }
