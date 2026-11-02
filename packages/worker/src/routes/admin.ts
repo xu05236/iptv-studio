@@ -377,7 +377,10 @@ adminRoutes.post('/notify/test', async (c) => {
     body: JSON.stringify({ chat_id: chatId, text: '✅ IPTV Studio 通知测试成功' }),
   });
   const result = (await response.json()) as { ok?: boolean; description?: string };
-  if (!result.ok) return fail(`Telegram 返回：${result.description ?? response.status}`, 502);
+  if (!result.ok) {
+    const masked = `${String(chatId).slice(0, 3)}***${String(chatId).slice(-4)}`;
+    return fail(`Telegram 返回：${result.description ?? response.status}（当前 chat ${masked}）`, 502);
+  }
   return ok({ sent: true });
 });
 
