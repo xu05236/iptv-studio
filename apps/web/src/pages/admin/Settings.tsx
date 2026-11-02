@@ -40,6 +40,18 @@ export function SettingsPage() {
     }>('/api/admin/schedule'),
   });
 
+  const maintenance = useMutation({
+    mutationFn: async (action: 'orphans' | 'logos') =>
+      action === 'orphans'
+        ? api.post<{ message: string }>('/api/admin/runs/dispatch', { command: 'cleanup-orphans', source: 'manual' })
+        : api.post<{ cleaned: number }>('/api/admin/db/clean-logo-names'),
+    onSuccess: (result) => {
+      show('message' in result ? result.message : `已清理 ${result.cleaned} 条旧台标`);
+      void queryClient.invalidateQueries({ queryKey: ['admin'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   useEffect(() => {
     if (data?.settings) {
       setForm(data.settings);
@@ -51,8 +63,7 @@ export function SettingsPage() {
     mutationFn: () => api.put<{ settings: AppSettings }>('/api/admin/settings', {
       ...form,
       epgUrls: epgText.split(/\n+/).map((line) => line.trim()).filter(Boolean),
-    }),
-    onSuccess: () => {
+    }),    onSuccess: () => {
       show('设置已保存');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'schedule'] });
@@ -306,6 +317,26 @@ export function SettingsPage() {
           </div>
         </div>
         {data?.publicBaseUrl ? <div className="caption" style={{ marginTop: 10 }}>公开地址：{data.publicBaseUrl}</div> : null}
+      </Card>
+
+      <Card>
+        <div className="title-3">维护</div>
+        <div className="list" style={{ marginTop: 10 }}>
+          <div className="list__row">
+            <div className="grow">
+              <div className="list__title">清理孤儿线路</div>
+              <div className="caption">删除频道记录已不存在的线路，缩短 state 并纠正统计；会创建一条手动任务。</div>
+            </div>
+            <Button size="sm" loading={maintenance.isPending} onClick={() => maintenance.mutate('orphans')}>开始清理</Button>
+          </div>
+          <div className="list__row">
+            <div className="grow">
+              <div className="list__title">清理 D1 旧台标值</div>
+              <div className="caption">把历史遗留的非 http(s) 台标文件名置空，避免后台显示脏值；不影响已发布台标。</div>
+            </div>
+            <Button size="sm" variant="glass" loading={maintenance.isPending} onClick={() => maintenance.mutate('logos')}>清理旧值</Button>
+          </div>
+        </div>
       </Card>
 
       <Button block variant="primary" loading={save.isPending} onClick={() => save.mutate()}>保存全部设置</Button>

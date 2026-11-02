@@ -224,7 +224,7 @@ adminRoutes.get('/runs/:id/log', async (c) => {
 
 adminRoutes.post('/runs/dispatch', async (c) => {
   const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string; lineKeys?: string[] | string; phase?: string; source?: string }>(c)) ?? {};
-  const allowedCommands = new Set(['collect', 'export', 'epg', 'fetch', 'probe', 'probe-batch', 'publish', 'liveness', 'probe-lines']);
+  const allowedCommands = new Set(['collect', 'export', 'epg', 'fetch', 'probe', 'probe-batch', 'publish', 'liveness', 'probe-lines', 'cleanup-orphans']);
   const requestedCommand = body.command ?? '';
   const command = allowedCommands.has(requestedCommand) ? requestedCommand : 'collect';
   const force = Boolean(body.force);
@@ -342,6 +342,15 @@ adminRoutes.post('/snapshots/:id/restore', async (c) => {
   if (guide) await putArtifact(c.env, 'state/guide.json', JSON.stringify(guide), json);
   await audit(c.env, c.get('actor'), 'snapshot.restore', id);
   return ok({ ok: true });
+});
+
+adminRoutes.post('/db/clean-logo-names', async (c) => {
+  const result = await c.env.DB.prepare(
+    "UPDATE channels SET logo = NULL WHERE logo IS NOT NULL AND logo NOT LIKE 'http%'",
+  ).run();
+  const cleaned = Number((result.meta as { changes?: number }).changes ?? 0);
+  await audit(c.env, c.get('actor'), 'db.clean_logo_names', 'channels', { cleaned });
+  return ok({ cleaned });
 });
 
 adminRoutes.get('/settings', async (c) => {

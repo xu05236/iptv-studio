@@ -8,7 +8,7 @@ on:
       command:
         description: 'collect=全流程，fetch=只抓源，probe=只测速，probe-batch=分批探测，publish=只发布，export=重建导出，epg=只更新节目单，liveness=池内测活，probe-lines=指定线路探测'
         type: choice
-        options: [collect, fetch, probe, probe-batch, publish, export, epg, liveness, probe-lines]
+        options: [collect, fetch, probe, probe-batch, publish, export, epg, liveness, probe-lines, cleanup-orphans]
         default: collect
       budget:
         description: '本次测速条数（首轮建议 1200，稳定后再调大）'
@@ -91,6 +91,8 @@ jobs:
             npm run liveness -w @iptv/runner
           elif [ "${{ github.event.inputs.command || 'collect' }}" = "probe-lines" ]; then
             npm run probe-lines -w @iptv/runner
+          elif [ "${{ github.event.inputs.command || 'collect' }}" = "cleanup-orphans" ]; then
+            npm run cleanup-orphans -w @iptv/runner
           else
             npm run collect -w @iptv/runner
           fi
