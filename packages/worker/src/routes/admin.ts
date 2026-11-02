@@ -353,6 +353,20 @@ adminRoutes.post('/db/clean-logo-names', async (c) => {
   return ok({ cleaned });
 });
 
+adminRoutes.get('/notify/chats', async (c) => {
+  const token = c.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return fail('未配置 TELEGRAM_BOT_TOKEN', 400);
+  const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, { method: 'GET' });
+  const result = (await response.json()) as { ok?: boolean; description?: string; result?: Array<{ message?: { chat?: { id: number; type: string; username?: string; title?: string; first_name?: string } } }> };
+  if (!result.ok) return fail(`Telegram 返回：${result.description ?? response.status}`, 502);
+  const chats = new Map<number, { id: number; type: string; name?: string }>();
+  for (const update of result.result ?? []) {
+    const chat = update.message?.chat;
+    if (chat) chats.set(chat.id, { id: chat.id, type: chat.type, name: chat.title ?? chat.first_name ?? chat.username });
+  }
+  return ok({ chats: [...chats.values()] });
+});
+
 adminRoutes.post('/notify/test', async (c) => {
   const token = c.env.TELEGRAM_BOT_TOKEN;
   const chatId = c.env.TELEGRAM_CHAT_ID;
