@@ -48,7 +48,7 @@ interface TaskItem {
   id: string;
   type: string;
   source: 'schedule' | 'manual' | 'detection' | 'source' | 'cli';
-  status: 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+  status: 'scheduled' | 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
   priority: number;
   payload: Record<string, string>;
   progress: { done: number; total: number; unit: string };
@@ -213,6 +213,7 @@ export function Dashboard() {
 
   const taskItems = tasks.data?.items ?? [];
   const runningTask = taskItems.find((task) => task.status === 'running');
+  const scheduledTasks = taskItems.filter((task) => task.status === 'scheduled');
   const queuedTasks = taskItems
     .filter((task) => task.status === 'queued' || task.status === 'paused')
     .sort((a, b) => b.priority - a.priority || a.createdAt.localeCompare(b.createdAt));
@@ -338,27 +339,23 @@ export function Dashboard() {
           <>
             <div className="caption" style={{ marginTop: 10 }}>计划任务</div>
             <div className="list">
-              <div className="list__row">
-                <div className="grow">定时抓源</div>
-                <div className="caption">
-                  {tasks.data.schedules.fetch.enabled ? `每 ${tasks.data.schedules.fetch.intervalDays} 天` : '关闭'}
-                  {tasks.data.schedules.fetch.nextAt ? ` · 下次 ${formatSnapshot(tasks.data.schedules.fetch.nextAt)}` : ''}
+              {scheduledTasks.map((task) => (
+                <div className="list__row" key={task.id}>
+                  <div className="grow">
+                    <div className="row" style={{ gap: 6 }}>
+                      <Badge>定时</Badge>
+                      <span>{TASK_TYPE_LABEL[task.type] ?? task.type}</span>
+                    </div>
+                    <div className="caption">
+                      {task.payload.nextAt ? `下次 ${formatSnapshot(task.payload.nextAt)}` : '等待新线路'}
+                    </div>
+                  </div>
+                  <Button size="sm" variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: task.type as 'probe-batch' | 'fetch' | 'publish' })}>
+                    立即执行
+                  </Button>
                 </div>
-              </div>
-              <div className="list__row">
-                <div className="grow">定时发布</div>
-                <div className="caption">
-                  {tasks.data.schedules.publish.enabled ? `每天 ${tasks.data.schedules.publish.times}` : '关闭'}
-                  {tasks.data.schedules.publish.nextAt ? ` · 下次 ${formatSnapshot(tasks.data.schedules.publish.nextAt)}` : ''}
-                </div>
-              </div>
-              <div className="list__row">
-                <div className="grow">分批探测</div>
-                <div className="caption">
-                  {tasks.data.schedules.probe.enabled ? `每 ${tasks.data.intervalHours} 小时` : '关闭'}
-                  {tasks.data.schedules.probe.nextAt ? ` · 下次 ${formatSnapshot(tasks.data.schedules.probe.nextAt)}` : ' · 等待新线路'}
-                </div>
-              </div>
+              ))}
+              {!scheduledTasks.length ? <div className="caption">没有启用的定时任务</div> : null}
             </div>
 
             {runningTask ? (

@@ -3,7 +3,7 @@ import { getJson } from './store.js';
 import { dispatchWorkflow } from './github.js';
 
 export type TaskSource = 'schedule' | 'manual' | 'detection' | 'source' | 'cli';
-export type TaskStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+export type TaskStatus = 'scheduled' | 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
 
 export interface Task {
   id: string;
@@ -75,6 +75,24 @@ export async function updateTask(env: Env, id: string, patch: Partial<Task>): Pr
   return tasks[index]!;
 }
 
+async function notifyTaskFailure(env: Env, task: Task, message?: string): Promise<void> {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chatId = env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: `❌ IPTV 任务失败\n来源：${task.source}\n类型：${task.type}\n${message ?? task.message ?? ''}`,
+      }),
+    });
+  } catch {
+    // Notification must never affect task completion.
+  }
+}
+
 export async function finishTask(env: Env, taskId: string, status: 'done' | 'failed', message?: string): Promise<void> {
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
@@ -84,6 +102,7 @@ export async function finishTask(env: Env, taskId: string, status: 'done' | 'fai
   if (status === 'done' && task.progress.total > 0) task.progress.done = task.progress.total;
   task.finishedAt = new Date().toISOString();
   await saveTasks(env, tasks);
+  if (status === 'failed') await notifyTaskFailure(env, task, task.message);
 }
 
 export async function progressTask(env: Env, taskId: string, done: number, total?: number): Promise<void> {
@@ -152,6 +171,7 @@ export async function dispatchNext(env: Env): Promise<{ task?: Task; message: st
     next.message = '已派发';
   }
   await saveTasks(env, tasks);
+  if (!result.ok) await notifyTaskFailure(env, next, result.message);
   return { task: next, message: result.ok ? '已派发' : result.message };
 }
 

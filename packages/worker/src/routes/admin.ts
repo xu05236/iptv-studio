@@ -462,12 +462,23 @@ adminRoutes.get('/tasks', async (c) => {
     };
   });
   const nextPublish = nextAutoPublishAt(settings);
+  const scheduledAt = new Date().toISOString();
+  const scheduledItems: Array<Record<string, unknown>> = [];
+  if (settings.autoFetchEnabled) {
+    scheduledItems.push({ id: 'scheduled-fetch', type: 'fetch', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: fetchState?.nextRunAt ?? '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
+  }
+  if (settings.autoPublishEnabled) {
+    scheduledItems.push({ id: 'scheduled-publish', type: 'publish', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: nextPublish ? new Date(nextPublish).toISOString() : '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
+  }
+  if (settings.autoProbeEnabled) {
+    scheduledItems.push({ id: 'scheduled-probe', type: 'probe-batch', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: probeState?.nextRunAt ?? '' }, progress: { done: 0, total: batchSize, unit: 'lines' }, createdAt: scheduledAt });
+  }
   return ok({
     batchSize,
     intervalHours: settings.autoProbeIntervalHours,
     phases,
     stats: stats ?? null,
-    items: taskItems,
+    items: [...taskItems, ...scheduledItems],
     schedules: {
       probe: {
         enabled: settings.autoProbeEnabled,
