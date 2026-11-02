@@ -34,16 +34,16 @@ export function Home() {
 
       {ready ? (
         <section className="hero">
-          <div className="hero__label">可用线路</div>
+          <div className="hero__label">已发布可用线路</div>
           <div className="hero__value">{formatNumber(data?.totals.alive)}</div>
           <div className="hero__stats">
             <div className="hero__stat">
               <strong>{formatNumber(data?.totals.channels)}</strong>
-              <small>频道</small>
+              <small>已发布频道</small>
             </div>
             <div className="hero__stat">
               <strong>{formatNumber(data?.totals.lines)}</strong>
-              <small>线路</small>
+              <small>已发布线路</small>
             </div>
             <div className="hero__stat">
               <strong>{aliveRatio}%</strong>

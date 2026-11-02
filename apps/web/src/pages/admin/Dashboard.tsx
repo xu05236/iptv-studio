@@ -256,7 +256,8 @@ export function Dashboard() {
   const ready = stats.index.ready;
   const poolTotal = stats.pool?.total ?? stats.index.totals.lines;
   const poolAlive = stats.pool?.alive ?? stats.index.totals.alive;
-  const aliveRatio = poolTotal ? Math.round((poolAlive / poolTotal) * 100) : 0;
+  const poolRatio = poolTotal ? Math.round((poolAlive / poolTotal) * 100) : 0;
+  const publishedRatio = stats.index.totals.lines ? Math.round((stats.index.totals.alive / stats.index.totals.lines) * 100) : 0;
   const usage = usageQuery.data?.usage;
   const today = new Date().toISOString().slice(0, 10);
   // The snapshot is written up to 6 hours apart; right after UTC midnight it
@@ -322,7 +323,8 @@ export function Dashboard() {
 
       <div className="grid">
         <Stat value={stats.index.totals.channels} label="目录频道" />
-        <Stat value={poolAlive} label={`线路池可用 · ${aliveRatio}% / 共 ${poolTotal}`} />
+        <Stat value={stats.index.totals.alive} label={`目录可用 · ${publishedRatio}% / 共 ${stats.index.totals.lines}`} />
+        <Stat value={poolAlive} label={`线路池可用 · ${poolRatio}% / 共 ${poolTotal}`} />
         <Stat value={stats.sources.enabled} label={`启用源 / 共 ${stats.sources.total}`} />
         <Stat value={stats.subscriptions} label="订阅出口" />
       </div>
