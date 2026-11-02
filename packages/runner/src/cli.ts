@@ -359,6 +359,19 @@ async function writePoolStats(store: ArtifactStore, remote: RemoteConfig, lines:
   await store.put('state/pool-stats.json', JSON.stringify(poolStatsFor(remote, lines)), 'application/json');
 }
 
+/** Probe changes alive counts; refresh the source cards without touching reputation. */
+async function syncSourceCounts(api: ApiClient, remote: RemoteConfig, lines: LineEntry[]): Promise<void> {
+  const counts = remote.sources.map((source) => {
+    const sourceLines = lines.filter((line) => line.sourceId === source.id);
+    return {
+      sourceId: source.id,
+      entryCount: sourceLines.length,
+      aliveCount: sourceLines.filter((line) => line.status === 'alive').length,
+    };
+  });
+  await api.post('/api/admin/sync/source-counts', { counts }).catch(() => undefined);
+}
+
 async function syncSourceStats(
   api: ApiClient,
   remote: RemoteConfig,
@@ -667,6 +680,7 @@ async function runProbePhase(): Promise<void> {
     await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
     await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
     await writePoolStats(store, remote, lines);
+  await syncSourceCounts(api, remote, lines);
     const logKey = await writeLog(store, runId, logger);
     const alive = lines.filter((line) => line.status === 'alive').length;
     report = {
@@ -758,6 +772,7 @@ async function runBatchProbe(): Promise<void> {
     if (!phase) {
       logger.info('分批探测空闲：没有待测线路');
       await writePoolStats(store, remote, lines);
+  await syncSourceCounts(api, remote, lines);
       report = { ...report, status: 'success', finishedAt: nowIso(), channels: remote.channels.length, lines: lines.length, durationMs: Date.now() - startedMs };
       await finishRun(api, report);
       return;
@@ -797,6 +812,7 @@ async function runBatchProbe(): Promise<void> {
     await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
     await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
     await writePoolStats(store, remote, lines);
+  await syncSourceCounts(api, remote, lines);
     const logKey = await writeLog(store, runId, logger);
     const alive = lines.filter((line) => line.status === 'alive').length;
     report = {
@@ -1020,6 +1036,7 @@ async function runLiveness(): Promise<void> {
     });
     await store.put('state/pool.json', JSON.stringify(poolSnapshot), 'application/json');
     await writePoolStats(store, remote, lines);
+  await syncSourceCounts(api, remote, lines);
 
     const logKey = await writeLog(store, runId, logger);
     const aliveTotal = lines.filter((line) => line.status === 'alive').length;
@@ -1171,6 +1188,7 @@ async function runCleanupOrphans(): Promise<void> {
     await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
     await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
     await writePoolStats(store, remote, lines);
+  await syncSourceCounts(api, remote, lines);
     logger.info('孤儿线路清理完成', { removed: pruned.removed, lines: lines.length });
     const logKey = await writeLog(store, runId, logger);
     const alive = lines.filter((line) => line.status === 'alive').length;

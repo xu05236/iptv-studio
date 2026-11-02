@@ -637,6 +637,21 @@ adminRoutes.post('/sync/sources', async (c) => {
   return ok({ synced: body.stats.length });
 });
 
+/** Runner -> D1: refresh only the source line counts after probing. */
+adminRoutes.post('/sync/source-counts', async (c) => {
+  const body = await readJson<{ counts?: Array<{ sourceId?: string; entryCount?: number; aliveCount?: number }> }>(c);
+  if (!Array.isArray(body?.counts)) return fail('缺少 counts');
+  const statements = body.counts
+    .filter((item) => item && typeof item.sourceId === 'string' && Number.isFinite(item.entryCount) && Number.isFinite(item.aliveCount))
+    .map((item) =>
+      c.env.DB.prepare(
+        "UPDATE sources SET entry_count = ?, alive_count = ?, updated_at = datetime('now') WHERE id = ?",
+      ).bind(Math.max(0, Number(item.entryCount)), Math.max(0, Number(item.aliveCount)), item.sourceId),
+    );
+  if (statements.length) await c.env.DB.batch(statements);
+  return ok({ synced: statements.length });
+});
+
 adminRoutes.get('/catalog', async (c) => {
   const catalog = await loadCatalog(c.env);
   if (!catalog) return fail('尚未生成频道数据', 409);
