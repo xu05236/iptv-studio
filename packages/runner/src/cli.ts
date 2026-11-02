@@ -418,7 +418,13 @@ async function fetchPhase(
   const lines = pruned.lines;
   if (pruned.removed) logger.warn('已剔除孤儿线路', { removed: pruned.removed });
   logger.info('线路归一完成', { lines: lines.length, sourceId: sourceId || undefined });
-  await writePoolStats(store, remote, lines);
+  const stats = poolStatsFor(remote, lines);
+  await store.put('state/pool-stats.json', JSON.stringify(stats), 'application/json');
+  if (stats.pending > 0) {
+    // Wake the batch scheduler immediately after a source refresh instead of
+    // waiting for the previous 2h interval to expire.
+    await store.put('state/probe-schedule.json', JSON.stringify({ nextRunAt: new Date().toISOString(), result: 'fetch added pending' }), 'application/json');
+  }
   return { lines, collected, sourceId };
 }
 

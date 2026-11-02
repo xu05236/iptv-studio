@@ -16,7 +16,9 @@ export function buildM3U(channels: ExportChannel[], options: PlaylistOptions = {
     for (const line of channel.lines) {
       if (!line.url) continue;
       const attrs: string[] = [];
-      if (channel.tvgId) attrs.push(`tvg-id="${escapeAttr(channel.tvgId)}"`);
+      // EPG XML uses canonical ids (cctv1); channel.tvgId is often uppercase
+      // (CCTV1), which players treat as case-sensitive and fail to match.
+      attrs.push(`tvg-id="${escapeAttr(channel.id)}"`);
       attrs.push(`tvg-name="${escapeAttr(channel.name)}"`);
       if (channel.logo) attrs.push(`tvg-logo="${escapeAttr(channel.logo)}"`);
       attrs.push(`group-title="${escapeAttr(channel.group)}"`);
@@ -30,6 +32,8 @@ export function buildM3U(channels: ExportChannel[], options: PlaylistOptions = {
       }
 
       out.push(`#EXTINF:-1 ${attrs.join(' ')},${lineDisplayName(channel, line, options)}`);
+      // Some players ignore group-title but understand #EXTGRP; emit both.
+      out.push(`#EXTGRP:${sanitize(channel.group)}`);
       for (const header of headerOptions(line.headers)) out.push(header);
       out.push(line.url.trim());
     }

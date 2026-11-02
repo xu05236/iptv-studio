@@ -259,6 +259,7 @@ export async function publish(
       score: line.score,
       lastProbeAt: line.lastProbeAt ?? null,
       url: line.url,
+      error: line.error ?? null,
       headers: line.headers,
     })),
   );

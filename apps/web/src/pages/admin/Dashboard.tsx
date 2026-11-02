@@ -336,6 +336,31 @@ export function Dashboard() {
         </div>
         {tasks.data ? (
           <>
+            <div className="caption" style={{ marginTop: 10 }}>计划任务</div>
+            <div className="list">
+              <div className="list__row">
+                <div className="grow">定时抓源</div>
+                <div className="caption">
+                  {tasks.data.schedules.fetch.enabled ? `每 ${tasks.data.schedules.fetch.intervalDays} 天` : '关闭'}
+                  {tasks.data.schedules.fetch.nextAt ? ` · 下次 ${formatSnapshot(tasks.data.schedules.fetch.nextAt)}` : ''}
+                </div>
+              </div>
+              <div className="list__row">
+                <div className="grow">定时发布</div>
+                <div className="caption">
+                  {tasks.data.schedules.publish.enabled ? `每天 ${tasks.data.schedules.publish.times}` : '关闭'}
+                  {tasks.data.schedules.publish.nextAt ? ` · 下次 ${formatSnapshot(tasks.data.schedules.publish.nextAt)}` : ''}
+                </div>
+              </div>
+              <div className="list__row">
+                <div className="grow">分批探测</div>
+                <div className="caption">
+                  {tasks.data.schedules.probe.enabled ? `每 ${tasks.data.intervalHours} 小时` : '关闭'}
+                  {tasks.data.schedules.probe.nextAt ? ` · 下次 ${formatSnapshot(tasks.data.schedules.probe.nextAt)}` : ' · 等待新线路'}
+                </div>
+              </div>
+            </div>
+
             {runningTask ? (
               <div className="list" style={{ marginTop: 10 }}>
                 <div className="list__row" style={{ background: 'rgba(52, 199, 89, 0.08)' }}>

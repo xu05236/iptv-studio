@@ -28,8 +28,9 @@ describe('M3U export', () => {
   it('writes tvg attributes, catch-up and request headers', () => {
     const text = buildM3U(channels, { epgUrl: 'https://epg/e.xml' });
     expect(text.startsWith('#EXTM3U url-tvg="https://epg/e.xml"')).toBe(true);
-    expect(text).toContain('tvg-id="CCTV1"');
+    expect(text).toContain('tvg-id="cctv1"');
     expect(text).toContain('group-title="央视"');
+    expect(text).toContain('#EXTGRP:央视');
     expect(text).toContain('catchup="append"');
     expect(text).toContain('catchup-days="7"');
     expect(text).toContain('#EXTVLCOPT:http-user-agent=VLC/3.0');

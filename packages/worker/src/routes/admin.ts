@@ -585,6 +585,7 @@ interface ProbeLine {
   score: number;
   lastProbeAt: string | null;
   url: string;
+  error?: string;
   sourceName?: string;
   sourceSite?: string;
   sourceReputation?: number;
@@ -650,6 +651,7 @@ adminRoutes.get('/lines', async (c) => {
         score: line.score,
         lastProbeAt: line.lastProbeAt ?? null,
         url: line.url,
+        error: line.error ?? undefined,
       })),
     );
   }

@@ -23,6 +23,7 @@ interface ProbeLine {
   score: number;
   lastProbeAt: string | null;
   url: string;
+  error?: string;
   sourceName?: string;
   sourceSite?: string;
   sourceReputation?: number;
@@ -298,7 +299,10 @@ export function Probe() {
                     <td><Badge tone={row.resolution ? 'blue' : 'default'}>{formatResolution(row.resolution)}</Badge></td>
                     <td>{formatSpeed(row.speedKbps)}</td>
                     <td className="caption">{formatLatency(row.latencyMs)}</td>
-                    <td><Badge tone={statusTone(row.status)}>{statusLabel(row.status)}</Badge></td>
+                    <td>
+                      <Badge tone={statusTone(row.status)}>{statusLabel(row.status)}</Badge>
+                      {row.status !== 'alive' && row.error ? <div className="caption" style={{ color: 'var(--red)', maxWidth: 170 }}>{row.error}</div> : null}
+                    </td>
                     <td className="caption">{timeAgo(row.lastProbeAt)}</td>
                     <td className="mono" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {row.url.replace(/^https?:\/\//, '').split('/')[0]}
