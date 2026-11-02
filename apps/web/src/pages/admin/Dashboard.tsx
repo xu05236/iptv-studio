@@ -281,10 +281,18 @@ export function Dashboard() {
           <p className="subhead" style={{ marginTop: 4 }}>
             {ready ? `数据更新于 ${timeAgo(stats.index.generatedAt)}` : '还没有生成频道数据'}
           </p>
+          {ready ? (
+            <p className="caption" style={{ marginTop: 2 }}>
+              已发布 {stats.index.generatedAt ? formatSnapshot(stats.index.generatedAt) : '—'} · 线路池 {stats.pool?.generatedAt ? formatSnapshot(stats.pool.generatedAt) : '—'}
+            </p>
+          ) : null}
         </div>
         <div className="row">
           <Button loading={dispatch.isPending} disabled={kvBlocked} onClick={() => dispatch.mutate('collect')}>
             <PlayCircle size={15} /> 立即采集
+          </Button>
+          <Button variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
+            发布更新
           </Button>
           <Button loading={refreshUsage.isPending} onClick={() => refreshUsage.mutate()}>
             <RefreshCw size={15} /> 刷新用量
@@ -327,16 +335,6 @@ export function Dashboard() {
         <Stat value={poolAlive} label={`线路池可用 · ${poolRatio}% / 共 ${poolTotal}`} />
         <Stat value={stats.sources.enabled} label={`启用源 / 共 ${stats.sources.total}`} />
         <Stat value={stats.subscriptions} label="订阅出口" />
-      </div>
-
-      <div className="row row--between row--wrap">
-        <div className="caption">
-          已发布 {stats.index.generatedAt ? formatSnapshot(stats.index.generatedAt) : '—'}
-          {stats.pool?.generatedAt ? ` · 线路池 ${formatSnapshot(stats.pool.generatedAt)}` : ''}
-        </div>
-        <Button size="sm" variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
-          发布更新
-        </Button>
       </div>
 
       {stats.pool?.generatedAt && stats.index.generatedAt && Date.parse(stats.pool.generatedAt) > Date.parse(stats.index.generatedAt) ? (
