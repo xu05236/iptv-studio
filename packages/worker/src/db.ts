@@ -682,7 +682,9 @@ export async function applySourceStats(
            last_ok_at = CASE WHEN ? = 1 THEN datetime('now') ELSE last_ok_at END,
            last_error = ?, etag = COALESCE(?, etag), last_modified = COALESCE(?, last_modified),
            reputation = COALESCE(?, reputation), tier = COALESCE(?, tier),
-           consecutive_failures = ?, status = ?, updated_at = datetime('now')
+           consecutive_failures = ?, status = ?,
+           enabled = CASE WHEN ? >= 5 THEN 0 ELSE enabled END,
+           updated_at = datetime('now')
          WHERE id = ?`,
       ).bind(
         stat.parsed,
@@ -696,6 +698,7 @@ export async function applySourceStats(
         stat.tier ?? null,
         failures,
         status,
+        failures,
         stat.sourceId,
       ),
     );
