@@ -322,8 +322,8 @@ export function Dashboard() {
       ) : null}
 
       <div className="grid">
-        <Stat value={stats.index.totals.channels} label="目录频道" />
-        <Stat value={stats.index.totals.alive} label={`目录可用 · ${publishedRatio}% / 共 ${stats.index.totals.lines}`} />
+        <Stat value={stats.index.totals.channels} label="已发布频道" />
+        <Stat value={stats.index.totals.alive} label={`已发布可用 · ${publishedRatio}% / 共 ${stats.index.totals.lines}`} />
         <Stat value={poolAlive} label={`线路池可用 · ${poolRatio}% / 共 ${poolTotal}`} />
         <Stat value={stats.sources.enabled} label={`启用源 / 共 ${stats.sources.total}`} />
         <Stat value={stats.subscriptions} label="订阅出口" />
@@ -653,7 +653,7 @@ export function Dashboard() {
         <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
           <table className="table">
             <thead>
-              <tr><th>状态</th><th>开始</th><th>频道</th><th>可用</th><th>已测</th><th>耗时</th></tr>
+              <tr><th>状态</th><th>任务</th><th>开始</th><th>频道</th><th>可用</th><th>已测</th><th>耗时</th></tr>
             </thead>
             <tbody>
               {stats.runs.map((run) => (
@@ -663,6 +663,10 @@ export function Dashboard() {
                       {run.status === 'success' ? '成功' : run.status === 'partial' ? '部分' : run.status === 'running' ? '运行中' : '失败'}
                     </Badge>
                   </td>
+                  <td>
+                    <div>{run.task_type ? TASK_TYPE_LABEL[run.task_type] ?? run.task_type : '—'}</div>
+                    {run.task_source ? <div className="caption">{run.task_source}</div> : null}
+                  </td>
                   <td className="caption">{timeAgo(run.started_at)}</td>
                   <td>{run.channels}</td>
                   <td>{run.alive}</td>
@@ -671,7 +675,7 @@ export function Dashboard() {
                 </tr>
               ))}
               {!stats.runs.length ? (
-                <tr><td colSpan={6}><div className="caption" style={{ padding: 12 }}>还没有运行记录</div></td></tr>
+                <tr><td colSpan={7}><div className="caption" style={{ padding: 12 }}>还没有运行记录</div></td></tr>
               ) : null}
             </tbody>
           </table>
