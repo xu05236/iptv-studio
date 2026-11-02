@@ -400,7 +400,7 @@ adminRoutes.post('/actions/cancel-stuck', async (c) => {
   const cancelled: number[] = [];
   for (const status of ['in_progress', 'queued']) {
     const response = await fetch(
-      `https://api.github.com/repos/${c.env.GITHUB_REPO}/actions/runs?status=${status}&per_page=20`,
+      `https://api.github.com/repos/${c.env.GITHUB_REPO}/actions/workflows/collect.yml/runs?status=${status}&per_page=20`,
       { headers },
     );
     const payload = (await response.json()) as { workflow_runs?: Array<{ id: number }> };
