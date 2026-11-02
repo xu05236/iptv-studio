@@ -33,7 +33,7 @@ import { collectSource, type CollectedSource } from './pipeline/collect.js';
 import { planProbes, runProbes } from './pipeline/probe.js';
 import { buildArtifacts, publish, type ExportCatalog } from './pipeline/publish.js';
 import { collectEpg } from './pipeline/epg.js';
-import { loadLogoFiles } from './pipeline/logoFiles.js';
+import { loadLogoPacks } from './pipeline/logoFiles.js';
 import { prefilterLiveness } from './pipeline/liveness.js';
 import { publishSubscriptions } from './pipeline/subscriptions.js';
 import { captureScreenshots } from './pipeline/screenshots.js';
@@ -511,7 +511,7 @@ async function publishPhase(
 ): Promise<{ output: Awaited<ReturnType<typeof buildArtifacts>>; logKey: string }> {
   const settings = remote.settings;
   const registry = buildRegistry(remote);
-  const logoFiles = await loadLogoFiles(store, logger);
+  const logoPacks = await loadLogoPacks(store, logger);
   await reportTaskProgress(api, 0, 5, '准备发布');
   const epg = epgMode === 'fetch'
     ? await collectEpg(settings.epgUrls, registry, logger)
@@ -528,7 +528,7 @@ async function publishPhase(
     epg: epg.data,
     disabledChannelIds: new Set(remote.channels.filter((row) => row.enabled === false || row.enabled === 0).map((row) => row.id)),
     logoProxyBase: `${config.publicBaseUrl.replace(/\/+$/, '')}/api/public/logo`,
-    logoFiles,
+    logoPacks,
   });
   await reportTaskProgress(api, 2, 5, '频道聚合完成');
   const logKey = await writeLog(store, runId, logger);

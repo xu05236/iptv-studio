@@ -20,7 +20,7 @@ import {
 import type { ArtifactStore } from '../store.js';
 import type { RunLogger } from '../logger.js';
 import { buildGuide, nowPlaying, upcoming } from './epg.js';
-import { matchLogoFile } from './logoFiles.js';
+import { matchLogoFile, type LogoPack } from './logoFiles.js';
 
 const GROUP_ORDER = ['央视', '卫视', '地方', '港澳台', '国际', '4K', '影视频道', '体育', '少儿', '纪录', '新闻', '音乐', '付费', '其他'];
 
@@ -29,12 +29,18 @@ type LogoSeed = { id: string; name: string; logo?: string | null; tvgId?: string
 function logoForSeed(seed: LogoSeed, input: BuildInput, lineLogos?: Map<string, string>): string | undefined {
   const stored = seed.logo && /^https?:\/\//i.test(seed.logo) ? seed.logo : undefined;
   const fromLine = !stored && !seed.tvgId ? lineLogos?.get(seed.id) : undefined;
-  const matched = !stored && !fromLine && !seed.tvgId ? matchLogoFile(seed.name, input.logoFiles ?? []) : undefined;
+  const packMatch = !stored && !fromLine && !seed.tvgId
+    ? input.logoPacks
+        ?.map((pack) => ({ base: pack.base, file: matchLogoFile(seed.name, pack.files) }))
+        .find((item) => item.file)
+    : undefined;
+  const packLogo = packMatch?.file ? `${packMatch.base.replace(/\/+$/, '')}/${encodeURIComponent(packMatch.file)}` : undefined;
+  const matched = !stored && !fromLine && !packLogo && !seed.tvgId ? matchLogoFile(seed.name, input.logoFiles ?? []) : undefined;
   const nameLogo = matched
     ? `https://cdn.jsdelivr.net/gh/fanmingming/live@main/tv/${encodeURIComponent(matched)}`
     : undefined;
   return channelLogo(
-    { logo: stored ?? fromLine ?? nameLogo, tvgId: seed.tvgId, name: seed.name },
+    { logo: stored ?? fromLine ?? packLogo ?? nameLogo, tvgId: seed.tvgId, name: seed.name },
     input.settings.logoBaseUrl,
     input.logoProxyBase,
   );
@@ -53,6 +59,8 @@ export interface BuildInput {
   logoProxyBase?: string;
   /** Filenames from the fanmingming logo pack, used to fill name-only channels. */
   logoFiles?: string[];
+  /** Multiple packs, tried in order before the legacy logoFiles fallback. */
+  logoPacks?: LogoPack[];
 }
 
 export interface CatalogItem {

@@ -3,6 +3,14 @@ import type { RunLogger } from '../logger.js';
 
 const CACHE_KEY = 'state/logo-files.json';
 const CACHE_DAYS = 7;
+const OASISIC_KEY = 'state/logo-files-oasisic.json';
+const OASISIC_API = 'https://api.github.com/repos/Hawaiine/Oasisic-IPTV/contents/logo';
+const OASISIC_BASE = 'https://cdn.jsdelivr.net/gh/Hawaiine/Oasisic-IPTV@main/logo';
+
+export interface LogoPack {
+  base: string;
+  files: string[];
+}
 
 export function normalizeLogoName(value: string): string {
   return value
@@ -62,4 +70,32 @@ export async function loadLogoFiles(store: ArtifactStore, logger: RunLogger): Pr
     logger.warn('台标目录获取失败，使用缓存', { error: error instanceof Error ? error.message : String(error) });
     return cached?.files ?? [];
   }
+}
+
+/** Additional Chinese-name pack from Hawaiine/Oasisic-IPTV. */
+export async function loadLogoPacks(store: ArtifactStore, logger: RunLogger): Promise<LogoPack[]> {
+  const fanmingming = await loadLogoFiles(store, logger);
+  let oasisic: string[] = [];
+  const cached = await store.getJson<{ generatedAt: string; files: string[] }>(OASISIC_KEY);
+  if (cached?.files?.length && Date.now() - Date.parse(cached.generatedAt) < CACHE_DAYS * 86_400_000) {
+    oasisic = cached.files;
+  } else {
+    try {
+      const response = await fetch(OASISIC_API, { headers: { 'User-Agent': 'iptv-studio-runner' } });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = (await response.json()) as Array<{ name?: string; type?: string }>;
+      oasisic = payload
+        .filter((item) => item.type === 'file' && item.name?.toLowerCase().endsWith('.png'))
+        .map((item) => item.name!)
+        .sort();
+      if (oasisic.length) await store.put(OASISIC_KEY, JSON.stringify({ generatedAt: new Date().toISOString(), files: oasisic }), 'application/json');
+    } catch (error) {
+      logger.warn('Oasisic 台标目录获取失败', { error: error instanceof Error ? error.message : String(error) });
+      oasisic = cached?.files ?? [];
+    }
+  }
+  return [
+    { base: 'https://cdn.jsdelivr.net/gh/fanmingming/live@main/tv', files: fanmingming },
+    { base: OASISIC_BASE, files: oasisic },
+  ];
 }
