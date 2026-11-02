@@ -182,7 +182,9 @@ export async function runScheduler(env: Env): Promise<void> {
   const at = Date.now();
   if (await runFetchWatch(env, settings, at)) enqueued = true;
   if (await runProbeWatch(env, settings, at)) enqueued = true;
-  if (enqueued) await dispatchNext(env);
+  // Always drain the queue, even when no scheduled task was newly enqueued.
+  // Otherwise manual/source tasks can sit queued until the next schedule event.
+  await dispatchNext(env);
 }
 
 interface IntervalState {

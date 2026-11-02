@@ -284,6 +284,9 @@ adminRoutes.post('/runs', async (c) => {
   await upsertRun(c.env, report as never);
   if (typeof report['taskId'] === 'string') {
     await finishTask(c.env, report['taskId'], report['status'] === 'failed' ? 'failed' : 'done', typeof report['error'] === 'string' ? report['error'] : undefined);
+    // Start the next queued/retried task immediately instead of waiting up to
+    // five minutes for the next scheduler tick.
+    await dispatchNext(c.env);
   }
   return ok({ ok: true });
 });
