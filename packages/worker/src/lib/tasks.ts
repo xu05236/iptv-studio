@@ -275,6 +275,11 @@ async function mutateTaskCore(env: Env, id: string, action: string): Promise<str
     task.status = 'cancelled';
     task.finishedAt = new Date().toISOString();
     task.message = '已取消';
+  } else if (action === 'force-fail') {
+    if (task.status !== 'running') return '只有运行中的任务可以强制结束';
+    task.status = 'failed';
+    task.finishedAt = new Date().toISOString();
+    task.message = '手动强制结束';
   } else if (action === 'run-now') {
     if (task.status === 'running') return '任务已在运行';
     task.status = 'queued';

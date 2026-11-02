@@ -394,6 +394,24 @@ adminRoutes.post('/notify/test', async (c) => {
   return ok({ sent: true });
 });
 
+adminRoutes.post('/actions/cancel-stuck', async (c) => {
+  if (!c.env.GITHUB_TOKEN || !c.env.GITHUB_REPO) return fail('未配置 GITHUB_TOKEN / GITHUB_REPO', 400);
+  const headers = { Authorization: `Bearer ${c.env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'iptv-studio' };
+  const cancelled: number[] = [];
+  for (const status of ['in_progress', 'queued']) {
+    const response = await fetch(
+      `https://api.github.com/repos/${c.env.GITHUB_REPO}/actions/runs?status=${status}&per_page=20`,
+      { headers },
+    );
+    const payload = (await response.json()) as { workflow_runs?: Array<{ id: number }> };
+    for (const run of payload.workflow_runs ?? []) {
+      await fetch(`https://api.github.com/repos/${c.env.GITHUB_REPO}/actions/runs/${run.id}/cancel`, { method: 'POST', headers });
+      cancelled.push(run.id);
+    }
+  }
+  return ok({ cancelled });
+});
+
 adminRoutes.get('/settings', async (c) => {
   const settings = await loadSettings(c.env);
   return ok({ settings, publicBaseUrl: c.env.PUBLIC_BASE_URL ?? new URL(c.req.url).origin });
