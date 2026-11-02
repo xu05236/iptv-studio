@@ -380,35 +380,35 @@ async function syncSourceStats(
   sourceId?: string,
 ): Promise<void> {
   const targets = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
-  const stats = targets.map((source) => {
+  const stats = targets.flatMap((source) => {
     const sourceLines = lines.filter((line) => line.sourceId === source.id);
     const aliveLines = sourceLines.filter((line) => line.status === 'alive');
     const testedLines = sourceLines.filter((line) => line.lastProbeAt && (line.status === 'alive' || line.status === 'dead' || line.status === 'suspect'));
     const item = collected.find((entry) => entry.source.id === source.id);
+    // Interval-skipped sources have no fresh result: do not touch their health.
+    if (!item || (!item.fetched && !item.error)) return [];
     const reputation = nextReputation({
       previous: source.reputation,
       alive: aliveLines.length,
       total: testedLines.length,
       avgScore: mean(aliveLines.map((line) => line.score)),
-      // A 304 or an interval skip means the source content is still valid; only
-      // a real fetch error should reduce reputation.
-      fetchOk: Boolean((item?.fetched || item?.notModified) && !item.error),
-      consecutiveFailures: item?.error ? 1 : 0,
+      fetchOk: Boolean(item.fetched && !item.error),
+      consecutiveFailures: item.error ? 1 : 0,
     });
-    return {
+    return [{
       sourceId: source.id,
-      fetched: Boolean(item?.fetched || item?.notModified),
+      fetched: Boolean(item.fetched),
       parsed: sourceLines.length,
       alive: aliveLines.length,
       dead: sourceLines.filter((line) => line.status === 'dead').length,
       avgSpeedKbps: mean(aliveLines.map((line) => line.speedKbps ?? 0)),
       avgLatencyMs: mean(aliveLines.map((line) => line.latencyMs ?? 0)),
-      etag: item?.etag ?? source.etag,
-      lastModified: item?.lastModified ?? source.last_modified,
-      error: item?.error,
+      etag: item.etag ?? source.etag,
+      lastModified: item.lastModified ?? source.last_modified,
+      error: item.error,
       reputation,
       tier: tierFor(reputation),
-    };
+    }];
   });
   await api.post('/api/admin/sync/sources', { stats });
 }

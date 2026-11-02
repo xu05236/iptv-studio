@@ -675,6 +675,13 @@ export async function applySourceStats(
     const before = existing.get(stat.sourceId);
     if (!before) continue;
     const failures = stat.fetched && !stat.error ? 0 : before.consecutive_failures + 1;
+    // Permanently broken sources should not linger in the list. Delete them
+    // after five consecutive failures; orphan line cleanup removes leftovers.
+    if (failures >= 5) {
+      statements.push(env.DB.prepare('DELETE FROM sources WHERE id = ?').bind(stat.sourceId));
+      statements.push(env.DB.prepare('DELETE FROM source_stats WHERE source_id = ?').bind(stat.sourceId));
+      continue;
+    }
     const status = failures >= 3 ? 'degraded' : 'active';
     statements.push(
       env.DB.prepare(
@@ -682,9 +689,7 @@ export async function applySourceStats(
            last_ok_at = CASE WHEN ? = 1 THEN datetime('now') ELSE last_ok_at END,
            last_error = ?, etag = COALESCE(?, etag), last_modified = COALESCE(?, last_modified),
            reputation = COALESCE(?, reputation), tier = COALESCE(?, tier),
-           consecutive_failures = ?, status = ?,
-           enabled = CASE WHEN ? >= 5 THEN 0 ELSE enabled END,
-           updated_at = datetime('now')
+           consecutive_failures = ?, status = ?, updated_at = datetime('now')
          WHERE id = ?`,
       ).bind(
         stat.parsed,
@@ -698,7 +703,6 @@ export async function applySourceStats(
         stat.tier ?? null,
         failures,
         status,
-        failures,
         stat.sourceId,
       ),
     );
