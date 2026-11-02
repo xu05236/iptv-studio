@@ -201,6 +201,21 @@ function normalize(
   return { lines: [...merged.values()], authoritative };
 }
 
+async function collectSourceWithRetry(source: SourceRecord, store: ArtifactStore, logger: RunLogger): Promise<CollectedSource> {
+  let last: CollectedSource | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const item = await collectSource(source, store, logger);
+      last = item;
+      if (!item.error) return item;
+    } catch (error) {
+      logger.warn('抓取异常', { source: source.name, attempt: attempt + 1, error: error instanceof Error ? error.message : String(error) });
+    }
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1_000 * (attempt + 1)));
+  }
+  return last ?? { source, entries: [], fetched: false, notModified: false, bytes: 0, error: '抓取失败' };
+}
+
 async function collectAll(
   sources: SourceRecord[],
   store: ArtifactStore,
@@ -210,17 +225,7 @@ async function collectAll(
   let done = 0;
   return mapPool(sources, 4, async (source) => {
     try {
-      return await collectSource(source, store, logger);
-    } catch (error) {
-      logger.warn('抓取异常', { source: source.name, error: error instanceof Error ? error.message : String(error) });
-      return {
-        source,
-        entries: [],
-        fetched: false,
-        notModified: false,
-        bytes: 0,
-        error: error instanceof Error ? error.message : String(error),
-      } satisfies CollectedSource;
+      return await collectSourceWithRetry(source, store, logger);
     } finally {
       done++;
       onProgress?.(done, sources.length, source.name);
@@ -540,6 +545,9 @@ async function publishPhase(
     runId,
     generatedAt: output.catalog.generatedAt,
     poolSnapshot,
+    onProgress: (done, total, message) => {
+      void reportTaskProgress(api, done, total, message);
+    },
   }, logger);
   await reportTaskProgress(api, 3, 5, '产物写入完成');
   // A guide-based export keeps the existing per-subscription XMLTV untouched:

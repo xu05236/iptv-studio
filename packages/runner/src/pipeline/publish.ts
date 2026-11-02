@@ -24,16 +24,17 @@ import { matchLogoFile } from './logoFiles.js';
 
 const GROUP_ORDER = ['央视', '卫视', '地方', '港澳台', '国际', '4K', '影视频道', '体育', '少儿', '纪录', '新闻', '音乐', '付费', '其他'];
 
-type LogoSeed = { name: string; logo?: string | null; tvgId?: string | null };
+type LogoSeed = { id: string; name: string; logo?: string | null; tvgId?: string | null };
 
-function logoForSeed(seed: LogoSeed, input: BuildInput): string | undefined {
+function logoForSeed(seed: LogoSeed, input: BuildInput, lineLogos?: Map<string, string>): string | undefined {
   const stored = seed.logo && /^https?:\/\//i.test(seed.logo) ? seed.logo : undefined;
-  const matched = !stored && !seed.tvgId ? matchLogoFile(seed.name, input.logoFiles ?? []) : undefined;
+  const fromLine = !stored && !seed.tvgId ? lineLogos?.get(seed.id) : undefined;
+  const matched = !stored && !fromLine && !seed.tvgId ? matchLogoFile(seed.name, input.logoFiles ?? []) : undefined;
   const nameLogo = matched
     ? `https://cdn.jsdelivr.net/gh/fanmingming/live@main/tv/${encodeURIComponent(matched)}`
     : undefined;
   return channelLogo(
-    { logo: stored ?? nameLogo, tvgId: seed.tvgId, name: seed.name },
+    { logo: stored ?? fromLine ?? nameLogo, tvgId: seed.tvgId, name: seed.name },
     input.settings.logoBaseUrl,
     input.logoProxyBase,
   );
@@ -109,6 +110,13 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
   const seeds = input.registry.list().filter((seed) => !input.disabledChannelIds?.has(seed.id));
   seeds.sort((a, b) => groupRank(a.group) - groupRank(b.group) || a.name.localeCompare(b.name, 'zh-CN'));
 
+  // Source metadata often carries a usable tvg-logo even when the channel has
+  // no formal id and the logo pack has no matching file.
+  const lineLogos = new Map<string, string>();
+  for (const line of input.lines) {
+    if (line.logo && /^https?:\/\//i.test(line.logo) && !lineLogos.has(line.channelId)) lineLogos.set(line.channelId, line.logo);
+  }
+
   for (const seed of seeds) {
     const lines = byChannel.get(seed.id);
     if (!lines?.length) continue;
@@ -118,7 +126,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
       name: seed.name,
       group: seed.group,
       tvgId: seed.tvgId,
-      logo: logoForSeed(seed, input),
+      logo: logoForSeed(seed, input, lineLogos),
       aliases: seed.aliases,
     };
     const applied = applyRules(channel, lines, compiled);
@@ -204,7 +212,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
       name: seed.name,
       group: seed.group,
       tvgId: seed.tvgId,
-      logo: logoForSeed(seed, input),
+      logo: logoForSeed(seed, input, lineLogos),
     })),
     totalLines,
     aliveLines,
@@ -214,14 +222,22 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
 export async function publish(
   store: ArtifactStore,
   output: BuildOutput,
-  options: { lines: LineEntry[]; epgXml?: string; log: string; runId: string; generatedAt: string; poolSnapshot?: PoolSnapshot },
+  options: { lines: LineEntry[]; epgXml?: string; log: string; runId: string; generatedAt: string; poolSnapshot?: PoolSnapshot; onProgress?: (done: number, total: number, message: string) => void },
   logger: RunLogger,
 ): Promise<{ objects: number }> {
   let objects = 0;
   const json = 'application/json; charset=utf-8';
+  let artifactCount = 0;
+  const artifactTotal = 30;
+  const step = (message: string): void => {
+    artifactCount++;
+    options.onProgress?.(artifactCount, artifactTotal, message);
+  };
 
   await store.put('out/catalog.json', JSON.stringify(output.catalog), json);
+  step('catalog.json');
   await store.put('state/index.json', JSON.stringify(output.index), json);
+  step('state/index.json');
   const linesPayload = JSON.stringify({ generatedAt: options.generatedAt, lines: options.lines });
   if (new TextEncoder().encode(linesPayload).byteLength > 20 * 1024 * 1024) {
     logger.warn('线路状态接近 KV 24MB 上限，将丢弃已失效超过 24 小时的墓碑线路');
@@ -233,12 +249,15 @@ export async function publish(
   } else {
     await store.put('state/lines.json', linesPayload, json);
   }
+  step('state/lines.json');
   await store.put('state/guide.json', JSON.stringify(output.guide), json);
   await store.put('state/now.json', JSON.stringify({ generatedAt: options.generatedAt, channels: output.now }), json);
+  step('guide/now');
   // Subscriptions render from this compact snapshot (tested-alive lines only):
   // it keeps the Worker's hot path small and carries channel metadata for M3U.
   if (options.poolSnapshot) {
     await store.put('state/pool.json', JSON.stringify(options.poolSnapshot), json);
+    step('state/pool.json');
     objects++;
   }
   const probeItems = output.shards.flatMap((shard) =>
@@ -272,6 +291,7 @@ export async function publish(
       logger.warn('EPG 超过 KV 单值 24MB 限制，已跳过发布', { mb: Math.round(bytes / 1024 / 1024) });
     } else {
       await store.put('out/epg.xml', options.epgXml, 'application/xml; charset=utf-8');
+      step('out/epg.xml');
       objects++;
     }
   }
@@ -287,12 +307,14 @@ export async function publish(
   }
   await mapPool([...buckets.entries()], 2, async ([index, shards]) => {
     await store.put(`state/bucket/${index}.json`, JSON.stringify({ channels: shards.map((shard) => shard.data) }), json);
+    step(`bucket ${index + 1}/${buckets.size}`);
   });
   objects += buckets.size;
 
   const day = options.generatedAt.slice(0, 10);
   await store.put(`snapshots/${day}/catalog.json`, JSON.stringify(output.catalog), json);
   await store.put(`logs/${day}/${options.runId}.jsonl`, options.log, 'application/x-ndjson; charset=utf-8');
+  step('log');
   objects += 2;
 
   // Versioned rollback snapshots (keep 10). Restore writes these back to state.
@@ -313,9 +335,11 @@ export async function publish(
       createdAt: new Date().toISOString(),
     });
     await store.put('state/snapshots.json', JSON.stringify({ items: items.slice(0, 10) }), json);
+    step('snapshot');
     objects += 5;
   }
 
+  step('发布完成');
   logger.info('产物已发布', { objects, buckets: buckets.size, channels: output.catalog.items.length });
   return { objects };
 }

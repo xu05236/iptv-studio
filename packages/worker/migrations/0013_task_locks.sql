@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS task_locks (
+  id TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);

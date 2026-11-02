@@ -23,6 +23,64 @@ export interface Task {
 const KEY = 'state/tasks.json';
 const MAX_FINISHED = 30;
 const STALE_MS = 45 * 60_000;
+const LOCK_ID = 'queue';
+const LOCK_TTL_MS = 60_000;
+
+let lockTableReady: Promise<void> | null = null;
+
+function ensureLockTable(env: Env): Promise<void> {
+  if (!env.DB) return Promise.resolve();
+  if (!lockTableReady) {
+    lockTableReady = env.DB.prepare(
+      'CREATE TABLE IF NOT EXISTS task_locks (id TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL)',
+    )
+      .run()
+      .then(() => undefined)
+      .catch((error) => {
+        lockTableReady = null;
+        throw error;
+      });
+  }
+  return lockTableReady;
+}
+
+/**
+ * Serialize queue mutations with a short D1 lease. KV has no CAS, so the lease
+ * is the only cross-isolate way to prevent two requests from overwriting the
+ * same task list. If D1 is unavailable we still run (availability over locking).
+ */
+async function withTaskLock<T>(env: Env, fn: () => Promise<T>): Promise<T> {
+  if (!env.DB) return fn();
+  const owner = crypto.randomUUID();
+  let executed = false;
+  try {
+    await ensureLockTable(env);
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const now = Date.now();
+      const result = await env.DB.prepare(
+        `INSERT INTO task_locks (id, owner, expires_at) VALUES (?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at
+         WHERE task_locks.expires_at < ?`,
+      )
+        .bind(LOCK_ID, owner, now + LOCK_TTL_MS, now)
+        .run();
+      if (Number((result.meta as { changes?: number }).changes ?? 0) > 0) {
+        executed = true;
+        try {
+          return await fn();
+        } finally {
+          await env.DB.prepare('DELETE FROM task_locks WHERE id = ? AND owner = ?').bind(LOCK_ID, owner).run().catch(() => undefined);
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25 + Math.random() * 50));
+    }
+  } catch (error) {
+    if (executed) throw error;
+    console.error('task lock failed, falling back to unlocked mutation', error);
+    return fn();
+  }
+  throw new Error('任务队列繁忙，请稍后重试');
+}
 
 export async function loadTasks(env: Env): Promise<Task[]> {
   return (await getJson<Task[]>(env, KEY)) ?? [];
@@ -37,7 +95,7 @@ async function saveTasks(env: Env, tasks: Task[]): Promise<void> {
   await env.KV.put(KEY, JSON.stringify([...active, ...finished]));
 }
 
-export async function createTask(
+async function createTaskCore(
   env: Env,
   input: { type: string; source: TaskSource; priority?: number; payload?: Record<string, string>; total?: number; unit?: string; message?: string },
 ): Promise<Task> {
@@ -66,13 +124,21 @@ export async function createTask(
   return task;
 }
 
-export async function updateTask(env: Env, id: string, patch: Partial<Task>): Promise<Task | null> {
+export function createTask(...args: Parameters<typeof createTaskCore>): ReturnType<typeof createTaskCore> {
+  return withTaskLock(args[0], () => createTaskCore(...args));
+}
+
+async function updateTaskCore(env: Env, id: string, patch: Partial<Task>): Promise<Task | null> {
   const tasks = await loadTasks(env);
   const index = tasks.findIndex((task) => task.id === id);
   if (index < 0) return null;
   tasks[index] = { ...tasks[index]!, ...patch };
   await saveTasks(env, tasks);
   return tasks[index]!;
+}
+
+export function updateTask(...args: Parameters<typeof updateTaskCore>): ReturnType<typeof updateTaskCore> {
+  return withTaskLock(args[0], () => updateTaskCore(...args));
 }
 
 async function notifyTaskFailure(env: Env, task: Task, message?: string): Promise<void> {
@@ -93,7 +159,7 @@ async function notifyTaskFailure(env: Env, task: Task, message?: string): Promis
   }
 }
 
-export async function finishTask(env: Env, taskId: string, status: 'done' | 'failed', message?: string): Promise<void> {
+async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed', message?: string): Promise<void> {
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
   if (!task) return;
@@ -105,7 +171,11 @@ export async function finishTask(env: Env, taskId: string, status: 'done' | 'fai
   if (status === 'failed') await notifyTaskFailure(env, task, task.message);
 }
 
-export async function progressTask(env: Env, taskId: string, done: number, total?: number, message?: string): Promise<void> {
+export function finishTask(...args: Parameters<typeof finishTaskCore>): ReturnType<typeof finishTaskCore> {
+  return withTaskLock(args[0], () => finishTaskCore(...args));
+}
+
+async function progressTaskCore(env: Env, taskId: string, done: number, total?: number, message?: string): Promise<void> {
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
   if (!task) return;
@@ -115,8 +185,12 @@ export async function progressTask(env: Env, taskId: string, done: number, total
   await saveTasks(env, tasks);
 }
 
+export function progressTask(...args: Parameters<typeof progressTaskCore>): ReturnType<typeof progressTaskCore> {
+  return withTaskLock(args[0], () => progressTaskCore(...args));
+}
+
 /** Dispatch the highest-priority queued task when nothing is running. */
-export async function dispatchNext(env: Env): Promise<{ task?: Task; message: string }> {
+async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: string }> {
   const tasks = await loadTasks(env);
   const now = Date.now();
   let changed = false;
@@ -176,10 +250,14 @@ export async function dispatchNext(env: Env): Promise<{ task?: Task; message: st
   return { task: next, message: result.ok ? '已派发' : result.message };
 }
 
+export function dispatchNext(...args: Parameters<typeof dispatchNextCore>): ReturnType<typeof dispatchNextCore> {
+  return withTaskLock(args[0], () => dispatchNextCore(...args));
+}
+
 /**
  * Quick actions from the task board. Returns a short user-facing message.
  */
-export async function mutateTask(env: Env, id: string, action: string): Promise<string> {
+async function mutateTaskCore(env: Env, id: string, action: string): Promise<string> {
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === id);
   if (!task) return '任务不存在';
@@ -221,6 +299,10 @@ export async function mutateTask(env: Env, id: string, action: string): Promise<
     return '未知操作';
   }
   await saveTasks(env, tasks);
-  if (action === 'run-now' || action === 'resume' || action === 'retry') await dispatchNext(env);
+  if (action === 'run-now' || action === 'resume' || action === 'retry') await dispatchNextCore(env);
   return '已更新';
+}
+
+export function mutateTask(...args: Parameters<typeof mutateTaskCore>): ReturnType<typeof mutateTaskCore> {
+  return withTaskLock(args[0], () => mutateTaskCore(...args));
 }
