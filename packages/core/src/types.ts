@@ -324,6 +324,12 @@ export const DEFAULT_EPG_URLS = [
   'https://epg.pw/xmltv/epg_CN.xml',
   // 51zmt: covers several provincial channels (山西/陕西/三沙) missing above.
   'http://epg.51zmt.top:8000/e.xml',
+  // gotonas: compact gz feed with 135 channels and day-long schedules.
+  'https://epg.gotonas.com/t.xml.gz',
+  // ziyi: 287 channels including 大湾区/三沙, ~2.4 MB XMLTV.
+  'https://tv.ziyi.cc/playback.xml',
+  // gdstu: 267 channels, full-day schedules, mirrored streams.
+  'https://v.gdstu.fun/playback.xml',
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
