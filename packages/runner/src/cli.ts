@@ -1285,6 +1285,10 @@ async function main(): Promise<void> {
         await store.put('out/epg.xml', epg.xml, 'application/xml; charset=utf-8');
         logger.info('EPG 已发布', { mb: Math.round(bytes / 1024 / 1024), programmes: epg.programmes });
       }
+      const catalog = await store.getJson<ExportCatalog>('out/catalog.json');
+      if (catalog) {
+        await publishSubscriptions(api, store, catalog, remote.settings, config.publicBaseUrl, epg.data, logger);
+      }
     } else {
       logger.warn('没有生成任何节目单内容');
     }
