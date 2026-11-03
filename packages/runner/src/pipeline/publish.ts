@@ -305,11 +305,11 @@ export async function publish(
     }
   }
 
-  // KV free tier allows 1k writes/day. 16 larger buckets are a better tradeoff
-  // than 64 small ones: fewer writes, still small enough for channel details.
+  // KV free tier allows 1k writes/day. 8 larger buckets are still well below
+  // the 24MB value limit and halve the number of writes per publish.
   const buckets = new Map<number, typeof output.shards>();
   for (const shard of output.shards) {
-    const index = bucketOf(shard.id, 16);
+    const index = bucketOf(shard.id, 8);
     const list = buckets.get(index) ?? [];
     list.push(shard);
     buckets.set(index, list);
