@@ -353,8 +353,8 @@ export function Sources() {
               <Button size="sm" loading={probe.isPending} onClick={() => probe.mutate(source.id)}>
                 <RefreshCw size={13} /> 检查解析
               </Button>
-              <Button size="sm" variant={source.weight >= 2 ? 'primary' : 'glass'} loading={favorite.isPending} onClick={() => favorite.mutate(source)}>
-                <Star size={13} fill={source.weight >= 2 ? 'currentColor' : 'none'} /> {source.weight >= 2 ? '已收藏' : '收藏'}
+              <Button size="sm" loading={favorite.isPending} onClick={() => favorite.mutate(source)}>
+                <Star size={13} fill={source.weight >= 2 ? 'currentColor' : 'none'} color={source.weight >= 2 ? 'var(--orange)' : undefined} /> {source.weight >= 2 ? '已收藏' : '收藏'}
               </Button>
               <Button size="sm" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}>
                 <Zap size={13} /> 抽样测速
