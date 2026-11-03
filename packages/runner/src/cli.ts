@@ -808,6 +808,8 @@ async function runBatchProbe(): Promise<void> {
     const batchSize = Math.max(1, Number(settings.probeBatchSize) || 1200);
     const perChannel = Math.max(1, Number(settings.probePerChannel) || 24);
     const candidates = lines.filter((line) => channelIds.has(line.channelId) && phaseMatches(line, phase, now, Boolean(forcedPhase)));
+    const favoriteSources = new Set(remote.sources.filter((source) => source.weight >= 2).map((source) => source.id));
+    const favoriteRank = (line: LineEntry): number => (favoriteSources.has(line.sourceId) ? 0 : 1);
     const byChannel = new Map<string, LineEntry[]>();
     for (const line of candidates) {
       const bucket = byChannel.get(line.channelId) ?? [];
@@ -816,10 +818,10 @@ async function runBatchProbe(): Promise<void> {
     }
     const picked: LineEntry[] = [];
     for (const bucket of byChannel.values()) {
-      bucket.sort((a, b) => (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
+      bucket.sort((a, b) => favoriteRank(a) - favoriteRank(b) || (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
       picked.push(...bucket.slice(0, perChannel));
     }
-    picked.sort((a, b) => (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
+    picked.sort((a, b) => favoriteRank(a) - favoriteRank(b) || (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
     const selected = picked.slice(0, batchSize);
     const phaseLabel = phase === 'pending' ? '待测' : phase === 'quarantine' ? '待复测' : '待复活';
     logger.info('分批探测计划', { phase, candidates: candidates.length, batch: selected.length, batchSize, forced: Boolean(forcedPhase) });

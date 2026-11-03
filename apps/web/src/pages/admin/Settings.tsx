@@ -118,9 +118,6 @@ export function SettingsPage() {
           <Field label="台标基础地址" hint="订阅或源自带 tvg-logo 优先；缺失时按 tvg-id 拼接。旧 fanmingming 地址会自动改用 jsDelivr；前台还会依次回退 Fastly / Gcore / testingcf / ghproxy / gh-proxy / 多个 fork / vircloud / GitHub raw。">
             <input className="input" value={form.logoBaseUrl} onChange={(event) => set('logoBaseUrl', event.target.value)} />
           </Field>
-          <div className="row">
-            <div className="grow"><Field label="同源最多线路" hint="同一采集站在一个频道最多几条，避免单个源刷屏；0 = 不限制"><input className="input" inputMode="numeric" value={form.maxLinesPerSource} onChange={(event) => set('maxLinesPerSource', Number(event.target.value))} /></Field></div>
-          </div>
           <div className="list">
             <div className="list__row"><span className="grow" title="开启后线路名会带上地区/运营商，便于区分同名频道">线路名带地区/运营商后缀</span><Switch checked={form.regionSuffix} onChange={(value) => set('regionSuffix', value)} /></div>
             <div className="list__row"><span className="grow" title="频道没有任何可用线路时，是否回填可疑线路避免订阅空白">补偿机制（频道无可用时回填可疑线路）</span><Switch checked={form.compensate} onChange={(value) => set('compensate', value)} /></div>

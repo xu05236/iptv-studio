@@ -47,22 +47,25 @@ export function SubscriptionsAdmin() {
   const [preview, setPreview] = useState<{ name: string; body: string; format: string } | null>(null);
   const [exportLimit, setExportLimit] = useState('0');
   const [frontLimit, setFrontLimit] = useState('0');
+  const [maxPerSource, setMaxPerSource] = useState('0');
 
   const settingsQuery = useQuery({
     queryKey: ['admin', 'settings'],
-    queryFn: () => api.get<{ settings: { maxLinesPerChannel: number; frontLineLimit: number } }>('/api/admin/settings'),
+    queryFn: () => api.get<{ settings: { maxLinesPerChannel: number; frontLineLimit: number; maxLinesPerSource: number } }>('/api/admin/settings'),
   });
 
   useEffect(() => {
     if (!settingsQuery.data) return;
     setExportLimit(String(settingsQuery.data.settings.maxLinesPerChannel ?? 0));
     setFrontLimit(String(settingsQuery.data.settings.frontLineLimit ?? 0));
+    setMaxPerSource(String(settingsQuery.data.settings.maxLinesPerSource ?? 0));
   }, [settingsQuery.data]);
 
   const saveLimits = useMutation({
     mutationFn: () => api.put('/api/admin/settings', {
       maxLinesPerChannel: Math.max(0, Number(exportLimit) || 0),
       frontLineLimit: Math.max(0, Number(frontLimit) || 0),
+      maxLinesPerSource: Math.max(0, Number(maxPerSource) || 0),
     }),
     onSuccess: () => {
       show('线路显示与导出上限已保存');
@@ -187,12 +190,17 @@ export function SubscriptionsAdmin() {
               <input className="input" inputMode="numeric" value={frontLimit} onChange={(event) => setFrontLimit(event.target.value)} />
             </Field>
           </div>
+          <div className="grow">
+            <Field label="同源最多线路" hint="同一采集站在一个频道最多几条；0 = 不限制">
+              <input className="input" inputMode="numeric" value={maxPerSource} onChange={(event) => setMaxPerSource(event.target.value)} />
+            </Field>
+          </div>
           <div style={{ alignSelf: 'flex-end' }}>
             <Button variant="primary" loading={saveLimits.isPending} onClick={() => saveLimits.mutate()}>保存上限</Button>
           </div>
         </div>
         <div className="caption" style={{ marginTop: 8 }}>
-          当前 {settingsQuery.data ? `播放器 ${settingsQuery.data.settings.maxLinesPerChannel} 条 / 前台 ${settingsQuery.data.settings.frontLineLimit} 条` : '加载中'}。0 表示不限制；修改后需要重新发布订阅生效。
+          当前 {settingsQuery.data ? `播放器 ${settingsQuery.data.settings.maxLinesPerChannel} 条 / 前台 ${settingsQuery.data.settings.frontLineLimit} 条 / 单源 ${settingsQuery.data.settings.maxLinesPerSource} 条` : '加载中'}。0 表示不限制；修改后需要重新发布订阅生效。
         </div>
       </Card>
 
