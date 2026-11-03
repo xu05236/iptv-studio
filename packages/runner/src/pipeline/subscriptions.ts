@@ -50,6 +50,30 @@ export async function publishSubscriptions(
   if (!items.length) return 0;
 
   let written = 0;
+  const writePerSubEpg = async (sub: SubscriptionRow): Promise<boolean> => {
+    if (!epg || !sub.includeEpg) return false;
+    const ids = new Set(
+      catalog.items
+        .filter((item) => {
+          if (item.channel.enabled === false) return false;
+          if (sub.channelIds.length && !sub.channelIds.includes(item.channel.id)) return false;
+          if (sub.groups.length && !sub.groups.includes(item.channel.group)) return false;
+          if (sub.excludeGroups.length && sub.excludeGroups.includes(item.channel.group)) return false;
+          return true;
+        })
+        .map((item) => item.channel.id),
+    );
+    const channels = epg.channels.filter((channel) => ids.has(channel.id));
+    const programmes = epg.programmes.filter((programme) => ids.has(programme.channelId));
+    if (!channels.length) return false;
+    const xml = buildXmltv(
+      { channels, programmes },
+      { generator: 'iptv-studio', channelNames: new Map(channels.map((channel) => [channel.id, channel.names[0] ?? channel.id])) },
+    );
+    if (new TextEncoder().encode(xml).byteLength >= 24 * 1024 * 1024) return false;
+    await store.put(`out/epg-${sub.id}.xml`, xml, 'application/xml; charset=utf-8');
+    return true;
+  };
   for (const sub of items) {
     if (!sub.enabled) continue;
     let customKeys: string[] = [];
@@ -58,6 +82,9 @@ export async function publishSubscriptions(
     } catch {
       customKeys = [];
     }
+    // Always refresh the per-subscription EPG, including pool-driven subs.
+    // Otherwise the stale per-sub artifact shadows the new out/epg.xml.
+    if (await writePerSubEpg(sub)) written++;
     if (customKeys.length) {
       logger.info('自定义订阅由 Worker 按 line_keys 动态渲染', { id: sub.id });
       continue;
@@ -127,28 +154,6 @@ export async function publishSubscriptions(
     };
     await store.put(`out/sub-${sub.id}.tvbox`, JSON.stringify(tvbox), 'application/json; charset=utf-8');
     written++;
-
-    // Per-subscription EPG: players should not download the full 6MB guide.
-    if (epg && sub.includeEpg) {
-      const ids = new Set(selected.map((item) => item.channel.id));
-      const channels = epg.channels.filter((channel) => ids.has(channel.id));
-      const programmes = epg.programmes.filter((programme) => ids.has(programme.channelId));
-      if (channels.length) {
-        const xml = buildXmltv(
-          { channels, programmes },
-          {
-            generator: 'iptv-studio',
-            channelNames: new Map(channels.map((channel) => [channel.id, channel.names[0] ?? channel.id])),
-          },
-        );
-        if (new TextEncoder().encode(xml).byteLength < 24 * 1024 * 1024) {
-          // Keep only the raw XML: the Worker now lets Cloudflare compress it
-          // once at the edge, and the pre-gzipped copy caused double gzip.
-          await store.put(`out/epg-${sub.id}.xml`, xml, 'application/xml; charset=utf-8');
-          written += 1;
-        }
-      }
-    }
   }
 
   logger.info('订阅产物已生成', { subscriptions: items.length, files: written });
