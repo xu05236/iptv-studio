@@ -872,8 +872,13 @@ adminRoutes.put('/artifacts/*', async (c) => {
   const contentType = c.req.query('type') ?? c.req.header('content-type') ?? 'application/octet-stream';
   const body = await c.req.arrayBuffer();
   if (body.byteLength > 24 * 1024 * 1024) return fail('产物超过 KV 单值 24MB 限制', 413);
-  const meta = await putArtifact(c.env, key, body, contentType);
-  return ok({ key, size: meta.size, etag: meta.etag });
+  try {
+    const meta = await putArtifact(c.env, key, body, contentType);
+    return ok({ key, size: meta.size, etag: meta.etag });
+  } catch (error) {
+    console.error('artifact put failed', key, body.byteLength, error);
+    return fail(error instanceof Error ? error.message : String(error), 500);
+  }
 });
 
 adminRoutes.delete('/artifacts/*', async (c) => {
