@@ -97,7 +97,7 @@ export function ChannelDetail() {
       (isHevc(a) ? 1 : 0) - (isHevc(b) ? 1 : 0) ||
       (b.score ?? 0) - (a.score ?? 0),
   );
-  const frontLimit = query.data.features?.frontLineLimit ?? 8;
+  const frontLimit = query.data.features?.frontLineLimit ?? 0;
   const paginatedLines = frontLimit > 0 ? orderedLines.slice(0, frontLimit) : orderedLines;
   const pageSize = linePageSize === 'all' ? paginatedLines.length || 1 : Number(linePageSize);
   const pageCount = Math.max(1, Math.ceil(paginatedLines.length / pageSize));
@@ -241,12 +241,25 @@ export function ChannelDetail() {
                 </div>
               </div>
             ))}
-            {linePageSize !== 'all' && pageCount > 1 ? (
-              <div className="row" style={{ justifyContent: 'space-between', padding: '0 4px' }}>
+            {linePageSize !== 'all' ? (
+              <div className="row row--wrap" style={{ justifyContent: 'space-between', padding: '4px' }}>
                 <Button size="sm" variant="glass" disabled={currentPage <= 1} onClick={() => setLinePage((value) => Math.max(1, value - 1))}>
                   上一页
                 </Button>
-                <span className="caption">第 {currentPage} / {pageCount} 页</span>
+                <label className="row" style={{ gap: 6 }}>
+                  <span className="caption">第</span>
+                  <select
+                    className="input"
+                    style={{ width: 76 }}
+                    value={currentPage}
+                    onChange={(event) => setLinePage(Number(event.target.value))}
+                  >
+                    {Array.from({ length: pageCount }, (_, index) => (
+                      <option key={index + 1} value={index + 1}>{index + 1}</option>
+                    ))}
+                  </select>
+                  <span className="caption">/ {pageCount} 页</span>
+                </label>
                 <Button size="sm" variant="glass" disabled={currentPage >= pageCount} onClick={() => setLinePage((value) => Math.min(pageCount, value + 1))}>
                   下一页
                 </Button>
