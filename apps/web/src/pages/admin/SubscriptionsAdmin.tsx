@@ -29,7 +29,7 @@ const EMPTY_FORM: FormState = {
   poolMode: 'premium',
   minResolution: 'any',
   minSpeedKbps: '0',
-  maxLines: '6',
+  maxLines: '0',
   format: 'm3u',
   showRegionSuffix: true,
   includeEpg: true,
@@ -100,7 +100,7 @@ export function SubscriptionsAdmin() {
         poolMode: form.poolMode,
         minResolution: form.minResolution,
         minSpeedKbps: Number(form.minSpeedKbps || 0),
-        maxLinesPerChannel: Number(form.maxLines || 6),
+        maxLinesPerChannel: Math.max(0, Number(form.maxLines) || 0),
         format: form.format,
         showRegionSuffix: form.showRegionSuffix,
         includeEpg: form.includeEpg,
@@ -324,7 +324,7 @@ export function SubscriptionsAdmin() {
           </div>
           <div className="row">
             <div className="grow">
-              <Field label="每频道线路数">
+              <Field label="每频道线路数" hint="0 = 导出全部可用线路">
                 <input className="input" inputMode="numeric" value={form.maxLines} onChange={(event) => setForm({ ...form, maxLines: event.target.value })} />
               </Field>
             </div>

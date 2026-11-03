@@ -50,12 +50,14 @@ export async function publishSubscriptions(
   if (!items.length) return 0;
 
   let written = 0;
-  const writePerSubEpg = async (sub: SubscriptionRow): Promise<boolean> => {
+  const writePerSubEpg = async (sub: SubscriptionRow, lineKeys: string[] = []): Promise<boolean> => {
     if (!epg || !sub.includeEpg) return false;
+    const keySet = new Set(lineKeys);
     const ids = new Set(
       catalog.items
         .filter((item) => {
           if (item.channel.enabled === false) return false;
+          if (keySet.size) return item.lines.some((line) => keySet.has(line.key));
           if (sub.channelIds.length && !sub.channelIds.includes(item.channel.id)) return false;
           if (sub.groups.length && !sub.groups.includes(item.channel.group)) return false;
           if (sub.excludeGroups.length && sub.excludeGroups.includes(item.channel.group)) return false;
@@ -84,7 +86,7 @@ export async function publishSubscriptions(
     }
     // Always refresh the per-subscription EPG, including pool-driven subs.
     // Otherwise the stale per-sub artifact shadows the new out/epg.xml.
-    if (await writePerSubEpg(sub)) written++;
+    if (await writePerSubEpg(sub, customKeys)) written++;
     if (customKeys.length) {
       logger.info('自定义订阅由 Worker 按 line_keys 动态渲染', { id: sub.id });
       continue;
