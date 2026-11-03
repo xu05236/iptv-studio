@@ -87,7 +87,9 @@ export function isDueForProbe(
     if (!line.reviveAt) return true;
     return new Date(line.reviveAt).getTime() <= now.getTime();
   }
-  const ttl = TIER_TTL_HOURS[tier] * 3_600_000;
+  // A failed/suspect line should be retried much sooner than a healthy one;
+  // otherwise a new source's first bad probe would sit idle for 72h.
+  const ttl = line.status === 'suspect' ? 12 * 3_600_000 : TIER_TTL_HOURS[tier] * 3_600_000;
   return new Date(line.lastProbeAt).getTime() + ttl <= now.getTime();
 }
 
