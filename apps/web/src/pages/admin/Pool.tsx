@@ -103,6 +103,8 @@ export function Pool() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [sortField, setSortField] = useState('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [tombstonesOpen, setTombstonesOpen] = useState(false);
 
   const tree = useQuery({
@@ -170,8 +172,12 @@ export function Pool() {
     if (resolution) value.set('resolution', resolution);
     if (minSpeedKbps) value.set('minSpeed', minSpeedKbps);
     if (search.trim()) value.set('q', search.trim());
+    if (sortField) {
+      value.set('sort', sortField);
+      value.set('order', sortOrder);
+    }
     return value.toString();
-  }, [country, group, channelId, subscriptionId, sourceId, pool, transport, resolution, minSpeedKbps, search, page, pageSize]);
+  }, [country, group, channelId, subscriptionId, sourceId, pool, transport, resolution, minSpeedKbps, search, page, pageSize, sortField, sortOrder]);
 
   const lines = useQuery({
     queryKey: ['admin', 'pool', 'lines', params],
@@ -180,6 +186,22 @@ export function Pool() {
   });
 
   const totalPages = Math.max(1, Math.ceil((lines.data?.total ?? 0) / pageSize));
+
+  const toggleSort = (field: string) => {
+    if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    else {
+      setSortField(field);
+      setSortOrder('desc');
+    }
+    setPage(1);
+  };
+  const sortHead = (field: string, label: string) => (
+    <th>
+      <button type="button" style={{ all: 'unset', cursor: 'pointer' }} onClick={() => toggleSort(field)}>
+        {label} {sortField === field ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
+      </button>
+    </th>
+  );
 
   const override = useMutation({
     mutationFn: ({ keys, pool }: { keys: string[]; pool: string }) =>
@@ -530,14 +552,14 @@ export function Pool() {
                       }}
                     />
                   </th>
-                  <th>频道</th>
-                  <th>来源</th>
-                  <th>分辨率</th>
-                  <th>速度</th>
-                  <th>传输</th>
-                  <th>池</th>
-                  <th>状态</th>
-                  <th>检测</th>
+                  {sortHead('channel', '频道')}
+                  {sortHead('source', '来源')}
+                  {sortHead('resolution', '分辨率')}
+                  {sortHead('speed', '速度')}
+                  {sortHead('transport', '传输')}
+                  {sortHead('pool', '池')}
+                  {sortHead('status', '状态')}
+                  {sortHead('probe', '检测')}
                 </tr>
               </thead>
               <tbody>

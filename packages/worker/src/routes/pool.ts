@@ -229,6 +229,8 @@ poolRoutes.get('/lines', async (c) => {
   const transport = c.req.query('transport') ?? '';
   const resolution = c.req.query('resolution') ?? '';
   const minSpeed = Math.max(0, Number(c.req.query('minSpeed') ?? 0) || 0);
+  const sortField = (c.req.query('sort') ?? '').trim();
+  const sortOrder = c.req.query('order') === 'asc' ? 1 : -1;
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
   const page = Math.max(1, Number(c.req.query('page') ?? 1) || 1);
   const limit = Math.min(200, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));
@@ -271,13 +273,42 @@ poolRoutes.get('/lines', async (c) => {
     return true;
   });
 
-  filtered.sort(
-    (a, b) =>
-      a.country.localeCompare(b.country, 'zh-CN') ||
-      a.group.localeCompare(b.group, 'zh-CN') ||
-      a.channelName.localeCompare(b.channelName, 'zh-CN') ||
-      compareLines(a, b),
-  );
+  const poolRank: Record<string, number> = { premium: 0, backup: 1, candidate: 2, pending: 3, quarantine: 4, rejected: 5 };
+  const statusRank: Record<string, number> = { alive: 0, unknown: 1, suspect: 2, dead: 3 };
+  const sortValue = (line: PoolLine): string | number | null => {
+    switch (sortField) {
+      case 'channel': return line.channelName;
+      case 'source': return line.sourceName;
+      case 'resolution': return qualityRank(qualityOf(line));
+      case 'speed': return line.speedKbps ?? null;
+      case 'transport': return line.transport;
+      case 'pool': return poolRank[line.pool] ?? 9;
+      case 'status': return statusRank[line.status] ?? 9;
+      case 'probe': return line.lastProbeAt ? Date.parse(line.lastProbeAt) : null;
+      default: return null;
+    }
+  };
+  if (sortField) {
+    filtered.sort((a, b) => {
+      const av = sortValue(a);
+      const bv = sortValue(b);
+      if (av === null && bv === null) return compareLines(a, b);
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      const cmp = typeof av === 'string' && typeof bv === 'string'
+        ? av.localeCompare(bv, 'zh-CN')
+        : Number(av) - Number(bv);
+      return cmp * sortOrder || compareLines(a, b);
+    });
+  } else {
+    filtered.sort(
+      (a, b) =>
+        a.country.localeCompare(b.country, 'zh-CN') ||
+        a.group.localeCompare(b.group, 'zh-CN') ||
+        a.channelName.localeCompare(b.channelName, 'zh-CN') ||
+        compareLines(a, b),
+    );
+  }
   const start = (page - 1) * limit;
   return ok({
     total: filtered.length,
