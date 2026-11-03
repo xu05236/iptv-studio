@@ -238,7 +238,7 @@ sourceRoutes.post('/', async (c) => {
       type: 'fetch',
       source: 'source',
       priority: 80,
-      payload: { source_id: id },
+      payload: { source_id: id, force: 'true' },
       message: '新增源自动抓取',
     });
     await dispatchNext(c.env);
@@ -319,7 +319,7 @@ sourceRoutes.post('/', async (c) => {
     type: 'fetch',
     source: 'source',
     priority: 80,
-    payload: { source_id: id },
+    payload: { source_id: id, force: 'true' },
     message: '新增源自动抓取',
   });
   await dispatchNext(c.env);
