@@ -225,8 +225,9 @@ export function Sources() {
   const items = useMemo(() => {
     const base = data?.items ?? [];
     const favorite = (source: SourceItem): number => (source.weight >= 2 ? 1 : 0);
+    const added = (source: SourceItem): number => Date.parse(source.created_at) || 0;
     if (!healthSort || !health.data) {
-      return [...base].sort((a, b) => favorite(b) - favorite(a) || b.reputation - a.reputation || a.name.localeCompare(b.name, 'zh-CN'));
+      return [...base].sort((a, b) => favorite(b) - favorite(a) || added(b) - added(a) || b.reputation - a.reputation || a.name.localeCompare(b.name, 'zh-CN'));
     }
     const score = new Map(
       health.data.items.map((item) => {
@@ -235,7 +236,7 @@ export function Sources() {
         return [item.sourceId, total ? alive / total : 0];
       }),
     );
-    return [...base].sort((a, b) => favorite(b) - favorite(a) || (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
+    return [...base].sort((a, b) => favorite(b) - favorite(a) || added(b) - added(a) || (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
   }, [data, healthSort, health.data]);
   const sites = useMemo(() => [...new Set(items.map(sourceSite))], [items]);
 
