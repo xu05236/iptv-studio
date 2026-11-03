@@ -44,8 +44,10 @@ export async function putArtifact(
   if (bytes.byteLength > MAX_VALUE_BYTES) {
     throw new Error(`产物 ${key} 超过 KV 单值 24MB 限制（${Math.round(bytes.byteLength / 1024 / 1024)}MB）`);
   }
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  const etag = `"${hex(digest).slice(0, 32)}"`;
+  const digest = bytes.byteLength <= 2 * 1024 * 1024
+    ? await crypto.subtle.digest('SHA-256', bytes)
+    : null;
+  const etag = digest ? `"${hex(digest).slice(0, 32)}"` : `"size-${bytes.byteLength}"`;
   const meta: ArtifactMeta = { contentType, etag, size: bytes.byteLength, updatedAt: isoNow() };
   // KV writes are the scarce resource on the free plan. Skip rewriting a value
   // when the bytes and content type are unchanged.
