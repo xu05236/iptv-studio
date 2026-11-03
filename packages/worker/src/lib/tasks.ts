@@ -97,8 +97,28 @@ async function withTaskLock<T>(env: Env, fn: () => Promise<T>): Promise<T> {
   throw new Error('任务队列繁忙，请稍后重试');
 }
 
+let taskStateReady: Promise<void> | null = null;
+function ensureTaskState(env: Env): Promise<void> {
+  if (!taskStateReady) {
+    taskStateReady = env.DB.prepare(
+      "CREATE TABLE IF NOT EXISTS task_state (id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))",
+    ).run().then(() => undefined).catch((error) => {
+      taskStateReady = null;
+      throw error;
+    });
+  }
+  return taskStateReady;
+}
+
 export async function loadTasks(env: Env): Promise<Task[]> {
-  return (await getJson<Task[]>(env, KEY)) ?? [];
+  await ensureTaskState(env);
+  const row = await env.DB.prepare('SELECT payload FROM task_state WHERE id = ?').bind('default').first<{ payload: string }>();
+  if (!row?.payload) return [];
+  try {
+    return JSON.parse(row.payload) as Task[];
+  } catch {
+    return [];
+  }
 }
 
 async function saveTasks(env: Env, tasks: Task[]): Promise<void> {
@@ -107,7 +127,10 @@ async function saveTasks(env: Env, tasks: Task[]): Promise<void> {
     .filter((task) => task.status === 'done' || task.status === 'failed' || task.status === 'cancelled')
     .sort((a, b) => (b.finishedAt ?? b.createdAt).localeCompare(a.finishedAt ?? a.createdAt))
     .slice(0, MAX_FINISHED);
-  await env.KV.put(KEY, JSON.stringify([...active, ...finished]));
+  await ensureTaskState(env);
+  await env.DB.prepare(
+    "INSERT INTO task_state (id, payload, updated_at) VALUES ('default', ?, datetime('now')) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = datetime('now')",
+  ).bind(JSON.stringify([...active, ...finished])).run();
 }
 
 async function createTaskCore(
