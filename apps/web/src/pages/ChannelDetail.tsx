@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Play, Radio, TriangleAlert } from 'lucide-react';
@@ -34,7 +34,12 @@ export function ChannelDetail() {
   const [tab, setTab] = useState<'lines' | 'epg'>('lines');
   const [playing, setPlaying] = useState<ChannelDetailResponse['lines'][number] | null>(null);
   const [shotOk, setShotOk] = useState(true);
-  const [showAllLines, setShowAllLines] = useState(false);
+  const [linePage, setLinePage] = useState(1);
+  const [linePageSize, setLinePageSize] = useState<'10' | '20' | 'all'>('10');
+
+  useEffect(() => {
+    setLinePage(1);
+  }, [id]);
 
   const query = useQuery({
     queryKey: ['channel', id],
@@ -92,11 +97,14 @@ export function ChannelDetail() {
       (isHevc(a) ? 1 : 0) - (isHevc(b) ? 1 : 0) ||
       (b.score ?? 0) - (a.score ?? 0),
   );
-  const healthyLines = orderedLines.filter((line) => line.status !== 'dead');
   const frontLimit = query.data.features?.frontLineLimit ?? 8;
-  const visibleLines = showAllLines || frontLimit <= 0
-    ? orderedLines
-    : (healthyLines.length ? healthyLines : orderedLines).slice(0, frontLimit);
+  const paginatedLines = frontLimit > 0 ? orderedLines.slice(0, frontLimit) : orderedLines;
+  const pageSize = linePageSize === 'all' ? paginatedLines.length || 1 : Number(linePageSize);
+  const pageCount = Math.max(1, Math.ceil(paginatedLines.length / pageSize));
+  const currentPage = Math.min(linePage, pageCount);
+  const visibleLines = linePageSize === 'all'
+    ? paginatedLines
+    : paginatedLines.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const checkedLines = lines.filter((line) => relayChecks.has(line.key));
   const relayBlocked = checkedLines.length > 0 && checkedLines.every((line) => !relayChecks.get(line.key)?.ok);
   const directPlayback = query.data.features?.directPlayback ?? false;
@@ -167,11 +175,30 @@ export function ChannelDetail() {
               </p>
             ) : null}
             <p className="caption" style={{ padding: '0 4px 8px' }}>
-              状态来自 GitHub Actions 探测节点；中继标签是 Cloudflare 实测。默认只显示前 8 条优质线路，dead 线路已折叠。
+              状态来自 GitHub Actions 探测节点；中继标签是 Cloudflare 实测。可按 10/20/全部查看线路。
             </p>
+            <div className="row row--between row--wrap" style={{ padding: '0 4px 10px' }}>
+              <span className="caption">共 {paginatedLines.length} 条 · 第 {currentPage}/{pageCount} 页</span>
+              <label className="row" style={{ gap: 6 }}>
+                <span className="caption">每页</span>
+                <select
+                  className="input"
+                  style={{ width: 90 }}
+                  value={linePageSize}
+                  onChange={(event) => {
+                    setLinePageSize(event.target.value as '10' | '20' | 'all');
+                    setLinePage(1);
+                  }}
+                >
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="all">全部</option>
+                </select>
+              </label>
+            </div>
             {visibleLines.map((line, index) => (
               <div key={line.key} className="list__row" style={{ alignItems: 'flex-start' }}>
-                <div className="logo logo--fallback" style={{ fontSize: 12 }}>#{index + 1}</div>
+                <div className="logo logo--fallback" style={{ fontSize: 12 }}>#{(currentPage - 1) * (linePageSize === 'all' ? paginatedLines.length : pageSize) + index + 1}</div>
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="row row--wrap" style={{ gap: 6 }}>
                     <Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge>
@@ -214,14 +241,16 @@ export function ChannelDetail() {
                 </div>
               </div>
             ))}
-            {!showAllLines && orderedLines.length > visibleLines.length ? (
-              <Button size="sm" variant="glass" onClick={() => setShowAllLines(true)}>
-                显示全部 {orderedLines.length} 条（含 dead）
-              </Button>
-            ) : showAllLines && orderedLines.length > 8 ? (
-              <Button size="sm" variant="glass" onClick={() => setShowAllLines(false)}>
-                只显示前 8 条
-              </Button>
+            {linePageSize !== 'all' && pageCount > 1 ? (
+              <div className="row" style={{ justifyContent: 'space-between', padding: '0 4px' }}>
+                <Button size="sm" variant="glass" disabled={currentPage <= 1} onClick={() => setLinePage((value) => Math.max(1, value - 1))}>
+                  上一页
+                </Button>
+                <span className="caption">第 {currentPage} / {pageCount} 页</span>
+                <Button size="sm" variant="glass" disabled={currentPage >= pageCount} onClick={() => setLinePage((value) => Math.min(pageCount, value + 1))}>
+                  下一页
+                </Button>
+              </div>
             ) : null}
           </div>
         ) : (
