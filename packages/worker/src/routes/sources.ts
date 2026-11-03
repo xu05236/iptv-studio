@@ -49,14 +49,15 @@ sourceRoutes.get('/', async (c) => {
     item.total++;
     if (line.lastProbeAt) item.tested++;
     const usable = validChannels.has(line.channelId) && !unprobeable.test(line.url);
-    if (usable && !line.lastProbeAt) {
+    const livenessReady = !line.lastLivenessAt || now.getTime() - Date.parse(line.lastLivenessAt) >= 6 * 3_600_000;
+    if (usable && !line.lastProbeAt && line.status === 'unknown') {
       item.pending++;
       item.pendingTotal++;
     }
     if (usable && line.status === 'alive') item.alive++;
     else if (usable && line.status === 'suspect') {
       item.quarantineTotal++;
-      if (isDueForProbe(line, 'normal', now)) item.quarantine++;
+      if (livenessReady && isDueForProbe(line, 'normal', now)) item.quarantine++;
     } else if (usable && line.status === 'dead') {
       item.rejectedTotal++;
       if (isDueForProbe(line, 'normal', now)) item.rejected++;
