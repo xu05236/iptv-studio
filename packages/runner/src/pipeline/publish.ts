@@ -314,7 +314,7 @@ export async function publish(
     list.push(shard);
     buckets.set(index, list);
   }
-  await mapPool([...buckets.entries()], 2, async ([index, shards]) => {
+  await mapPool([...buckets.entries()], 4, async ([index, shards]) => {
     await store.put(`state/bucket/${index}.json`, JSON.stringify({ channels: shards.map((shard) => shard.data) }), json);
     step(`bucket ${index + 1}/${buckets.size}`);
   });
