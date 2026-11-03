@@ -264,14 +264,17 @@ async function runFetchWatch(env: Env, settings: AppSettings, now: number): Prom
 /** Batched probe scheduler: enqueue only while unpaused phases still have work. */
 async function runProbeWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
   if (!settings.autoProbeEnabled) return false;
-  const stats = await getJson<Record<string, number>>(env, 'state/pool-stats.json');
-  const paused = new Set(phaseList(settings.probePausedPhases));
-  const hasWork = !stats || PHASES.some((phase) => !paused.has(phase) && Number(stats[phase] ?? 0) > 0);
-  if (!hasWork) return false;
-
   const state = await getJson<IntervalState>(env, 'state/probe-schedule.json');
   if (state?.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
   const intervalMs = Math.max(1, Number(settings.autoProbeIntervalHours) || 2) * 3_600_000;
+  const stats = await getJson<Record<string, number>>(env, 'state/pool-stats.json');
+  const paused = new Set(phaseList(settings.probePausedPhases));
+  const hasWork = !stats || PHASES.some((phase) => !paused.has(phase) && Number(stats[phase] ?? 0) > 0);
+  if (!hasWork) {
+    await recordInterval(env, 'state/probe-schedule.json', now, now + intervalMs, 'idle: no due lines');
+    return false;
+  }
+
   const guard = await intervalGuard(env);
   if (guard) {
     await recordInterval(env, 'state/probe-schedule.json', now, now + 15 * 60_000, `skipped: ${guard}`);
