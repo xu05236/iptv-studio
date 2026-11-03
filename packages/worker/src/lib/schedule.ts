@@ -135,7 +135,8 @@ export async function runScheduler(env: Env): Promise<void> {
     let enqueued = false;
     if (await runFetchWatch(env, settings, at)) enqueued = true;
     if (await runProbeWatch(env, settings, at)) enqueued = true;
-    if (enqueued) await dispatchNext(env);
+    await runAutoPublishAfterProbe(env, settings, at);
+    await dispatchNext(env);
     return;
   }
 

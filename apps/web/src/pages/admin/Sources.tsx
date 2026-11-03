@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Plus, RefreshCw, RadioTower, SlidersHorizontal, Trash2, Upload, Zap } from 'lucide-react';
+import { Activity, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Trash2, Upload, Zap } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { SourceItem } from '../../lib/types';
 import { timeAgo } from '../../lib/format';
@@ -182,8 +182,18 @@ export function Sources() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
-  const toggle = useMutation({    mutationFn: (id: string) => api.post(`/api/admin/sources/${id}/toggle`),
+  const toggle = useMutation({
+    mutationFn: (id: string) => api.post(`/api/admin/sources/${id}/toggle`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] }),
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const favorite = useMutation({
+    mutationFn: (source: SourceItem) => api.patch(`/api/admin/sources/${source.id}`, { weight: source.weight >= 2 ? 1 : 2 }),
+    onSuccess: () => {
+      show('收藏状态已更新，下一轮排序生效');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
+    },
     onError: (error: Error) => show(error.message, 'error'),
   });
 
@@ -214,7 +224,10 @@ export function Sources() {
 
   const items = useMemo(() => {
     const base = data?.items ?? [];
-    if (!healthSort || !health.data) return base;
+    const favorite = (source: SourceItem): number => (source.weight >= 2 ? 1 : 0);
+    if (!healthSort || !health.data) {
+      return [...base].sort((a, b) => favorite(b) - favorite(a) || b.reputation - a.reputation || a.name.localeCompare(b.name, 'zh-CN'));
+    }
     const score = new Map(
       health.data.items.map((item) => {
         const total = item.points.reduce((sum, point) => sum + point.parsed, 0);
@@ -222,7 +235,7 @@ export function Sources() {
         return [item.sourceId, total ? alive / total : 0];
       }),
     );
-    return [...base].sort((a, b) => (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
+    return [...base].sort((a, b) => favorite(b) - favorite(a) || (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
   }, [data, healthSort, health.data]);
   const sites = useMemo(() => [...new Set(items.map(sourceSite))], [items]);
 
@@ -308,6 +321,7 @@ export function Sources() {
               <div className="grow" style={{ minWidth: 0 }}>
                 <div className="row row--wrap" style={{ gap: 6 }}>
                   <span className="title-3 truncate">{source.name}</span>
+                  {source.weight >= 2 ? <Badge tone="orange">收藏</Badge> : null}
                   <Badge tone="blue">{sourceSite(source)}</Badge>
                   <Badge>{source.kind.toUpperCase()}</Badge>
                   {source.origin !== 'remote' ? <Badge>{source.origin === 'upload' ? '文件' : '粘贴'}</Badge> : null}
@@ -338,6 +352,9 @@ export function Sources() {
             <div className="row row--wrap" style={{ marginTop: 12, gap: 6 }}>
               <Button size="sm" loading={probe.isPending} onClick={() => probe.mutate(source.id)}>
                 <RefreshCw size={13} /> 检查解析
+              </Button>
+              <Button size="sm" variant={source.weight >= 2 ? 'primary' : 'glass'} loading={favorite.isPending} onClick={() => favorite.mutate(source)}>
+                <Star size={13} fill={source.weight >= 2 ? 'currentColor' : 'none'} /> {source.weight >= 2 ? '已收藏' : '收藏'}
               </Button>
               <Button size="sm" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}>
                 <Zap size={13} /> 抽样测速
