@@ -130,6 +130,8 @@ export interface LineEntry {
   lastLivenessAt?: string;
   /** Source no longer advertises this URL, but the tested line is kept for a while. */
   retained?: boolean;
+  /** Operator-marked good line; prioritized in exports and pool ordering. */
+  favorite?: boolean;
   reviveAt?: string;
   region?: string;
   operator?: string;

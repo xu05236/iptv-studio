@@ -348,6 +348,40 @@ export interface LineOverrideRow {
   updated_at: string;
 }
 
+let favoritesReady: Promise<void> | null = null;
+
+function ensureLineFavorites(env: Env): Promise<void> {
+  if (!favoritesReady) {
+    favoritesReady = env.DB.prepare(
+      'CREATE TABLE IF NOT EXISTS line_favorites (line_key TEXT PRIMARY KEY, created_at TEXT NOT NULL DEFAULT (datetime(\'now\')))',
+    )
+      .run()
+      .then(() => undefined)
+      .catch((error) => {
+        favoritesReady = null;
+        throw error;
+      });
+  }
+  return favoritesReady;
+}
+
+export async function listLineFavorites(env: Env): Promise<string[]> {
+  await ensureLineFavorites(env);
+  const { results } = await env.DB.prepare('SELECT line_key FROM line_favorites').all<{ line_key: string }>();
+  return results.map((row) => row.line_key);
+}
+
+export async function setLineFavorite(env: Env, keys: string[], favorite: boolean): Promise<number> {
+  await ensureLineFavorites(env);
+  if (!keys.length) return 0;
+  if (favorite) {
+    await env.DB.batch(keys.map((key) => env.DB.prepare('INSERT OR IGNORE INTO line_favorites (line_key) VALUES (?)').bind(key)));
+  } else {
+    await env.DB.batch(keys.map((key) => env.DB.prepare('DELETE FROM line_favorites WHERE line_key = ?').bind(key)));
+  }
+  return keys.length;
+}
+
 export async function listLineOverrides(env: Env): Promise<LineOverrideRow[]> {
   const { results } = await env.DB.prepare('SELECT * FROM line_overrides').all<LineOverrideRow>();
   return results;

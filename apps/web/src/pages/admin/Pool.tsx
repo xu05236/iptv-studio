@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Download, Filter, Layers3, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
+import { Ban, Download, Filter, Layers3, RefreshCw, RotateCcw, Star, Trash2 } from 'lucide-react';
 import { api, getToken } from '../../lib/api';
 import { formatResolution, formatSpeed, statusLabel, statusTone } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Pagination, Sheet, Skeleton, useToast } from '../../components/ui';
@@ -65,6 +65,7 @@ interface PoolLine {
   transport: 'direct' | 'relay';
   pool: keyof PoolCounts;
   autoPool: keyof PoolCounts;
+  favorite?: boolean;
   overridden: boolean;
   promoted?: boolean;
   reason?: string;
@@ -191,8 +192,17 @@ export function Pool() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
-  const reset = useMutation({
-    mutationFn: (keys: string[]) => api.post<{ removed: number }>('/api/admin/pool/reset', { keys }),
+  const favorite = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: boolean }) =>
+      api.post<{ count: number }>('/api/admin/pool/favorite', { keys: [key], favorite: value }),
+    onSuccess: () => {
+      show('线路收藏状态已更新');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const reset = useMutation({    mutationFn: (keys: string[]) => api.post<{ removed: number }>('/api/admin/pool/reset', { keys }),
     onSuccess: (result) => {
       show(`已恢复 ${result.removed} 条线路为自动池`);
       setSelected(new Set());
@@ -587,7 +597,20 @@ export function Pool() {
                         </button>
                       ) : null}
                     </td>
-                    <td data-label="状态"><Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge></td>
+                    <td data-label="状态">
+                      <div className="row" style={{ justifyContent: 'flex-end', gap: 6 }}>
+                        <Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title={line.favorite ? '取消收藏' : '收藏这条线路'}
+                          loading={favorite.isPending}
+                          onClick={() => favorite.mutate({ key: line.key, value: !line.favorite })}
+                        >
+                          <Star size={14} fill={line.favorite ? 'currentColor' : 'none'} color={line.favorite ? 'var(--orange)' : undefined} />
+                        </Button>
+                      </div>
+                    </td>
                     <td data-label="检测" className="caption">{line.lastProbeAt ? `${timeAgo(line.lastProbeAt)} · ${line.passCount ?? 0} 次通过` : '未测'}</td>
                   </tr>
                 ))}

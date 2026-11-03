@@ -7,12 +7,14 @@ import {
   createSubscription,
   deleteLineOverrides,
   listChannels,
+  listLineFavorites,
   listLineOverrides,
   listLineTombstones,
   listSources,
   listSubscriptions,
   loadSettings,
   removeLineTombstones,
+  setLineFavorite,
   upsertLineOverride,
   type SubscriptionRow,
 } from '../db.js';
@@ -76,6 +78,7 @@ interface PoolLine extends LineEntry {
   overridden: boolean;
   promoted?: boolean;
   reason?: string;
+  favorite: boolean;
   transport: 'direct' | 'relay';
   channelName: string;
   group: string;
@@ -88,13 +91,15 @@ interface PoolLine extends LineEntry {
 }
 
 async function loadPool(env: Env) {
-  const [state, channels, sources, settings, overrides] = await Promise.all([
+  const [state, channels, sources, settings, overrides, favorites] = await Promise.all([
     getJson<{ lines: LineEntry[] }>(env, 'state/lines.json'),
     listChannels(env),
     listSources(env),
     loadSettings(env),
     listLineOverrides(env),
+    listLineFavorites(env),
   ]);
+  const favoriteSet = new Set(favorites);
   const channelMap = new Map(channels.map((channel) => [channel.id, channel]));
   const sourceMap = new Map(sources.map((source) => [source.id, source]));
   const overrideMap = new Map(overrides.map((row) => [row.line_key, row]));
@@ -117,6 +122,9 @@ async function loadPool(env: Env) {
     const group = channel.group_title ?? '其他';
     const country = countryOfGroup(group);
     const sorted = [...list].sort(compareLines);
+    const premiumTarget = settings.maxLinesPerChannel > 0
+      ? Math.max(1, Math.min(PREMIUM_PER_CHANNEL, settings.maxLinesPerChannel * 2))
+      : Number.MAX_SAFE_INTEGER;
     let premium = 0;
     for (const line of sorted) {
       let autoPool: PoolName;
@@ -124,7 +132,7 @@ async function loadPool(env: Env) {
       else if (line.status === 'dead') autoPool = 'rejected';
       else if (line.status === 'suspect') autoPool = 'quarantine';
       else if (line.status === 'alive' && !qualityConfirmed(line)) autoPool = 'candidate';
-      else if (premium < Math.max(1, Math.min(PREMIUM_PER_CHANNEL, settings.maxLinesPerChannel * 2))) {
+      else if (premium < premiumTarget) {
         autoPool = 'premium';
         premium++;
       } else autoPool = 'backup';
@@ -134,6 +142,7 @@ async function loadPool(env: Env) {
         ...line,
         autoPool,
         pool,
+        favorite: favoriteSet.has(line.key),
         overridden: Boolean(override),
         reason: override?.reason ?? undefined,
         transport: line.url.startsWith('https:') ? 'direct' : 'relay',
@@ -293,6 +302,7 @@ poolRoutes.get('/lines', async (c) => {
       transport: line.transport,
       pool: line.pool,
       autoPool: line.autoPool,
+      favorite: line.favorite,
       overridden: line.overridden,
       promoted: line.promoted,
       reason: line.reason,
@@ -306,6 +316,20 @@ poolRoutes.get('/lines', async (c) => {
 });
 
 const VALID_POOLS = new Set(['premium', 'backup', 'candidate', 'pending', 'quarantine', 'rejected']);
+
+poolRoutes.get('/favorites', async (c) => {
+  return ok({ keys: await listLineFavorites(c.env) });
+});
+
+poolRoutes.post('/favorite', async (c) => {
+  const body = (await readJson<{ keys?: unknown; favorite?: unknown }>(c)) ?? {};
+  const keys = Array.isArray(body.keys) ? body.keys.filter((key): key is string => typeof key === 'string').slice(0, 500) : [];
+  if (!keys.length) return fail('keys 不能为空');
+  const favorite = body.favorite !== false;
+  await setLineFavorite(c.env, keys, favorite);
+  await audit(c.env, c.get('actor'), favorite ? 'pool.favorite' : 'pool.unfavorite', 'bulk', { keys });
+  return ok({ ok: true, count: keys.length });
+});
 
 poolRoutes.post('/override', async (c) => {
   const body = (await readJson<{ keys?: unknown; pool?: unknown; reason?: unknown }>(c)) ?? {};

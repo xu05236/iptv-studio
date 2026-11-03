@@ -168,6 +168,7 @@ function normalize(
         catchupSource: raw.catchupSource,
         catchupDays: raw.catchupDays,
         error: old?.error,
+        favorite: old?.favorite,
       };
       merged.set(`${line.sourceId}|${line.urlKey}`, line);
     }
@@ -372,6 +373,17 @@ async function syncSourceCounts(api: ApiClient, remote: RemoteConfig, lines: Lin
   await api.post('/api/admin/sync/source-counts', { counts }).catch(() => undefined);
 }
 
+/** Apply operator line favorites before building exports. */
+async function applyLineFavorites(api: ApiClient, lines: LineEntry[]): Promise<void> {
+  try {
+    const { keys } = await api.get<{ keys: string[] }>('/api/admin/pool/favorites');
+    const favorite = new Set(keys);
+    for (const line of lines) line.favorite = favorite.has(line.key) || undefined;
+  } catch {
+    // Export still works without favorites.
+  }
+}
+
 async function syncSourceStats(
   api: ApiClient,
   remote: RemoteConfig,
@@ -534,6 +546,7 @@ async function publishPhase(
   const settings = remote.settings;
   const registry = buildRegistry(remote);
   const logoPacks = await loadLogoPacks(store, logger);
+  await applyLineFavorites(api, lines);
   await reportTaskProgress(api, 0, 5, '准备发布');
   const epg = epgMode === 'fetch'
     ? await collectEpg(settings.epgUrls, registry, logger)
