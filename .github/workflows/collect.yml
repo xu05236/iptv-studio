@@ -105,6 +105,18 @@ jobs:
             npm run collect -w @iptv/runner
           fi
 
+      - name: Snapshot usage (same job, no extra run)
+        if: always()
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_ID: ${{ secrets.D1_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: npm run usage -w @iptv/runner
+
       - name: Capture screenshots (optional)
         if: github.event.inputs.command == 'collect' || github.event_name == 'schedule'
         continue-on-error: true

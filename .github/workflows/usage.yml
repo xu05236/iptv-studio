@@ -1,11 +1,6 @@
 name: Usage snapshot
 
 on:
-  schedule:
-    - cron: '5 */2 * * *'
-  workflow_run:
-    workflows: ["Collect & Probe"]
-    types: [completed]
   workflow_dispatch:
 
 permissions:
