@@ -754,7 +754,7 @@ function phaseMatches(line: LineEntry, phase: 'pending' | 'quarantine' | 'reject
   if (phase === 'pending') return !line.lastProbeAt && line.status === 'unknown';
   if (phase === 'quarantine') {
     if (line.status !== 'suspect') return false;
-    if (!livenessReady(line, now)) return false;
+    if (!forced && !livenessReady(line, now)) return false;
     return forced || isDueForProbe(line, 'normal', new Date(now));
   }
   if (line.status !== 'dead') return false;
