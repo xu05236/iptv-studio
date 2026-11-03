@@ -122,7 +122,10 @@ export function buildPoolSnapshot(input: BuildPoolSnapshotInput): PoolSnapshot {
       if (!line.lastProbeAt) continue;
       if (line.status !== 'alive') continue;
       if (!qualityConfirmed(line)) {
-        candidate.push(line);
+        // Unlimited export mode: keep quality-unknown but alive lines in the
+        // premium bucket so the player can test every available line.
+        if (input.maxLinesPerChannel <= 0) premium.push(line);
+        else candidate.push(line);
         continue;
       }
       if (premium.length < target) premium.push(line);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link2, Plus, RefreshCw, Trash2, Wand2, X } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -45,6 +45,31 @@ export function SubscriptionsAdmin() {
   const [channelIds, setChannelIds] = useState<string[]>([]);
   const [channelSearch, setChannelSearch] = useState('');
   const [preview, setPreview] = useState<{ name: string; body: string; format: string } | null>(null);
+  const [exportLimit, setExportLimit] = useState('0');
+  const [frontLimit, setFrontLimit] = useState('0');
+
+  const settingsQuery = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => api.get<{ settings: { maxLinesPerChannel: number; frontLineLimit: number } }>('/api/admin/settings'),
+  });
+
+  useEffect(() => {
+    if (!settingsQuery.data) return;
+    setExportLimit(String(settingsQuery.data.settings.maxLinesPerChannel ?? 0));
+    setFrontLimit(String(settingsQuery.data.settings.frontLineLimit ?? 0));
+  }, [settingsQuery.data]);
+
+  const saveLimits = useMutation({
+    mutationFn: () => api.put('/api/admin/settings', {
+      maxLinesPerChannel: Math.max(0, Number(exportLimit) || 0),
+      frontLineLimit: Math.max(0, Number(frontLimit) || 0),
+    }),
+    onSuccess: () => {
+      show('线路显示与导出上限已保存');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'subscriptions'],
@@ -148,6 +173,28 @@ export function SubscriptionsAdmin() {
         </div>
         <Button variant="primary" onClick={() => openEdit()}><Plus size={16} /> 新建订阅</Button>
       </div>
+
+      <Card>
+        <div className="title-3">线路显示与导出上限</div>
+        <div className="row row--wrap" style={{ marginTop: 10 }}>
+          <div className="grow">
+            <Field label="播放器导出行数" hint="每个频道最多写入订阅几条线路；0 = 不限制">
+              <input className="input" inputMode="numeric" value={exportLimit} onChange={(event) => setExportLimit(event.target.value)} />
+            </Field>
+          </div>
+          <div className="grow">
+            <Field label="前台默认显示行数" hint="频道详情页默认展示几条；0 = 全部显示">
+              <input className="input" inputMode="numeric" value={frontLimit} onChange={(event) => setFrontLimit(event.target.value)} />
+            </Field>
+          </div>
+          <div style={{ alignSelf: 'flex-end' }}>
+            <Button variant="primary" loading={saveLimits.isPending} onClick={() => saveLimits.mutate()}>保存上限</Button>
+          </div>
+        </div>
+        <div className="caption" style={{ marginTop: 8 }}>
+          当前 {settingsQuery.data ? `播放器 ${settingsQuery.data.settings.maxLinesPerChannel} 条 / 前台 ${settingsQuery.data.settings.frontLineLimit} 条` : '加载中'}。0 表示不限制；修改后需要重新发布订阅生效。
+        </div>
+      </Card>
 
       {isLoading ? <Card><div className="caption">加载中…</div></Card> : null}
 
