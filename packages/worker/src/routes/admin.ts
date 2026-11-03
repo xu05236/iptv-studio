@@ -351,6 +351,36 @@ adminRoutes.get('/snapshots', async (c) => {
   return ok({ items: manifest?.items ?? [] });
 });
 
+adminRoutes.post('/snapshots', async (c) => {
+  const [index, catalog, pool, guide] = await Promise.all([
+    getJson<Record<string, unknown>>(c.env, 'state/index.json'),
+    getJson<Record<string, unknown>>(c.env, 'out/catalog.json'),
+    getJson<Record<string, unknown>>(c.env, 'state/pool.json'),
+    getJson<Record<string, unknown>>(c.env, 'state/guide.json'),
+  ]);
+  if (!index || !catalog) return fail('当前没有可快照的发布产物', 404);
+  const id = `manual-${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}`;
+  const base = `state/snapshots/${id}`;
+  const json = 'application/json; charset=utf-8';
+  await putArtifact(c.env, `${base}/index.json`, JSON.stringify(index), json);
+  await putArtifact(c.env, `${base}/catalog.json`, JSON.stringify(catalog), json);
+  if (pool) await putArtifact(c.env, `${base}/pool.json`, JSON.stringify(pool), json);
+  if (guide) await putArtifact(c.env, `${base}/guide.json`, JSON.stringify(guide), json);
+  const manifest = await getJson<{ items: Array<Record<string, unknown>> }>(c.env, 'state/snapshots.json');
+  const items = (manifest?.items ?? []).filter((item) => item['id'] !== id);
+  items.unshift({
+    id,
+    generatedAt: new Date().toISOString(),
+    channels: Number(index['totalChannels'] ?? 0),
+    lines: Number(index['totalLines'] ?? 0),
+    alive: Number(index['aliveLines'] ?? 0),
+    createdAt: new Date().toISOString(),
+  });
+  await putArtifact(c.env, 'state/snapshots.json', JSON.stringify({ items: items.slice(0, 10) }), json);
+  await audit(c.env, c.get('actor'), 'snapshot.create', id);
+  return ok({ item: items[0] });
+});
+
 adminRoutes.post('/snapshots/:id/restore', async (c) => {
   const id = c.req.param('id');
   if (!/^[A-Za-z0-9._-]{1,64}$/.test(id)) return fail('快照 ID 不合法', 400);

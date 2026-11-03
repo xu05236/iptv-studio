@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileText, RotateCcw } from 'lucide-react';
+import { Camera, FileText, RotateCcw } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { RunItem } from '../../lib/types';
 import { formatBytes, formatDateTime, formatDuration, timeAgo } from '../../lib/format';
@@ -34,6 +34,15 @@ export function Runs() {
   const snapshots = useQuery({
     queryKey: ['admin', 'snapshots'],
     queryFn: () => api.get<{ items: Array<{ id: string; generatedAt: string; channels: number; lines: number; alive: number }> }>('/api/admin/snapshots'),
+  });
+
+  const createSnapshot = useMutation({
+    mutationFn: () => api.post<{ item: unknown }>('/api/admin/snapshots'),
+    onSuccess: () => {
+      show('快照已创建');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'snapshots'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
   });
 
   const restore = useMutation({
@@ -70,7 +79,12 @@ export function Runs() {
       <Card>
         <div className="row row--between">
           <div className="title-3">快照回滚</div>
-          <span className="caption">保留最近 10 次发布</span>
+          <div className="row" style={{ gap: 8 }}>
+            <span className="caption">手动创建 · 保留最近 10 个</span>
+            <Button size="sm" variant="primary" loading={createSnapshot.isPending} onClick={() => createSnapshot.mutate()}>
+              <Camera size={14} /> 创建快照
+            </Button>
+          </div>
         </div>
         <div className="list" style={{ marginTop: 8 }}>
           {(snapshots.data?.items ?? []).map((item) => (
@@ -90,7 +104,7 @@ export function Runs() {
               </Button>
             </div>
           ))}
-          {!snapshots.data?.items.length ? <div className="caption">还没有版本快照，下一次发布后生成。</div> : null}
+          {!snapshots.data?.items.length ? <div className="caption">还没有快照，点击「创建快照」手动保存当前发布版本。</div> : null}
         </div>
       </Card>
 
