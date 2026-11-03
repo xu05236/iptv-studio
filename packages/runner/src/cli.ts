@@ -1274,23 +1274,41 @@ async function main(): Promise<void> {
     const logger = new RunLogger();
     const api = new ApiClient(config.apiBaseUrl, config.adminToken);
     const store = new ArtifactStore(api);
-    const remote = await loadRemoteConfig(api);
-    const registry = buildRegistry(remote);
-    const epg = await collectEpg(remote.settings.epgUrls, registry, logger);
-    if (epg.xml) {
-      const bytes = new TextEncoder().encode(epg.xml).byteLength;
-      if (bytes > 24 * 1024 * 1024) {
-        logger.warn('EPG 超过 KV 单值限制，未发布', { mb: Math.round(bytes / 1024 / 1024) });
+    const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const startedAt = nowIso();
+    const startedMs = Date.now();
+    try {
+      const remote = await loadRemoteConfig(api);
+      const registry = buildRegistry(remote);
+      const epg = await collectEpg(remote.settings.epgUrls, registry, logger);
+      let bytes = 0;
+      if (epg.xml) {
+        bytes = new TextEncoder().encode(epg.xml).byteLength;
+        if (bytes > 24 * 1024 * 1024) {
+          logger.warn('EPG 超过 KV 单值限制，未发布', { mb: Math.round(bytes / 1024 / 1024) });
+        } else {
+          await store.put('out/epg.xml', epg.xml, 'application/xml; charset=utf-8');
+          logger.info('EPG 已发布', { mb: Math.round(bytes / 1024 / 1024), programmes: epg.programmes });
+        }
+        const catalog = await store.getJson<ExportCatalog>('out/catalog.json');
+        if (catalog) {
+          await publishSubscriptions(api, store, catalog, remote.settings, config.publicBaseUrl, epg.data, logger);
+        }
       } else {
-        await store.put('out/epg.xml', epg.xml, 'application/xml; charset=utf-8');
-        logger.info('EPG 已发布', { mb: Math.round(bytes / 1024 / 1024), programmes: epg.programmes });
+        logger.warn('没有生成任何节目单内容');
       }
-      const catalog = await store.getJson<ExportCatalog>('out/catalog.json');
-      if (catalog) {
-        await publishSubscriptions(api, store, catalog, remote.settings, config.publicBaseUrl, epg.data, logger);
-      }
-    } else {
-      logger.warn('没有生成任何节目单内容');
+      await finishRun(api, {
+        id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
+        sources: remote.sources.length, channels: remote.channels.length, lines: 0, alive: 0, dead: 0,
+        probed: 0, bytes, durationMs: Date.now() - startedMs, warnings: [],
+      });
+    } catch (error) {
+      await finishRun(api, {
+        id: runId, trigger: 'manual', status: 'failed', startedAt, finishedAt: nowIso(),
+        sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0,
+        durationMs: Date.now() - startedMs, warnings: [], error: error instanceof Error ? error.message : String(error),
+      }).catch(() => undefined);
+      throw error;
     }
     return;
   }
