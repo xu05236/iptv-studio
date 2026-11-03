@@ -62,7 +62,7 @@ export interface SourceItem {
   status: string;
   notes: string | null;
   refresh_hours?: number;
-  progress?: { total: number; tested: number; alive: number; pending: number; quarantine: number; rejected: number };
+  progress?: { total: number; tested: number; alive: number; pending: number; pendingTotal?: number; quarantine: number; quarantineTotal?: number; rejected: number; rejectedTotal?: number };
   filters?: { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number };
   created_at: string;
 }

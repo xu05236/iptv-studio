@@ -333,7 +333,12 @@ export function Sources() {
                 </div>
                 {source.progress ? (
                   <div className="caption" style={{ marginTop: 2 }}>
-                    池内 {source.progress.total} · 已测 {source.progress.tested} · 可用 {source.progress.alive} · 待测 {source.progress.pending} · 待复测 {source.progress.quarantine} · 淘汰 {source.progress.rejected}
+                    池内 {source.progress.total} · 已测 {source.progress.tested} · 可用 {source.progress.alive}
+                  </div>
+                ) : null}
+                {source.progress ? (
+                  <div className="caption" style={{ marginTop: 2 }} title="斜杠左侧是当前到期可测数量，右侧是总记录数">
+                    到期可测：待测 {source.progress.pending}/{source.progress.pendingTotal ?? source.progress.pending} · 待复测 {source.progress.quarantine}/{source.progress.quarantineTotal ?? source.progress.quarantine} · 可复活 {source.progress.rejected}/{source.progress.rejectedTotal ?? source.progress.rejected}
                   </div>
                 ) : null}
                 {source.url ? <div className="caption mono truncate" style={{ marginTop: 2 }}>{source.url}</div> : null}

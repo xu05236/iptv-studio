@@ -43,16 +43,24 @@ sourceRoutes.get('/', async (c) => {
   const validChannels = new Set(channels.map((channel) => channel.id));
   const unprobeable = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
   const now = new Date();
-  const progress = new Map<string, { total: number; tested: number; alive: number; pending: number; quarantine: number; rejected: number }>();
+  const progress = new Map<string, { total: number; tested: number; alive: number; pending: number; pendingTotal: number; quarantine: number; quarantineTotal: number; rejected: number; rejectedTotal: number }>();
   for (const line of state?.lines ?? []) {
-    const item = progress.get(line.sourceId) ?? { total: 0, tested: 0, alive: 0, pending: 0, quarantine: 0, rejected: 0 };
+    const item = progress.get(line.sourceId) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0 };
     item.total++;
     if (line.lastProbeAt) item.tested++;
     const usable = validChannels.has(line.channelId) && !unprobeable.test(line.url);
-    if (usable && !line.lastProbeAt) item.pending++;
+    if (usable && !line.lastProbeAt) {
+      item.pending++;
+      item.pendingTotal++;
+    }
     if (usable && line.status === 'alive') item.alive++;
-    else if (usable && line.status === 'suspect' && isDueForProbe(line, 'normal', now)) item.quarantine++;
-    else if (usable && line.status === 'dead' && isDueForProbe(line, 'normal', now)) item.rejected++;
+    else if (usable && line.status === 'suspect') {
+      item.quarantineTotal++;
+      if (isDueForProbe(line, 'normal', now)) item.quarantine++;
+    } else if (usable && line.status === 'dead') {
+      item.rejectedTotal++;
+      if (isDueForProbe(line, 'normal', now)) item.rejected++;
+    }
     progress.set(line.sourceId, item);
   }
   return ok({
