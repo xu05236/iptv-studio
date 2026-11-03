@@ -724,7 +724,7 @@ export async function applySourceStats(
   for (const stat of stats) {
     const before = existing.get(stat.sourceId);
     if (!before) continue;
-    const failures = stat.fetched && !stat.error ? 0 : before.consecutive_failures + 1;
+    const failures = stat.fetched && !stat.error && stat.parsed > 0 ? 0 : before.consecutive_failures + 1;
     // Permanently broken sources should not linger in the list. Delete them
     // after five consecutive failures; orphan line cleanup removes leftovers.
     if (failures >= 5) {

@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
-import { mapPool, normalizeUrlForDedupe, parseSource, probeStream, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters } from '@iptv/core';
+import { isDueForProbe, mapPool, normalizeUrlForDedupe, parseSource, probeStream, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   deleteSource,
   getSource,
   insertSource,
+  listChannels,
   listSources,
   updateSource,
   audit,
@@ -34,19 +35,24 @@ interface CreateSourceInput {
 }
 
 sourceRoutes.get('/', async (c) => {
-  const [sources, state] = await Promise.all([
+  const [sources, state, channels] = await Promise.all([
     listSources(c.env),
     getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json'),
+    listChannels(c.env),
   ]);
+  const validChannels = new Set(channels.map((channel) => channel.id));
+  const unprobeable = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
+  const now = new Date();
   const progress = new Map<string, { total: number; tested: number; alive: number; pending: number; quarantine: number; rejected: number }>();
   for (const line of state?.lines ?? []) {
     const item = progress.get(line.sourceId) ?? { total: 0, tested: 0, alive: 0, pending: 0, quarantine: 0, rejected: 0 };
     item.total++;
     if (line.lastProbeAt) item.tested++;
-    else item.pending++;
-    if (line.status === 'alive') item.alive++;
-    else if (line.status === 'suspect') item.quarantine++;
-    else if (line.status === 'dead') item.rejected++;
+    const usable = validChannels.has(line.channelId) && !unprobeable.test(line.url);
+    if (usable && !line.lastProbeAt) item.pending++;
+    if (usable && line.status === 'alive') item.alive++;
+    else if (usable && line.status === 'suspect' && isDueForProbe(line, 'normal', now)) item.quarantine++;
+    else if (usable && line.status === 'dead' && isDueForProbe(line, 'normal', now)) item.rejected++;
     progress.set(line.sourceId, item);
   }
   return ok({
