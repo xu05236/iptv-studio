@@ -34,6 +34,9 @@ on:
       auto_publish:
         description: '自动发布标记（内部使用）'
         default: ''
+      trigger:
+        description: '任务来源：schedule / manual（内部使用）'
+        default: 'manual'
 
 concurrency:
   group: iptv-collect
@@ -78,7 +81,7 @@ jobs:
           PROBE_PHASE: ${{ github.event.inputs.phase || '' }}
           TASK_ID: ${{ github.event.inputs.task_id || '' }}
           AUTO_PUBLISH: ${{ github.event.inputs.auto_publish || '' }}
-          TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}
+          TRIGGER: ${{ github.event.inputs.trigger || 'manual' }}
         run: |
           if [ "${{ github.event.inputs.command || 'collect' }}" = "export" ]; then
             npm run export -w @iptv/runner
