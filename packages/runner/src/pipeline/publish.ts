@@ -150,6 +150,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
       minSpeedKbps: 0,
       compensate: input.settings.compensate,
       keepSuspect: input.settings.keepSuspect,
+      relativeFloor: input.settings.maxLinesPerChannel > 0,
     });
     if (!exportLines.length) continue;
 

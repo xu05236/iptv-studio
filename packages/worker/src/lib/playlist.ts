@@ -144,14 +144,16 @@ export function buildFromPool(
     const candidates = config.poolMode === 'premium_backup' ? [...premium, ...backup] : premium;
     if (!candidates.length) continue;
     candidates.sort(compareLines);
+    const unlimited = config.maxLinesPerChannel <= 0;
     const lines = selectLines(candidates, {
       maxLines: config.maxLinesPerChannel,
-      maxPerSource: 3,
+      maxPerSource: unlimited ? 0 : 3,
       minQuality: config.minResolution,
       minSpeedKbps: config.minSpeedKbps,
       protocols: config.protocols.length ? config.protocols : undefined,
       compensate: false,
       keepSuspect: false,
+      relativeFloor: !unlimited,
     });
     if (!lines.length) continue;
     rows.push({ channel, lines });

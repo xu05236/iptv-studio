@@ -106,12 +106,13 @@ export async function publishSubscriptions(
         channel: item.channel,
         lines: selectLines(item.lines, {
           maxLines: sub.max_lines_per_channel,
-          maxPerSource: 3,
+          maxPerSource: sub.max_lines_per_channel > 0 ? 3 : 0,
           minQuality: sub.min_resolution as Quality | 'any',
           minSpeedKbps: sub.min_speed_kbps,
           protocols: sub.protocols.length ? (sub.protocols as Protocol[]) : undefined,
           compensate: true,
           keepSuspect: true,
+          relativeFloor: sub.max_lines_per_channel > 0,
         }),
       }))
       .filter((item) => item.lines.length > 0);
