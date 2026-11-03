@@ -273,6 +273,8 @@ async function progressTaskCore(env: Env, taskId: string, done: number, total?: 
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
   if (!task) return;
+  const nextTotal = total && total > 0 ? total : task.progress.total;
+  if (task.progress.done === Math.max(0, done) && task.progress.total === nextTotal && (!message || task.message === message)) return;
   task.progress.done = Math.max(0, done);
   if (total && total > 0) task.progress.total = total;
   if (message) task.message = message;
