@@ -446,7 +446,7 @@ adminRoutes.put('/settings', async (c) => {
   const patch = await readJson<Partial<AppSettings>>(c);
   if (!patch) return fail('请求体不合法');
   const allowed: Array<keyof AppSettings> = [
-    'logoBaseUrl', 'maxLinesPerChannel', 'maxLinesPerSource', 'compensate', 'keepSuspect', 'deadReviveDays',
+    'logoBaseUrl', 'maxLinesPerChannel', 'frontLineLimit', 'maxLinesPerSource', 'compensate', 'keepSuspect', 'deadReviveDays',
     'probeBudget', 'concurrency', 'probeAliveHours', 'probePremiumHours', 'probePerChannel',
     'ffprobeLimit', 'probePrefilterEnabled', 'probePrefilterBudget', 'lineRetentionDays', 'epgUrls', 'regionSuffix',
     'autoCollectEnabled', 'autoCollectTimes', 'autoLivenessEnabled', 'autoLivenessTimes',

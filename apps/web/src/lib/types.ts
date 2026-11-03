@@ -36,7 +36,7 @@ export interface ChannelDetailResponse {
     now?: { title: string; start: number; stop?: number };
     next?: Array<{ title: string; start: number; stop?: number }>;
   } | null;
-  features?: { relay: boolean; directPlayback?: boolean };
+  features?: { relay: boolean; directPlayback?: boolean; frontLineLimit?: number };
 }
 
 export interface SourceItem {

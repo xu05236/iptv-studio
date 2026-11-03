@@ -93,7 +93,10 @@ export function ChannelDetail() {
       (b.score ?? 0) - (a.score ?? 0),
   );
   const healthyLines = orderedLines.filter((line) => line.status !== 'dead');
-  const visibleLines = showAllLines ? orderedLines : (healthyLines.length ? healthyLines : orderedLines).slice(0, 8);
+  const frontLimit = query.data.features?.frontLineLimit ?? 8;
+  const visibleLines = showAllLines || frontLimit <= 0
+    ? orderedLines
+    : (healthyLines.length ? healthyLines : orderedLines).slice(0, frontLimit);
   const checkedLines = lines.filter((line) => relayChecks.has(line.key));
   const relayBlocked = checkedLines.length > 0 && checkedLines.every((line) => !relayChecks.get(line.key)?.ok);
   const directPlayback = query.data.features?.directPlayback ?? false;

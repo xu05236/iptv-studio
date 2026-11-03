@@ -268,7 +268,10 @@ export interface RuleActions {
 
 export interface AppSettings {
   logoBaseUrl: string;
+  /** Player export cap per channel; 0 means unlimited. */
   maxLinesPerChannel: number;
+  /** Frontend channel detail cap; 0 means show every line. */
+  frontLineLimit: number;
   maxLinesPerSource: number;
   compensate: boolean;
   keepSuspect: boolean;
@@ -334,7 +337,8 @@ export const DEFAULT_EPG_URLS = [
 
 export const DEFAULT_SETTINGS: AppSettings = {
   logoBaseUrl: 'https://live.fanmingming.com/tv/',
-  maxLinesPerChannel: 6,
+  maxLinesPerChannel: 0,
+  frontLineLimit: 0,
   maxLinesPerSource: 2,
   compensate: true,
   keepSuspect: true,

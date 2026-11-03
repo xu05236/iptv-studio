@@ -61,7 +61,8 @@ export function selectLines(lines: LineEntry[], options: SelectOptions): LineEnt
     }
   }
 
-  return capPerSource(picked, options.maxPerSource).slice(0, Math.max(1, options.maxLines));
+  const capped = capPerSource(picked, options.maxPerSource);
+  return options.maxLines > 0 ? capped.slice(0, options.maxLines) : capped;
 }
 
 /**
@@ -75,9 +76,10 @@ export function aggregateChannel(
 ): ChannelCatalogEntry {
   const deduped = dedupeLines(lines.filter((line) => line.channelId === channel.id));
   deduped.sort(compareLines);
+  const limit = options.maxCatalogLines ?? 40;
   return {
     channel,
-    lines: deduped.slice(0, options.maxCatalogLines ?? 40),
+    lines: limit > 0 ? deduped.slice(0, limit) : deduped,
   };
 }
 

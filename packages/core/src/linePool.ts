@@ -104,7 +104,9 @@ export function buildPoolSnapshot(input: BuildPoolSnapshotInput): PoolSnapshot {
     byChannel.set(line.channelId, list);
   }
 
-  const target = Math.max(1, Math.min(12, input.maxLinesPerChannel * 2));
+  const target = input.maxLinesPerChannel > 0
+    ? Math.max(1, Math.min(12, input.maxLinesPerChannel * 2))
+    : Number.MAX_SAFE_INTEGER;
   const channels: Record<string, PoolSnapshotChannel> = {};
 
   for (const [channelId, lines] of byChannel) {

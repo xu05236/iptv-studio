@@ -118,9 +118,10 @@ export function SettingsPage() {
           <Field label="台标基础地址" hint="订阅或源自带 tvg-logo 优先；缺失时按 tvg-id 拼接。旧 fanmingming 地址会自动改用 jsDelivr；前台还会依次回退 Fastly / Gcore / testingcf / ghproxy / gh-proxy / 多个 fork / vircloud / GitHub raw。">
             <input className="input" value={form.logoBaseUrl} onChange={(event) => set('logoBaseUrl', event.target.value)} />
           </Field>
-          <div className="row">
-            <div className="grow"><Field label="每频道最多线路" hint="每个频道最多导出几条线路；多余线路留在池里备选"><input className="input" inputMode="numeric" value={form.maxLinesPerChannel} onChange={(event) => set('maxLinesPerChannel', Number(event.target.value))} /></Field></div>
-            <div className="grow"><Field label="同源最多线路" hint="同一采集站在一个频道最多几条，避免单个源刷屏"><input className="input" inputMode="numeric" value={form.maxLinesPerSource} onChange={(event) => set('maxLinesPerSource', Number(event.target.value))} /></Field></div>
+          <div className="row row--wrap">
+            <div className="grow"><Field label="播放器导出行数" hint="每个频道写入订阅的线路上限；0 = 不限制，保留全部可用线路"><input className="input" inputMode="numeric" value={form.maxLinesPerChannel} onChange={(event) => set('maxLinesPerChannel', Number(event.target.value))} /></Field></div>
+            <div className="grow"><Field label="前台默认显示行数" hint="频道详情页默认展示几条；0 = 全部显示"><input className="input" inputMode="numeric" value={form.frontLineLimit} onChange={(event) => set('frontLineLimit', Number(event.target.value))} /></Field></div>
+            <div className="grow"><Field label="同源最多线路" hint="同一采集站在一个频道最多几条，避免单个源刷屏；0 = 不限制"><input className="input" inputMode="numeric" value={form.maxLinesPerSource} onChange={(event) => set('maxLinesPerSource', Number(event.target.value))} /></Field></div>
           </div>
           <div className="list">
             <div className="list__row"><span className="grow" title="开启后线路名会带上地区/运营商，便于区分同名频道">线路名带地区/运营商后缀</span><Switch checked={form.regionSuffix} onChange={(value) => set('regionSuffix', value)} /></div>

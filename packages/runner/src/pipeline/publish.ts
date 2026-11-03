@@ -140,7 +140,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
     const applied = applyRules(channel, lines, compiled);
     if (!applied.lines.length) continue;
 
-    const aggregated = aggregateChannel(applied.channel, applied.lines, { maxCatalogLines: 40 });
+    const aggregated = aggregateChannel(applied.channel, applied.lines, { maxCatalogLines: input.settings.maxLinesPerChannel > 0 ? 40 : 0 });
     const stats = channelStats(aggregated.lines);
     if (stats.alive === 0) continue;
     const exportLines = selectLines(aggregated.lines, {

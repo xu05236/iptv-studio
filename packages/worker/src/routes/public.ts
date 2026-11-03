@@ -268,7 +268,7 @@ publicRoutes.get('/channels/:id', async (c) => {
         channel: shard.channel,
         lines: safeLines,
         epg: shard.epg ?? null,
-        features: { relay: settings.relayEnabled, directPlayback: settings.directPlayback },
+        features: { relay: settings.relayEnabled, directPlayback: settings.directPlayback, frontLineLimit: settings.frontLineLimit ?? 0 },
       },
       200,
       CACHE_30,
