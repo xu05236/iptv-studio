@@ -1,5 +1,5 @@
 import type { Env } from '../env.js';
-import { getJson } from './store.js';
+import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 import { dispatchWorkflow, listWorkflowRuns } from './github.js';
 
 export type TaskSource = 'schedule' | 'manual' | 'detection' | 'source' | 'cli';
@@ -276,7 +276,7 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
   if (status === 'done' && task.progress.total > 0) task.progress.done = task.progress.total;
   task.finishedAt = new Date().toISOString();
   if (status === 'done' && task.type === 'publish') {
-    await env.KV.put('state/auto-publish-after-probe.json', JSON.stringify({ at: task.finishedAt, taskId: task.id }));
+    await putRuntimeJson(env, 'state/auto-publish-after-probe.json', { at: task.finishedAt, taskId: task.id });
   }
   if (status === 'failed' && (task.retryCount ?? 0) < MAX_RETRIES && isTransientFailure(taskMessage)) {
     const retry = retryTask(tasks, task, taskMessage);
@@ -351,7 +351,7 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
 
   // Global quota guard: keep the task queued instead of burning a dispatch.
   const today = new Date().toISOString().slice(0, 10);
-  const usage = await getJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
+  const usage = await getRuntimeJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
   const writes = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
   if (writes >= 920) {
     if (changed) await saveTasks(env, tasks);

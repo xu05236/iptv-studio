@@ -3,6 +3,7 @@ import { VERSION } from '@iptv/core';
 import type { AppEnv, Env } from './env.js';
 import { checkAdminToken, issueSession, requireAuth } from './lib/auth.js';
 import { fail, hashIp, ok, readJson } from './lib/http.js';
+import { getRuntimeJson, putRuntimeJson } from './lib/runtime-state.js';
 import { publicRoutes } from './routes/public.js';
 import { sourceRoutes } from './routes/sources.js';
 import { channelRoutes } from './routes/channels.js';
@@ -52,14 +53,14 @@ app.use('/api/admin/*', requireAuth);
 app.get('/api/admin/me', (c) => ok({ actor: c.get('actor'), ok: true }));
 
 app.get('/api/admin/usage', async (c) => {
-  const usage = await c.env.KV.get('state/usage.json', 'json');
+  const usage = await getRuntimeJson<Record<string, unknown>>(c.env, 'state/usage.json');
   return ok({ usage });
 });
 
 app.post('/api/admin/usage', async (c) => {
   const body = await readJson<Record<string, unknown>>(c);
   if (!body || typeof body['collectedAt'] !== 'string') return fail('缺少 collectedAt');
-  await c.env.KV.put('state/usage.json', JSON.stringify(body));
+  await putRuntimeJson(c.env, 'state/usage.json', body);
   return ok({ saved: true });
 });
 

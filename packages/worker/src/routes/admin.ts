@@ -25,6 +25,7 @@ import {
 } from '../db.js';
 import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
+import { getRuntimeJson } from '../lib/runtime-state.js';
 import { inferResolution } from '@iptv/core';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask } from '../lib/tasks.js';
@@ -256,7 +257,7 @@ adminRoutes.post('/runs/dispatch', async (c) => {
   const defaultBudget = force ? Math.max(6000, settings.probeBudget || 1200) : settings.probeBudget || 1200;
 
   // Hard guard against accidentally crossing the daily KV write quota.
-  const usage = await getJson<{ kv?: { day?: string; writes?: number } }>(c.env, 'state/usage.json');
+  const usage = await getRuntimeJson<{ kv?: { day?: string; writes?: number } }>(c.env, 'state/usage.json');
   const today = new Date().toISOString().slice(0, 10);
   const kvWrites = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
   if (kvWrites >= 920) {
@@ -513,8 +514,8 @@ adminRoutes.put('/settings', async (c) => {
 
 adminRoutes.get('/schedule', async (c) => {
   const settings = await loadSettings(c.env);
-  const state = await getJson<{ lastRunAt?: string; lastScheduledAt?: string; result?: string }>(c.env, 'state/schedule.json');
-  const livenessState = await getJson<{ lastRunAt?: string; lastScheduledAt?: string; result?: string }>(c.env, 'state/liveness-schedule.json');
+  const state = await getRuntimeJson<{ lastRunAt?: string; lastScheduledAt?: string; result?: string }>(c.env, 'state/schedule.json');
+  const livenessState = await getRuntimeJson<{ lastRunAt?: string; lastScheduledAt?: string; result?: string }>(c.env, 'state/liveness-schedule.json');
   const nextAt = nextAutoCollectAt(settings);
   const nextLivenessAt = nextAutoLivenessAt(settings);
   return ok({
@@ -549,9 +550,9 @@ adminRoutes.get('/tasks', async (c) => {
   const taskItems = await loadTasks(c.env);
   const [stats, probeState, fetchState, publishState] = await Promise.all([
     getJson<Record<string, number>>(c.env, 'state/pool-stats.json'),
-    getJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/probe-schedule.json'),
-    getJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/fetch-schedule.json'),
-    getJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/publish-schedule.json'),
+    getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/probe-schedule.json'),
+    getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/fetch-schedule.json'),
+    getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/publish-schedule.json'),
   ]);
   const order = String(settings.probePhaseOrder ?? '')
     .split(/[\s,，]+/)

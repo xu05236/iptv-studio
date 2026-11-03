@@ -3,7 +3,8 @@ import type { Env } from '../env.js';
 import { audit, loadSettings } from '../db.js';
 import { workflowRunStatus } from './github.js';
 import { getJson } from './store.js';
-import { createTask, dispatchNext, loadTasks } from './tasks.js';
+import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
+import { createTask, dispatchNext, loadTasks, type Task } from './tasks.js';
 
 /** Beijing is UTC+8 with no DST; the scheduler stores local HH:mm and matches in UTC. */
 const BEIJING_OFFSET_MS = 8 * 3_600_000;
@@ -125,7 +126,7 @@ export async function runScheduler(env: Env): Promise<void> {
     if (!times.length) continue;
     const scheduledAt = mostRecentScheduledAt(times, now);
     if (scheduledAt === null || now - scheduledAt > RUN_WINDOW_MS) continue;
-    const state = await getJson<ScheduleState>(env, config.stateKey);
+    const state = await getRuntimeJson<ScheduleState>(env, config.stateKey);
     const lastAttempt = state?.lastRunAt ? Date.parse(state.lastRunAt) : 0;
     if (lastAttempt >= scheduledAt) continue;
     due.push({ config, scheduledAt });
@@ -146,11 +147,11 @@ export async function runScheduler(env: Env): Promise<void> {
       lastScheduledAt: new Date(scheduledAt).toISOString(),
       result,
     };
-    await env.KV.put(config.stateKey, JSON.stringify(next));
+    await putRuntimeJson(env, config.stateKey, next);
   };
 
   const today = new Date(now).toISOString().slice(0, 10);
-  const usage = await getJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
+  const usage = await getRuntimeJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
   const writes = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
 
   let running = false;
@@ -200,15 +201,15 @@ async function runAutoPublishAfterProbe(env: Env, settings: AppSettings, now: nu
   const [index, pool, last, tasks] = await Promise.all([
     getJson<{ generatedAt?: string }>(env, 'state/index.json'),
     getJson<{ generatedAt?: string }>(env, 'state/pool-stats.json'),
-    getJson<{ at?: string }>(env, 'state/auto-publish-after-probe.json'),
+    getRuntimeJson<{ at?: string }>(env, 'state/auto-publish-after-probe.json'),
     loadTasks(env),
   ]);
   if (!index?.generatedAt || !pool?.generatedAt) return false;
   if (Date.parse(pool.generatedAt) <= Date.parse(index.generatedAt)) return false;
   if (now - Date.parse(last?.at ?? '') < AUTO_PUBLISH_INTERVAL_MS) return false;
-  if (tasks.some((task) => task.type === 'publish' && (task.status === 'queued' || task.status === 'running'))) return false;
+  if (tasks.some((task: Task) => task.type === 'publish' && (task.status === 'queued' || task.status === 'running'))) return false;
   const task = await createTask(env, { type: 'publish', source: 'schedule', priority: 40, payload: { auto: 'after-probe' } });
-  await env.KV.put('state/auto-publish-after-probe.json', JSON.stringify({ at: new Date(now).toISOString(), taskId: task.id }));
+  await putRuntimeJson(env, 'state/auto-publish-after-probe.json', { at: new Date(now).toISOString(), taskId: task.id });
   await audit(env, 'scheduler', 'schedule.auto-publish-after-probe', task.id);
   return true;
 }
@@ -221,7 +222,7 @@ interface IntervalState {
 
 async function intervalGuard(env: Env): Promise<'quota' | 'running' | null> {
   const today = new Date().toISOString().slice(0, 10);
-  const usage = await getJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
+  const usage = await getRuntimeJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
   const writes = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
   if (writes >= 920) return 'quota';
   const runs = (await workflowRunStatus(env)) as Array<{ status?: string }> | null;
@@ -235,7 +236,7 @@ async function recordInterval(env: Env, key: string, now: number, nextMs: number
     nextRunAt: new Date(nextMs).toISOString(),
     result,
   };
-  await env.KV.put(key, JSON.stringify(state));
+  await putRuntimeJson(env, key, state);
 }
 
 const PHASES = ['pending', 'quarantine', 'rejected'] as const;
@@ -247,7 +248,7 @@ function phaseList(value: string): string[] {
 /** Weekly-ish fetch task, independent from daily publish/probe. */
 async function runFetchWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
   if (!settings.autoFetchEnabled) return false;
-  const state = await getJson<IntervalState>(env, 'state/fetch-schedule.json');
+  const state = await getRuntimeJson<IntervalState>(env, 'state/fetch-schedule.json');
   if (state?.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
   const intervalMs = Math.max(1, Number(settings.fetchIntervalDays) || 7) * 86_400_000;
   const guard = await intervalGuard(env);
@@ -264,7 +265,7 @@ async function runFetchWatch(env: Env, settings: AppSettings, now: number): Prom
 /** Batched probe scheduler: enqueue only while unpaused phases still have work. */
 async function runProbeWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
   if (!settings.autoProbeEnabled) return false;
-  const state = await getJson<IntervalState>(env, 'state/probe-schedule.json');
+  const state = await getRuntimeJson<IntervalState>(env, 'state/probe-schedule.json');
   if (state?.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
   const intervalMs = Math.max(1, Number(settings.autoProbeIntervalHours) || 2) * 3_600_000;
   const stats = await getJson<Record<string, number>>(env, 'state/pool-stats.json');

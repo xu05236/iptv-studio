@@ -1,6 +1,7 @@
 import type { Env } from '../env.js';
 import { getJson } from './store.js';
-import { loadTasks } from './tasks.js';
+import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
+import { loadTasks, type Task } from './tasks.js';
 
 const TASK_TYPE: Record<string, string> = {
   collect: '完整采集',
@@ -37,10 +38,10 @@ async function buildReply(env: Env, command: string): Promise<string> {
   const [tasks, stats, usage, fetchState, publishState, probeState] = await Promise.all([
     loadTasks(env),
     getJson<Record<string, number>>(env, 'state/pool-stats.json'),
-    getJson<UsageState>(env, 'state/usage.json'),
-    getJson<{ nextRunAt?: string }>(env, 'state/fetch-schedule.json'),
-    getJson<{ nextRunAt?: string }>(env, 'state/publish-schedule.json'),
-    getJson<{ nextRunAt?: string }>(env, 'state/probe-schedule.json'),
+    getRuntimeJson<UsageState>(env, 'state/usage.json'),
+    getRuntimeJson<{ nextRunAt?: string }>(env, 'state/fetch-schedule.json'),
+    getRuntimeJson<{ nextRunAt?: string }>(env, 'state/publish-schedule.json'),
+    getRuntimeJson<{ nextRunAt?: string }>(env, 'state/probe-schedule.json'),
   ]);
 
   if (command === '/help' || command === '/start') {
@@ -66,17 +67,17 @@ async function buildReply(env: Env, command: string): Promise<string> {
   }
 
   if (command === '/tasks') {
-    const active = tasks.filter((task) => task.status === 'running' || task.status === 'queued' || task.status === 'paused');
+    const active = tasks.filter((task: Task) => task.status === 'running' || task.status === 'queued' || task.status === 'paused');
     if (!active.length) return '当前没有运行或排队的任务。';
     return [
       '🧵 当前任务',
-      ...active.map((task) => `${TASK_TYPE[task.type] ?? task.type} · ${task.status}${progressText(task)}\n${task.message ?? ''}`),
+      ...active.map((task: Task) => `${TASK_TYPE[task.type] ?? task.type} · ${task.status}${progressText(task)}\n${task.message ?? ''}`),
     ].join('\n');
   }
 
   // /status and unknown commands: overview.
-  const running = tasks.find((task) => task.status === 'running');
-  const queued = tasks.filter((task) => task.status === 'queued').length;
+  const running = tasks.find((task: Task) => task.status === 'running');
+  const queued = tasks.filter((task: Task) => task.status === 'queued').length;
   return [
     '📡 IPTV Studio 概览',
     `运行：${running ? `${TASK_TYPE[running.type] ?? running.type}${progressText(running)}` : '无'}`,
@@ -148,7 +149,7 @@ export async function registerTelegramWebhook(env: Env): Promise<{ url: string; 
   });
   const result = (await response.json()) as { ok?: boolean; description?: string };
   if (!result.ok) throw new Error(result.description ?? `Telegram HTTP ${response.status}`);
-  await env.KV.put('state/telegram-webhook.json', JSON.stringify({ secret, url }), { expirationTtl: 86_400 * 365 });
+  await putRuntimeJson(env, 'state/telegram-webhook.json', { secret, url });
   let menu = false;
   try {
     if (env.TELEGRAM_CHAT_ID) await configureMenu(token, env.TELEGRAM_CHAT_ID);
@@ -160,7 +161,7 @@ export async function registerTelegramWebhook(env: Env): Promise<{ url: string; 
 }
 
 export async function verifyTelegramSecret(env: Env, header: string | null): Promise<boolean> {
-  const stored = await getJson<{ secret?: string }>(env, 'state/telegram-webhook.json');
+  const stored = await getRuntimeJson<{ secret?: string }>(env, 'state/telegram-webhook.json');
   return Boolean(stored?.secret && header === stored.secret);
 }
 
@@ -169,9 +170,9 @@ export async function runTelegramCommands(env: Env): Promise<void> {
   const token = env.TELEGRAM_BOT_TOKEN;
   const chatId = env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
-  if (await getJson<{ secret?: string }>(env, 'state/telegram-webhook.json')) return;
+  if (await getRuntimeJson<{ secret?: string }>(env, 'state/telegram-webhook.json')) return;
   try {
-    const stored = await getJson<{ offset?: number }>(env, 'state/telegram-offset.json');
+    const stored = await getRuntimeJson<{ offset?: number }>(env, 'state/telegram-offset.json');
     const offset = Number(stored?.offset ?? 0);
     const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates?timeout=0&offset=${offset}`, {
       method: 'GET',
@@ -188,7 +189,7 @@ export async function runTelegramCommands(env: Env): Promise<void> {
       await handleTelegramUpdate(env, update);
     }
     if (nextOffset !== offset) {
-      await env.KV.put('state/telegram-offset.json', JSON.stringify({ offset: nextOffset }), { expirationTtl: 86_400 * 30 });
+      await putRuntimeJson(env, 'state/telegram-offset.json', { offset: nextOffset });
     }
   } catch {
     // Telegram polling failures must not affect the scheduler.
