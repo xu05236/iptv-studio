@@ -1501,6 +1501,146 @@ button {
   cursor: not-allowed;
 }
 
+/* ---------------------------------------------------------- task center */
+.task-board {
+  padding: 20px;
+}
+
+.task-board__header {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--sep);
+}
+
+.task-board__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+  color: var(--blue);
+}
+
+.task-section {
+  padding-top: 16px;
+}
+
+.task-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.1px;
+}
+
+.task-running {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--green) 24%, var(--sep));
+  background: color-mix(in srgb, var(--green) 7%, var(--bg-elev));
+}
+
+.task-running__title {
+  font-weight: 650;
+}
+
+.task-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.task-plan-grid,
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-plan,
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--sep) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 70%, var(--fill-2));
+}
+
+.task-plan__title,
+.task-item__title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.task-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.task-empty {
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--fill-2);
+  color: var(--label-3);
+  font-size: 13px;
+}
+
+.task-failure {
+  color: var(--red);
+  word-break: break-word;
+}
+
+.task-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--sep);
+}
+
+.task-phases {
+  margin-top: 10px;
+}
+
+.task-phases summary {
+  cursor: pointer;
+  padding: 6px 0;
+  list-style: none;
+}
+
+.task-phases summary::-webkit-details-marker {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .task-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .task-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .task-item__actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
 @media (max-width: 700px) {
   .admin-hero {
     padding: 20px;

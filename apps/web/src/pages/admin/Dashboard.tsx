@@ -369,146 +369,159 @@ export function Dashboard() {
         </Card>
       ) : null}
 
-      <Card>
-        <div className="row row--between row--wrap">
-          <div className="row" style={{ gap: 6 }}>
-            <ListChecks size={17} />
-            <span className="title-3">检测任务</span>
+      <Card className="task-board">
+        <div className="row row--between row--wrap task-board__header">
+          <div className="row" style={{ gap: 8 }}>
+            <span className="task-board__icon"><ListChecks size={17} /></span>
+            <div>
+              <div className="title-3">任务中心</div>
+              <div className="caption">
+                {tasks.data ? `每 ${tasks.data.intervalHours} 小时一批 · 每批 ${tasks.data.batchSize} 条` : '加载中'}
+              </div>
+            </div>
           </div>
-          <span className="caption">
-            {tasks.data ? `每 ${tasks.data.intervalHours} 小时一批 · 每批 ${tasks.data.batchSize} 条` : '加载中'}
-          </span>
+          {tasks.data ? (
+            <div className="row row--wrap" style={{ gap: 6 }}>
+              <Badge tone={runningTask ? 'green' : 'default'}>{runningTask ? '运行中 1' : '空闲'}</Badge>
+              <Badge tone={queuedTasks.length ? 'blue' : 'default'}>排队 {queuedTasks.length}</Badge>
+              <Badge>计划 {scheduledTasks.length}</Badge>
+            </div>
+          ) : null}
         </div>
         {tasks.data ? (
           <>
-            <div className="caption" style={{ marginTop: 10 }}>计划任务</div>
-            <div className="list">
-              {scheduledTasks.map((task) => (
-                <div className="list__row" key={task.id}>
+            <div className="task-section">
+              <div className="task-section__head">
+                <span>运行中</span>
+                <span className="caption">{runningTask ? taskEta(runningTask) : '当前空闲'}</span>
+              </div>
+              {runningTask ? (
+                <div className="task-running">
                   <div className="grow">
-                    <div className="row" style={{ gap: 6 }}>
-                      <Badge>定时</Badge>
-                      <span>{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</span>
-                    </div>
-                    <div className="caption">
-                      {task.payload.nextAt ? `下次 ${formatSnapshot(task.payload.nextAt)}` : '等待新线路'}
-                    </div>
-                  </div>
-                  <Button size="sm" variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: task.type as 'probe-batch' | 'fetch' | 'publish' | 'epg' })}>
-                    立即执行
-                  </Button>
-                </div>
-              ))}
-              {!scheduledTasks.length ? <div className="caption">没有启用的定时任务</div> : null}
-            </div>
-
-            {runningTask ? (
-              <div className="list" style={{ marginTop: 10 }}>
-                <div className="list__row" style={{ background: 'rgba(52, 199, 89, 0.08)' }}>
-                  <div className="grow">
-                    <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                    <div className="row row--wrap" style={{ gap: 6 }}>
                       <Badge tone="blue">{TASK_SOURCE_LABEL[runningTask.source]}</Badge>
-                      <span style={{ fontWeight: 600 }}>{runningTask.label ?? TASK_TYPE_LABEL[runningTask.type] ?? runningTask.type}</span>
+                      <span className="task-running__title">{runningTask.label ?? TASK_TYPE_LABEL[runningTask.type] ?? runningTask.type}</span>
                       <Badge tone="green">运行中</Badge>
                     </div>
-                    <div className="caption" style={{ marginTop: 2 }}>
-                      {runningTask.message ?? '执行中'} · {taskEta(runningTask)}
+                    <div className="caption" style={{ marginTop: 4 }}>
+                      {runningTask.message ?? '执行中'}
                       {runningTask.progress.total > 0 ? ` · ${runningTask.progress.done}/${runningTask.progress.total} ${runningTask.progress.unit}` : ''}
                     </div>
                     {runningTask.progress.total > 0 ? (
-                      <div className="meter" style={{ marginTop: 6 }}>
+                      <div className="meter" style={{ marginTop: 8 }}>
                         <div className="meter__fill" style={{ width: `${Math.min(100, Math.max(1, (runningTask.progress.done / runningTask.progress.total) * 100))}%`, background: 'var(--green)' }} />
                       </div>
                     ) : null}
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="caption" style={{ marginTop: 10 }}>当前没有运行中的任务</div>
-            )}
-
-            <div className="caption" style={{ marginTop: 10 }}>排队中 · 手动/检测中心优先</div>
-            <div className="list">
-              {queuedTasks.map((task, index) => (
-                <div className="list__row" key={task.id}>
-                  <div className="grow">
-                    <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-                      <Badge tone={task.source === 'manual' || task.source === 'detection' ? 'blue' : task.source === 'source' ? 'green' : 'default'}>
-                        {TASK_SOURCE_LABEL[task.source]}
-                      </Badge>
-                      <span style={{ fontWeight: 600 }}>{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</span>
-                      {task.status === 'paused' ? <Badge tone="orange">已暂停</Badge> : null}
-                      {task.payload.phase ? <Badge>{task.payload.phase}</Badge> : null}
-                    </div>
-                    <div className="caption">
-                      {task.progress.total > 0 ? `${task.progress.done}/${task.progress.total} ${task.progress.unit} · ` : ''}
-                      {task.message ?? '等待执行'} · 创建 {timeAgo(task.createdAt)}
-                    </div>
-                  </div>
-                  <div className="row" style={{ gap: 4 }}>
-                    <Button size="sm" variant="ghost" disabled={index === 0} title="提升" onClick={() => taskAction.mutate({ id: task.id, action: 'move-up' })}>
-                      <ArrowUp size={14} />
-                    </Button>
-                    <Button size="sm" variant="ghost" disabled={index === queuedTasks.length - 1} title="延后" onClick={() => taskAction.mutate({ id: task.id, action: 'move-down' })}>
-                      <ArrowDown size={14} />
-                    </Button>
-                    <Button size="sm" variant="ghost" title={task.status === 'paused' ? '恢复' : '暂停'} onClick={() => taskAction.mutate({ id: task.id, action: task.status === 'paused' ? 'resume' : 'pause' })}>
-                      {task.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
-                    </Button>
-                    <Button size="sm" variant="ghost" title="取消" onClick={() => taskAction.mutate({ id: task.id, action: 'cancel' })}>取消</Button>
-                    <Button size="sm" variant="glass" title="插到队首" onClick={() => taskAction.mutate({ id: task.id, action: 'run-now' })}>插队</Button>
-                  </div>
-                </div>
-              ))}
-              {!queuedTasks.length ? <div className="caption">队列为空</div> : null}
+              ) : (
+                <div className="task-empty">当前没有运行中的任务</div>
+              )}
             </div>
 
-            {recentTasks.length ? (
-              <>
-                <div className="caption" style={{ marginTop: 10 }}>最近完成</div>
-                <div className="list">
-                  {recentTasks.map((task) => (
-                    <div className="list__row" key={task.id}>
+            <div className="task-columns">
+              <div className="task-section">
+                <div className="task-section__head">
+                  <span>计划任务</span>
+                  <span className="caption">到点自动执行</span>
+                </div>
+                <div className="task-plan-grid">
+                  {scheduledTasks.map((task) => (
+                    <div className="task-plan" key={task.id}>
                       <div className="grow">
-                        <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-                          <Badge tone={task.source === 'manual' || task.source === 'detection' ? 'blue' : 'default'}>{TASK_SOURCE_LABEL[task.source]}</Badge>
-                          <span>{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</span>
-                          <Badge tone={task.status === 'done' ? 'green' : task.status === 'failed' ? 'red' : 'default'}>
-                            {task.status === 'done' ? '完成' : task.status === 'failed' ? '失败' : '取消'}
-                          </Badge>
+                        <div className="task-plan__title">{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</div>
+                        <div className="caption">
+                          {task.payload.nextAt ? `下次 ${formatSnapshot(task.payload.nextAt)}` : '等待新线路'}
                         </div>
-                        <div className="caption">{task.message ?? ''} · {task.finishedAt ? timeAgo(task.finishedAt) : ''}</div>
-                        {task.failureReason ? (
-                          <div className="caption" style={{ color: 'var(--red, #e5484d)', wordBreak: 'break-word' }}>
-                            失败原因：{task.failureReason}
-                          </div>
-                        ) : null}
                       </div>
-                      {task.status === 'failed' || task.status === 'cancelled' ? (
-                        <Button size="sm" variant="glass" onClick={() => taskAction.mutate({ id: task.id, action: 'retry' })}>重试</Button>
-                      ) : null}
+                      <Button size="sm" variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: task.type as 'probe-batch' | 'fetch' | 'publish' | 'epg' })}>
+                        立即执行
+                      </Button>
                     </div>
                   ))}
+                  {!scheduledTasks.length ? <div className="task-empty">没有启用的定时任务</div> : null}
                 </div>
-              </>
-            ) : null}
+              </div>
 
-            <div className="caption" style={{ marginTop: 8 }}>
-              阶段余量：{tasks.data.phases.map((phase) => `${phase.label} ${phase.count}`).join(' · ')}。
-              抓源：{tasks.data.schedules.fetch.enabled ? `每 ${tasks.data.schedules.fetch.intervalDays} 天` : '关闭'}
-              {tasks.data.schedules.fetch.nextAt ? `（下次 ${formatSnapshot(tasks.data.schedules.fetch.nextAt)}）` : ''}
-              <Button size="sm" variant="glass" style={{ marginLeft: 6 }} loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'fetch' })}>
-                立即抓源
-              </Button>
-              ；发布：{tasks.data.schedules.publish.enabled ? `每天 ${tasks.data.schedules.publish.times}` : '关闭'}
-              {tasks.data.schedules.publish.nextAt ? `（下次 ${formatSnapshot(tasks.data.schedules.publish.nextAt)}）` : ''}
-              <Button size="sm" variant="glass" style={{ marginLeft: 6 }} loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
-                立即发布
-              </Button>
+              <div className="task-section">
+                <div className="task-section__head">
+                  <span>排队中</span>
+                  <span className="caption">手动/检测优先</span>
+                </div>
+                <div className="task-list">
+                  {queuedTasks.map((task, index) => (
+                    <div className="task-item" key={task.id}>
+                      <div className="grow">
+                        <div className="row row--wrap" style={{ gap: 6 }}>
+                          <Badge tone={task.source === 'manual' || task.source === 'detection' ? 'blue' : task.source === 'source' ? 'green' : 'default'}>
+                            {TASK_SOURCE_LABEL[task.source]}
+                          </Badge>
+                          <span className="task-item__title">{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</span>
+                          {task.status === 'paused' ? <Badge tone="orange">已暂停</Badge> : null}
+                        </div>
+                        <div className="caption" style={{ marginTop: 3 }}>
+                          {task.progress.total > 0 ? `${task.progress.done}/${task.progress.total} ${task.progress.unit} · ` : ''}
+                          {task.message ?? '等待执行'} · {timeAgo(task.createdAt)}
+                        </div>
+                      </div>
+                      <div className="task-item__actions">
+                        <Button size="sm" variant="ghost" disabled={index === 0} title="提升" onClick={() => taskAction.mutate({ id: task.id, action: 'move-up' })}><ArrowUp size={14} /></Button>
+                        <Button size="sm" variant="ghost" disabled={index === queuedTasks.length - 1} title="延后" onClick={() => taskAction.mutate({ id: task.id, action: 'move-down' })}><ArrowDown size={14} /></Button>
+                        <Button size="sm" variant="ghost" title={task.status === 'paused' ? '恢复' : '暂停'} onClick={() => taskAction.mutate({ id: task.id, action: task.status === 'paused' ? 'resume' : 'pause' })}>{task.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}</Button>
+                        <Button size="sm" variant="ghost" title="取消" onClick={() => taskAction.mutate({ id: task.id, action: 'cancel' })}>取消</Button>
+                        <Button size="sm" variant="glass" title="插到队首" onClick={() => taskAction.mutate({ id: task.id, action: 'run-now' })}>插队</Button>
+                      </div>
+                    </div>
+                  ))}
+                  {!queuedTasks.length ? <div className="task-empty">队列为空</div> : null}
+                </div>
+              </div>
             </div>
 
-            <details style={{ marginTop: 8 }}>
-              <summary className="caption" style={{ cursor: 'pointer' }}>分批阶段设置（顺序 / 暂停）</summary>
+            <div className="task-section">
+              <div className="task-section__head">
+                <span>最近完成</span>
+                <span className="caption">保留最近 30 条</span>
+              </div>
+              <div className="task-list">
+                {recentTasks.map((task) => (
+                  <div className="task-item" key={task.id}>
+                    <div className="grow">
+                      <div className="row row--wrap" style={{ gap: 6 }}>
+                        <Badge tone={task.source === 'manual' || task.source === 'detection' ? 'blue' : 'default'}>{TASK_SOURCE_LABEL[task.source]}</Badge>
+                        <span className="task-item__title">{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</span>
+                        <Badge tone={task.status === 'done' ? 'green' : task.status === 'failed' ? 'red' : 'default'}>
+                          {task.status === 'done' ? '完成' : task.status === 'failed' ? '失败' : '取消'}
+                        </Badge>
+                      </div>
+                      <div className="caption" style={{ marginTop: 3 }}>{task.message ?? ''} · {task.finishedAt ? timeAgo(task.finishedAt) : ''}</div>
+                      {task.failureReason ? <div className="caption task-failure">失败原因：{task.failureReason}</div> : null}
+                    </div>
+                    {task.status === 'failed' || task.status === 'cancelled' ? (
+                      <Button size="sm" variant="glass" onClick={() => taskAction.mutate({ id: task.id, action: 'retry' })}>重试</Button>
+                    ) : null}
+                  </div>
+                ))}
+                {!recentTasks.length ? <div className="task-empty">还没有完成记录</div> : null}
+              </div>
+            </div>
+
+            <div className="task-foot">
+              <div className="row row--wrap" style={{ gap: 8 }}>
+                <Badge>{`待测 ${tasks.data.phases.find((phase) => phase.id === 'pending')?.count ?? 0}`}</Badge>
+                <Badge>{`待复测 ${tasks.data.phases.find((phase) => phase.id === 'quarantine')?.count ?? 0}`}</Badge>
+                <Badge>{`待复活 ${tasks.data.phases.find((phase) => phase.id === 'rejected')?.count ?? 0}`}</Badge>
+                <span className="caption">抓源 {tasks.data.schedules.fetch.enabled ? `每 ${tasks.data.schedules.fetch.intervalDays} 天` : '关闭'}</span>
+                <span className="caption">发布 {tasks.data.schedules.publish.enabled ? tasks.data.schedules.publish.times : '关闭'}</span>
+              </div>
+              <div className="row" style={{ gap: 6 }}>
+                <Button size="sm" variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'fetch' })}>立即抓源</Button>
+                <Button size="sm" variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>立即发布</Button>
+              </div>
+            </div>
+
+            <details className="task-phases">
+              <summary className="caption">分批阶段设置（顺序 / 暂停）</summary>
               <div className="list">
                 {tasks.data.phases.map((phase, index) => (
                   <div className="list__row" key={phase.id}>
@@ -520,15 +533,9 @@ export function Dashboard() {
                       <div className="caption">{formatNumber(phase.count)} 条 · 约 {phase.estimatedBatches} 批</div>
                     </div>
                     <div className="row" style={{ gap: 4 }}>
-                      <Button size="sm" variant="ghost" disabled={index === 0 || savePhasePlan.isPending} onClick={() => movePhase(index, -1)} title="提升阶段">
-                        <ArrowUp size={14} />
-                      </Button>
-                      <Button size="sm" variant="ghost" disabled={index === tasks.data!.phases.length - 1 || savePhasePlan.isPending} onClick={() => movePhase(index, 1)} title="延后阶段">
-                        <ArrowDown size={14} />
-                      </Button>
-                      <Button size="sm" variant="ghost" disabled={savePhasePlan.isPending} onClick={() => togglePhase(phase.id)} title={phase.paused ? '恢复阶段' : '暂停阶段'}>
-                        {phase.paused ? <Play size={14} /> : <Pause size={14} />}
-                      </Button>
+                      <Button size="sm" variant="ghost" disabled={index === 0 || savePhasePlan.isPending} onClick={() => movePhase(index, -1)} title="提升阶段"><ArrowUp size={14} /></Button>
+                      <Button size="sm" variant="ghost" disabled={index === tasks.data!.phases.length - 1 || savePhasePlan.isPending} onClick={() => movePhase(index, 1)} title="延后阶段"><ArrowDown size={14} /></Button>
+                      <Button size="sm" variant="ghost" disabled={savePhasePlan.isPending} onClick={() => togglePhase(phase.id)} title={phase.paused ? '恢复阶段' : '暂停阶段'}>{phase.paused ? <Play size={14} /> : <Pause size={14} />}</Button>
                     </div>
                   </div>
                 ))}
