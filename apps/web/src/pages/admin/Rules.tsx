@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Filter, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Badge, Button, Card, Field, Sheet, Skeleton, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
@@ -185,28 +185,50 @@ export function Rules() {
       {rules.isLoading ? <Skeleton height={160} radius={16} /> : null}
 
       {!rules.isLoading && !items.length ? (
-        <Card><div className="caption">还没有规则。规则可以排除垃圾频道、把频道归到正确分组、批量改台标或重命名。</div></Card>
+        <Card className="rule-empty">
+          <div className="rule-empty__icon"><Filter size={20} /></div>
+          <div>
+            <div className="title-3">还没有规则</div>
+            <div className="caption">规则可以排除垃圾频道、把频道归到正确分组、批量改台标或重命名。新规则在下一轮采集生效。</div>
+          </div>
+          <Button variant="primary" onClick={() => { setForm(EMPTY); setOpen(true); }}><Plus size={15} /> 新建规则</Button>
+        </Card>
       ) : null}
 
-      <div className="stack">
+      {items.length ? (
+        <div className="rule-stats">
+          <div><strong>{items.length}</strong><span>规则总数</span></div>
+          <div><strong>{items.filter((rule) => rule.enabled).length}</strong><span>已启用</span></div>
+          <div><strong>{items.filter((rule) => rule.actions.exclude).length}</strong><span>排除规则</span></div>
+          <div><strong>{Math.max(...items.map((rule) => rule.priority), 0)}</strong><span>最高优先级</span></div>
+        </div>
+      ) : null}
+
+      <div className="rule-grid">
         {items.map((rule) => (
-          <Card key={rule.id}>
-            <div className="row row--between row--wrap" style={{ alignItems: 'flex-start' }}>
+          <Card className={`rule-card rule-card--${rule.enabled ? 'green' : 'default'}`} key={rule.id}>
+            <div className="rule-card__head">
               <div className="grow">
-                <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-                  <span className="title-3">{rule.name}</span>
+                <div className="row row--wrap" style={{ gap: 6 }}>
+                  <span className="rule-card__name">{rule.name}</span>
                   <Badge tone={rule.enabled ? 'green' : 'default'}>{rule.enabled ? '启用' : '停用'}</Badge>
                   <Badge>优先级 {rule.priority}</Badge>
                   {rule.actions.exclude ? <Badge tone="red">排除</Badge> : null}
                 </div>
-                <div className="caption" style={{ marginTop: 4 }}>条件：{summarize(rule)}</div>
-                <div className="caption">动作：{actionSummary(rule)}</div>
               </div>
-              <div className="row" style={{ gap: 6 }}>
-                <Switch checked={rule.enabled} onChange={() => toggle.mutate(rule)} />
-                <Button size="sm" variant="glass" onClick={() => { setForm(toForm(rule)); setOpen(true); }}><Pencil size={13} /> 编辑</Button>
-                <Button size="sm" variant="danger" onClick={() => { if (window.confirm(`删除规则「${rule.name}」？`)) remove.mutate(rule.id); }}><Trash2 size={13} /></Button>
-              </div>
+              <Switch checked={rule.enabled} onChange={() => toggle.mutate(rule)} />
+            </div>
+            <div className="rule-card__section">
+              <div className="rule-card__label">匹配条件</div>
+              <div className="rule-card__text">{summarize(rule)}</div>
+            </div>
+            <div className="rule-card__section">
+              <div className="rule-card__label">执行动作</div>
+              <div className="rule-card__text">{actionSummary(rule)}</div>
+            </div>
+            <div className="rule-card__actions">
+              <Button size="sm" onClick={() => { setForm(toForm(rule)); setOpen(true); }}><Pencil size={13} /> 编辑规则</Button>
+              <Button size="sm" variant="ghost" onClick={() => { if (window.confirm(`删除规则「${rule.name}」？`)) remove.mutate(rule.id); }}><Trash2 size={13} /> 删除</Button>
             </div>
           </Card>
         ))}

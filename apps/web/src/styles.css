@@ -1972,6 +1972,206 @@ button {
   }
 }
 
+/* ---------------------------------------------------------- rules */
+.rule-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.rule-stats > div {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--sep) 78%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+}
+
+.rule-stats strong {
+  display: block;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.rule-stats span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--label-2);
+}
+
+.rule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 12px;
+}
+
+.rule-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-left-width: 3px;
+}
+
+.rule-card--green { border-left-color: var(--green); }
+.rule-card--default { border-left-color: var(--sep); }
+
+.rule-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.rule-card__name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.rule-card__section {
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--fill-2);
+}
+
+.rule-card__label {
+  margin-bottom: 3px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.4px;
+  color: var(--label-3);
+}
+
+.rule-card__text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--label-2);
+  word-break: break-word;
+}
+
+.rule-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--sep);
+}
+
+.rule-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rule-empty__icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+  color: var(--blue);
+}
+
+@media (max-width: 900px) {
+  .rule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rule-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ---------------------------------------------------------- settings */
+.settings-nav {
+  position: sticky;
+  top: calc(var(--nav-h) + 8px);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 5px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--sep) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 94%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.settings-nav a {
+  padding: 6px 11px;
+  border-radius: 9px;
+  color: var(--label-2);
+  font-size: 12.5px;
+  font-weight: 550;
+  text-decoration: none;
+}
+
+.settings-nav a:hover {
+  background: var(--fill-2);
+  color: var(--label);
+}
+
+.settings-anchor {
+  scroll-margin-top: calc(var(--nav-h) + 70px);
+}
+
+.settings-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--sep);
+}
+
+.settings-card__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+  color: var(--blue);
+}
+
+.settings-card__icon--warning {
+  background: color-mix(in srgb, var(--orange) 13%, transparent);
+  color: var(--orange);
+}
+
+.page--admin .card > .settings-card__head + .stack {
+  margin-top: 0 !important;
+}
+
+.save-bar {
+  position: sticky;
+  bottom: calc(14px + var(--safe-b));
+  z-index: 20;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+}
+
+@media (max-width: 700px) {
+  .settings-nav {
+    top: calc(var(--nav-h) + 4px);
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .settings-nav a {
+    flex-shrink: 0;
+  }
+}
+
 @media (max-width: 700px) {
   .subscription-grid {
     grid-template-columns: 1fr;

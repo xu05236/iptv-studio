@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Save, ShieldAlert, Trash2 } from 'lucide-react';
+import { Activity, CalendarClock, Save, ShieldAlert, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
 import type { AppSettings } from '@iptv/core';
 import { api } from '../../lib/api';
 import type { SettingsResponse } from '../../lib/types';
@@ -103,6 +103,15 @@ export function SettingsPage() {
         actions={<Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}><Save size={15} /> 保存设置</Button>}
       />
 
+      <nav className="settings-nav">
+        <a href="#settings-basic">基础</a>
+        <a href="#settings-probe">采集与探测</a>
+        <a href="#settings-schedule">定时任务</a>
+        <a href="#settings-epg">EPG 与通知</a>
+        <a href="#settings-advanced">高级</a>
+        <a href="#settings-maintenance">维护</a>
+      </nav>
+
       <Card>
         <details>
           <summary className="title-3" style={{ cursor: 'pointer' }}>规则说明（信誉分 / 线路池 / 预算）</summary>
@@ -112,8 +121,12 @@ export function SettingsPage() {
         </details>
       </Card>
 
+      <div id="settings-basic" className="settings-anchor" />
       <Card>
-        <div className="title-3">基础</div>
+        <div className="settings-card__head">
+          <span className="settings-card__icon"><SlidersHorizontal size={17} /></span>
+          <div><div className="title-3">基础</div><div className="caption">台标地址、地区后缀与线路补偿</div></div>
+        </div>
         <div className="stack" style={{ marginTop: 12 }}>
           <Field label="台标基础地址" hint="订阅或源自带 tvg-logo 优先；缺失时按 tvg-id 拼接。旧 fanmingming 地址会自动改用 jsDelivr；前台还会依次回退 Fastly / Gcore / testingcf / ghproxy / gh-proxy / 多个 fork / vircloud / GitHub raw。">
             <input className="input" value={form.logoBaseUrl} onChange={(event) => set('logoBaseUrl', event.target.value)} />
@@ -127,8 +140,12 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      <div id="settings-probe" className="settings-anchor" />
       <Card>
-        <div className="title-3">采集与探测</div>
+        <div className="settings-card__head">
+          <span className="settings-card__icon"><Activity size={17} /></span>
+          <div><div className="title-3">采集与探测</div><div className="caption">预算、并发、复测间隔与预筛</div></div>
+        </div>
         <div className="stack" style={{ marginTop: 12 }}>
           <div className="row">
             <div className="grow"><Field label="采集预算（条）" hint="手动/定时触发未显式指定时使用；按未测 / 到期复检自动折算"><input className="input" inputMode="numeric" value={form.probeBudget} onChange={(event) => set('probeBudget', Number(event.target.value))} /></Field></div>
@@ -180,8 +197,12 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      <div id="settings-schedule" className="settings-anchor" />
       <Card>
-        <div className="title-3">定时任务</div>
+        <div className="settings-card__head">
+          <span className="settings-card__icon"><CalendarClock size={17} /></span>
+          <div><div className="title-3">定时任务</div><div className="caption">采集、测活、分批探测、抓源与发布</div></div>
+        </div>
         <div className="stack" style={{ marginTop: 12 }}>
           <div className="title-3" style={{ fontSize: 14 }}>完整采集</div>
           <div className="list">
@@ -246,8 +267,12 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      <div id="settings-epg" className="settings-anchor" />
       <Card>
-        <div className="title-3">EPG 与通知</div>
+        <div className="settings-card__head">
+          <span className="settings-card__icon"><CalendarClock size={17} /></span>
+          <div><div className="title-3">EPG 与通知</div><div className="caption">节目单源、刷新时刻、通知与保留</div></div>
+        </div>
         <div className="stack" style={{ marginTop: 12 }}>
           <Field label="XMLTV 源" hint="支持添加多个源；保存后下一轮采集生效。留空则不生成节目单。">
             <div className="stack stack--tight">
@@ -309,10 +334,11 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      <div id="settings-advanced" className="settings-anchor" />
       <Card>
-        <div className="row" style={{ color: 'var(--orange)' }}>
-          <ShieldAlert size={18} />
-          <div className="title-3">高级</div>
+        <div className="settings-card__head">
+          <span className="settings-card__icon settings-card__icon--warning"><ShieldAlert size={17} /></span>
+          <div><div className="title-3">高级</div><div className="caption">中继与前台直连播放，涉及流量和使用条款</div></div>
         </div>
         <div className="list" style={{ marginTop: 10 }}>
           <div className="list__row">
@@ -333,8 +359,12 @@ export function SettingsPage() {
         {data?.publicBaseUrl ? <div className="caption" style={{ marginTop: 10 }}>公开地址：{data.publicBaseUrl}</div> : null}
       </Card>
 
+      <div id="settings-maintenance" className="settings-anchor" />
       <Card>
-        <div className="title-3">维护</div>
+        <div className="settings-card__head">
+          <span className="settings-card__icon"><Wrench size={17} /></span>
+          <div><div className="title-3">维护</div><div className="caption">清理孤儿线路和 D1 历史脏值</div></div>
+        </div>
         <div className="list" style={{ marginTop: 10 }}>
           <div className="list__row">
             <div className="grow">
