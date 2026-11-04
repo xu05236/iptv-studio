@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, LayoutGrid, List, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Trash2, Upload, Zap } from 'lucide-react';
+import { Activity, ChevronDown, LayoutGrid, List, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Trash2, Upload, Zap } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { SourceItem } from '../../lib/types';
 import { timeAgo } from '../../lib/format';
@@ -292,9 +292,22 @@ export function Sources() {
             </div>
           </div>
           <div className="source-toolbar__sites">
-            {sites.map((site) => (
-              <Badge key={site} tone="blue">{site} <span className="source-toolbar__count">{siteCounts.get(site) ?? 0}</span></Badge>
-            ))}
+            <details className="source-sites">
+              <summary className="source-sites__summary">
+                {sites.length} 个站点 <ChevronDown size={13} />
+              </summary>
+              <div className="source-sites__menu">
+                <div className="source-sites__head">站点 · 源数量</div>
+                <div className="source-sites__list">
+                  {sites.map((site) => (
+                    <div className="source-sites__item" key={site}>
+                      <span className="truncate">{site}</span>
+                      <span className="source-sites__count">{siteCounts.get(site) ?? 0}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </details>
           </div>
           <div className="source-toolbar__actions">
             <div className="source-view-toggle">
