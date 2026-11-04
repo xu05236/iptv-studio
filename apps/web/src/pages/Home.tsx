@@ -145,10 +145,13 @@ export function Home() {
             </div>
             <div className="divider" />
             <div className="row row--between" style={{ textAlign: 'center' }}>
-              <div><div className="title-3">{data.lastRun.channels}</div><div className="caption">频道</div></div>
-              <div><div className="title-3">{data.lastRun.lines}</div><div className="caption">线路</div></div>
-              <div><div className="title-3">{data.lastRun.alive}</div><div className="caption">可用</div></div>
-              <div><div className="title-3">{data.lastRun.probed}</div><div className="caption">已测</div></div>
+              <div><div className="title-3">{data.lastRun.channels.toLocaleString('zh-CN')}</div><div className="caption">频道</div></div>
+              <div><div className="title-3">{data.lastRun.lines.toLocaleString('zh-CN')}</div><div className="caption">线路</div></div>
+              <div><div className="title-3">{data.lastRun.alive.toLocaleString('zh-CN')}</div><div className="caption">可用</div></div>
+              <div>
+                <div className="title-3">{data.lastRun.probed > 0 ? data.lastRun.probed.toLocaleString('zh-CN') : '—'}</div>
+                <div className="caption">{data.lastRun.probed > 0 ? '已测' : '本次未测速'}</div>
+              </div>
             </div>
           </Card>
         </>
