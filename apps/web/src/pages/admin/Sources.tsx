@@ -8,6 +8,8 @@ import { Badge, Button, Card, EmptyState, Field, Segmented, Sheet, Switch, useTo
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { ReputationBadge } from '../../components/ReputationBadge';
 
+const formatNumber = (value: number): string => value.toLocaleString('zh-CN');
+
 interface SourceHealthPoint {
   day: string;
   fetched: boolean;
@@ -255,9 +257,13 @@ export function Sources() {
       />
 
       {sites.length ? (
-        <div className="row row--wrap">
-          <span className="caption">当前采集站：</span>
-          {sites.map((site) => <Badge key={site} tone="blue">{site}</Badge>)}
+        <div className="source-toolbar">
+          <div className="grow">
+            <div className="caption">当前采集站</div>
+            <div className="row row--wrap" style={{ gap: 6, marginTop: 5 }}>
+              {sites.map((site) => <Badge key={site} tone="blue">{site}</Badge>)}
+            </div>
+          </div>
           <Button size="sm" variant={healthSort ? 'primary' : 'glass'} onClick={() => setHealthSort((value) => !value)}>
             按 7 天健康排序
           </Button>
@@ -316,65 +322,59 @@ export function Sources() {
         />
       ) : null}
 
-      <div className="stack">
-        {items.map((source) => (
-          <Card key={source.id}>
-            <div className="row row--between" style={{ alignItems: 'flex-start' }}>
-              <div className="grow" style={{ minWidth: 0 }}>
-                <div className="row row--wrap" style={{ gap: 6 }}>
-                  <span className="title-3 truncate">{source.name}</span>
-                  {source.weight >= 2 ? <Badge tone="orange">收藏</Badge> : null}
-                  <Badge tone="blue">{sourceSite(source)}</Badge>
-                  <Badge>{source.kind.toUpperCase()}</Badge>
-                  {source.origin !== 'remote' ? <Badge>{source.origin === 'upload' ? '文件' : '粘贴'}</Badge> : null}
-                  {source.status === 'degraded' ? <Badge tone="red">抓取异常</Badge> : null}
-                </div>
-                <div className="caption" style={{ marginTop: 4 }}>
-                  {source.entry_count} 条 · {source.alive_count} 可用 · <ReputationBadge score={source.reputation} /> · 更新 {timeAgo(source.last_ok_at)} · 每 {source.refresh_hours ?? 24}h
-                  {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
-                </div>
-                {source.progress ? (
-                  <div className="caption" style={{ marginTop: 2 }}>
-                    池内 {source.progress.total} · 已测 {source.progress.tested} · 可用 {source.progress.alive}
+      <div className="source-grid">
+        {items.map((source) => {
+          const pendingDue = source.progress?.pending ?? 0;
+          const pendingTotal = source.progress?.pendingTotal ?? source.progress?.pending ?? 0;
+          const quarantineDue = source.progress?.quarantine ?? 0;
+          const quarantineTotal = source.progress?.quarantineTotal ?? source.progress?.quarantine ?? 0;
+          return (
+            <Card className="source-card" key={source.id}>
+              <div className="source-card__head">
+                <div className="grow" style={{ minWidth: 0 }}>
+                  <div className="row row--wrap" style={{ gap: 6 }}>
+                    <span className="source-card__name truncate">{source.name}</span>
+                    {source.weight >= 2 ? <Badge tone="orange">收藏</Badge> : null}
+                    {source.status === 'degraded' ? <Badge tone="red">抓取异常</Badge> : null}
                   </div>
-                ) : null}
-                {source.progress ? (
-                  <div className="caption" style={{ marginTop: 2 }} title="斜杠左侧是当前到期可测数量，右侧是总记录数">
-                    到期可测：待测 {source.progress.pending}/{source.progress.pendingTotal ?? source.progress.pending} · 待复测 {source.progress.quarantine}/{source.progress.quarantineTotal ?? source.progress.quarantine} · 可复活 {source.progress.rejected}/{source.progress.rejectedTotal ?? source.progress.rejected}
+                  <div className="row row--wrap" style={{ gap: 5, marginTop: 6 }}>
+                    <Badge tone="blue">{sourceSite(source)}</Badge>
+                    <Badge>{source.kind.toUpperCase()}</Badge>
+                    {source.origin !== 'remote' ? <Badge>{source.origin === 'upload' ? '文件' : '粘贴'}</Badge> : null}
+                    <ReputationBadge score={source.reputation} />
                   </div>
-                ) : null}
-                {source.url ? <div className="caption mono truncate" style={{ marginTop: 2 }}>{source.url}</div> : null}
-                {source.last_error ? <div className="caption" style={{ color: 'var(--red)', marginTop: 4 }}>{source.last_error}</div> : null}
+                </div>
+                <div className="source-card__switch">
+                  <Button size="sm" variant="ghost" title={source.weight >= 2 ? '取消收藏' : '收藏'} onClick={() => favorite.mutate(source)}>
+                    <Star size={15} fill={source.weight >= 2 ? 'currentColor' : 'none'} color={source.weight >= 2 ? 'var(--orange)' : undefined} />
+                  </Button>
+                  <Switch checked={source.enabled} onChange={() => toggle.mutate(source.id)} />
+                </div>
               </div>
-              <Switch checked={source.enabled} onChange={() => toggle.mutate(source.id)} />
-            </div>
 
-            <div className="meter" style={{ marginTop: 12 }}>
-              <div
-                className="meter__fill"
-                style={{ width: `${Math.min(100, Math.max(2, source.reputation))}%`, background: source.reputation >= 80 ? 'var(--green)' : source.reputation >= 50 ? 'var(--blue)' : 'var(--orange)' }}
-              />
-            </div>
+              <div className="source-card__stats">
+                <div><strong>{formatNumber(source.entry_count ?? 0)}</strong><span>线路</span></div>
+                <div><strong>{formatNumber(source.alive_count ?? 0)}</strong><span>可用</span></div>
+                <div><strong>{pendingDue}<em>/{pendingTotal}</em></strong><span>待测</span></div>
+                <div><strong>{quarantineDue}<em>/{quarantineTotal}</em></strong><span>待复测</span></div>
+              </div>
 
-            <div className="row row--wrap" style={{ marginTop: 12, gap: 6 }}>
-              <Button size="sm" loading={probe.isPending} onClick={() => probe.mutate(source.id)}>
-                <RefreshCw size={13} /> 检查解析
-              </Button>
-              <Button size="sm" loading={favorite.isPending} onClick={() => favorite.mutate(source)}>
-                <Star size={13} fill={source.weight >= 2 ? 'currentColor' : 'none'} color={source.weight >= 2 ? 'var(--orange)' : undefined} /> {source.weight >= 2 ? '已收藏' : '收藏'}
-              </Button>
-              <Button size="sm" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}>
-                <Zap size={13} /> 抽样测速
-              </Button>
-              <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); }}>
-                <SlidersHorizontal size={13} /> 过滤
-              </Button>
-              <Button size="sm" variant="danger" onClick={() => { if (confirm(`删除「${source.name}」？`)) remove.mutate(source.id); }}>
-                <Trash2 size={13} /> 删除
-              </Button>
-            </div>
-          </Card>
-        ))}
+              <div className="source-card__meta">
+                更新 {timeAgo(source.last_ok_at)} · 每 {source.refresh_hours ?? 24}h
+                {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
+              </div>
+              {source.last_error ? <div className="source-card__error">{source.last_error}</div> : null}
+              {source.url ? <div className="caption mono truncate source-card__url">{source.url}</div> : null}
+
+              <div className="source-card__actions">
+                <Button size="sm" loading={probe.isPending} onClick={() => probe.mutate(source.id)}><RefreshCw size={13} /> 检查解析</Button>
+                <Button size="sm" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}><Zap size={13} /> 抽样测速</Button>
+                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); }}><SlidersHorizontal size={13} /> 过滤</Button>
+                <Button size="sm" variant="ghost" onClick={() => { if (confirm(`删除「${source.name}」？`)) remove.mutate(source.id); }}><Trash2 size={13} /> 删除</Button>
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
       <Sheet
