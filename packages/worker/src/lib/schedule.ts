@@ -200,7 +200,10 @@ async function publishIsCurrent(env: Env): Promise<boolean> {
     getJson<{ generatedAt?: string }>(env, 'state/pool-stats.json'),
   ]);
   if (!index?.generatedAt || !pool?.generatedAt) return false;
-  return Date.parse(index.generatedAt) >= Date.parse(pool.generatedAt);
+  // EPG changes daily, so a publish older than two hours must still run even
+  // when the line catalog itself has not changed.
+  const recent = Date.now() - Date.parse(index.generatedAt) < 2 * 3_600_000;
+  return recent && Date.parse(index.generatedAt) >= Date.parse(pool.generatedAt);
 }
 
 /**
