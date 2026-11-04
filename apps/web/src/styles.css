@@ -1148,7 +1148,7 @@ button {
 
 .source-toolbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
   gap: 18px;
   padding: 14px 16px;
@@ -1182,7 +1182,7 @@ button {
 
 .source-toolbar__sites {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 0;
 }
 
@@ -1293,6 +1293,7 @@ button {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  justify-self: end;
 }
 
 .source-view-toggle {
