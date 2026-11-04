@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Trash2, Upload, Zap } from 'lucide-react';
+import { Activity, LayoutGrid, List, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Trash2, Upload, Zap } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { SourceItem } from '../../lib/types';
 import { timeAgo } from '../../lib/format';
@@ -132,6 +132,7 @@ export function Sources() {
   const [activeSource, setActiveSource] = useState<SourceItem | null>(null);
   const [lineResults, setLineResults] = useState<Array<{ name?: string; url: string; result: { ok: boolean; speedKbps?: number; resolution?: string; error?: string } }> | null>(null);
   const [healthSort, setHealthSort] = useState(false);
+  const [view, setView] = useState<'grid' | 'list'>('grid');
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'sources'],
@@ -284,6 +285,10 @@ export function Sources() {
               {sites.map((site) => <Badge key={site} tone="blue">{site}</Badge>)}
             </div>
           </div>
+          <div className="row" style={{ gap: 4 }}>
+            <Button size="sm" variant={view === 'grid' ? 'primary' : 'glass'} onClick={() => setView('grid')}><LayoutGrid size={14} /> 网格</Button>
+            <Button size="sm" variant={view === 'list' ? 'primary' : 'glass'} onClick={() => setView('list')}><List size={14} /> 列表</Button>
+          </div>
           <Button size="sm" variant={healthSort ? 'primary' : 'glass'} onClick={() => setHealthSort((value) => !value)}>
             按 7 天健康排序
           </Button>
@@ -352,7 +357,7 @@ export function Sources() {
         />
       ) : null}
 
-      <div className="source-grid">
+      <div className={`source-grid${view === 'list' ? ' source-grid--list' : ''}`}>
         {items.map((source) => {
           const pendingDue = source.progress?.pending ?? 0;
           const pendingTotal = source.progress?.pendingTotal ?? source.progress?.pending ?? 0;
