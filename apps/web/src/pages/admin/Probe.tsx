@@ -258,7 +258,7 @@ export function Probe() {
       {lines.data?.ready ? (
         <Card flush>
           <div className="table-wrap" style={{ border: 0 }}>
-            <table className="table table--cards">
+            <table className="table table--cards probe-table">
               <thead>
                 <tr>
                   <th>频道</th>
@@ -275,7 +275,7 @@ export function Probe() {
                 {pagedItems.map((row) => (
                   <tr key={row.key}>
                     <td data-label="频道">
-                      <div style={{ fontWeight: 600 }}>{row.channelName}</div>
+                      <div className="truncate" style={{ fontWeight: 600 }}>{row.channelName}</div>
                       <div className="caption" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span>{row.group} · {row.sourceName ?? row.sourceId}{row.sourceSite ? ` · ${row.sourceSite}` : ''}</span>
                         {row.sourceReputation !== undefined ? (
