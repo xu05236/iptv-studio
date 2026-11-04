@@ -313,27 +313,42 @@ export function Probe() {
         <Card><div className="caption">还没有检测数据，请先运行一次采集。</div></Card>
       )}
 
-      <Card flush>
-        <div className="card__header">
-          <div className="title-3">最近运行</div>
-          <span className="caption"><Gauge size={13} /> Actions 写入</span>
+      <Card>
+        <div className="card__header" style={{ padding: '2px 2px 12px' }}>
+          <div>
+            <div className="title-3">最近运行</div>
+            <div className="caption"><Gauge size={13} /> Actions 写入</div>
+          </div>
+          <span className="caption">最近 {runs.data?.items.length ?? 0} 条</span>
         </div>
-        <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
-          <table className="table table--cards">
-            <thead><tr><th>状态</th><th>触发</th><th>开始</th><th>测速</th><th>可用</th><th>耗时</th></tr></thead>
-            <tbody>
-              {(runs.data?.items ?? []).map((run) => (
-                <tr key={run.id}>
-                  <td data-label="状态"><Badge tone={run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange'}>{run.status}</Badge></td>
-                  <td data-label="触发" className="caption">{run.trigger}</td>
-                  <td data-label="开始" className="caption">{timeAgo(run.started_at)}</td>
-                  <td data-label="测速">{run.probed}</td>
-                  <td data-label="可用">{run.alive}</td>
-                  <td data-label="耗时" className="caption">{formatDuration(run.duration_ms)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="run-list">
+          {(runs.data?.items ?? []).map((run) => {
+            const tone = run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange';
+            const statusText = run.status === 'success' ? '成功' : run.status === 'partial' ? '部分' : run.status === 'running' ? '运行中' : '失败';
+            return (
+              <div className={`run-row run-row--${tone}`} key={run.id}>
+                <div className="run-row__status"><Badge tone={tone}>{statusText}</Badge></div>
+                <div className="grow">
+                  <div className="row row--wrap" style={{ gap: 6 }}>
+                    <span className="run-row__title">{run.task_label ?? run.task_type ?? '运行记录'}</span>
+                    <Badge>{run.trigger}</Badge>
+                  </div>
+                  {run.task_message ? <div className="caption run-row__message">{run.task_message}</div> : null}
+                  {run.task_failure_reason ? <div className="caption task-failure">失败原因：{run.task_failure_reason}</div> : null}
+                </div>
+                <div className="run-row__metrics">
+                  <span><strong>{run.channels}</strong> 频道</span>
+                  <span><strong>{run.alive}</strong> 可用</span>
+                  <span><strong>{run.probed}</strong> 已测</span>
+                </div>
+                <div className="run-row__time">
+                  <span>{timeAgo(run.started_at)}</span>
+                  <span className="caption">{formatDuration(run.duration_ms)}</span>
+                </div>
+              </div>
+            );
+          })}
+          {!runs.data?.items.length ? <div className="task-empty">还没有运行记录</div> : null}
         </div>
       </Card>
 
