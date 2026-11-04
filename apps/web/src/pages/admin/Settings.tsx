@@ -103,32 +103,29 @@ export function SettingsPage() {
         actions={<Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}><Save size={15} /> 保存设置</Button>}
       />
 
-      <div className="settings-layout">
-        <aside className="settings-side">
-          <nav className="settings-nav">
-            <a href="#settings-basic">基础</a>
-            <a href="#settings-probe">采集与探测</a>
-            <a href="#settings-schedule">定时任务</a>
-            <a href="#settings-epg">EPG 与通知</a>
-            <a href="#settings-advanced">高级</a>
-            <a href="#settings-maintenance">维护</a>
-          </nav>
-          <div className="settings-side__status">
-            <div className="caption">当前状态</div>
-            <div><span>自动采集</span><Badge tone={form.autoCollectEnabled ? 'green' : 'default'}>{form.autoCollectEnabled ? '开启' : '关闭'}</Badge></div>
-            <div><span>分批探测</span><Badge tone={form.autoProbeEnabled ? 'green' : 'default'}>{form.autoProbeEnabled ? '开启' : '关闭'}</Badge></div>
-            <div><span>自动发布</span><Badge tone={form.autoPublishEnabled ? 'green' : 'default'}>{form.autoPublishEnabled ? '开启' : '关闭'}</Badge></div>
-            <div><span>EPG 定时</span><Badge tone={form.epgRefreshEnabled ? 'green' : 'default'}>{form.epgRefreshEnabled ? '开启' : '关闭'}</Badge></div>
-          </div>
-        </aside>
+      <nav className="settings-nav">
+        <a href="#settings-basic">台标</a>
+        <a href="#settings-probe">采集与探测</a>
+        <a href="#settings-schedule">定时任务</a>
+        <a href="#settings-epg">EPG 与通知</a>
+        <a href="#settings-advanced">高级</a>
+        <a href="#settings-maintenance">维护</a>
+      </nav>
 
-        <div className="settings-main">
-          <div className="settings-overview">
-            <div><span>采集预算</span><strong>{form.probeBudget.toLocaleString('zh-CN')}</strong><em>条 / 轮</em></div>
-            <div><span>并发数</span><strong>{form.concurrency}</strong><em>条同时探测</em></div>
-            <div><span>分批间隔</span><strong>{form.autoProbeIntervalHours ?? 2}</strong><em>小时 / 批</em></div>
-            <div><span>每日发布</span><strong>{form.autoPublishEnabled ? (form.autoPublishTimes ?? '08:30') : '关闭'}</strong><em>北京时间</em></div>
-          </div>
+      <div className="settings-status">
+        <span className="settings-status__label">当前状态</span>
+        <div><span>自动采集</span><Badge tone={form.autoCollectEnabled ? 'green' : 'default'}>{form.autoCollectEnabled ? '开启' : '关闭'}</Badge></div>
+        <div><span>分批探测</span><Badge tone={form.autoProbeEnabled ? 'green' : 'default'}>{form.autoProbeEnabled ? '开启' : '关闭'}</Badge></div>
+        <div><span>自动发布</span><Badge tone={form.autoPublishEnabled ? 'green' : 'default'}>{form.autoPublishEnabled ? '开启' : '关闭'}</Badge></div>
+        <div><span>EPG 定时</span><Badge tone={form.epgRefreshEnabled ? 'green' : 'default'}>{form.epgRefreshEnabled ? '开启' : '关闭'}</Badge></div>
+      </div>
+
+      <div className="settings-overview">
+        <div><span>采集预算</span><strong>{form.probeBudget.toLocaleString('zh-CN')}</strong><em>条 / 轮</em></div>
+        <div><span>并发数</span><strong>{form.concurrency}</strong><em>条同时探测</em></div>
+        <div><span>分批间隔</span><strong>{form.autoProbeIntervalHours ?? 2}</strong><em>小时 / 批</em></div>
+        <div><span>每日发布</span><strong>{form.autoPublishEnabled ? (form.autoPublishTimes ?? '08:30') : '关闭'}</strong><em>北京时间</em></div>
+      </div>
 
       <Card>
         <details>
@@ -143,7 +140,7 @@ export function SettingsPage() {
       <Card>
         <div className="settings-card__head">
           <span className="settings-card__icon"><SlidersHorizontal size={17} /></span>
-          <div><div className="title-3">基础</div><div className="caption">台标地址、地区后缀与线路补偿</div></div>
+          <div><div className="title-3">台标</div><div className="caption">台标地址、地区后缀与线路补偿</div></div>
         </div>
         <div className="stack" style={{ marginTop: 12 }}>
           <Field label="台标基础地址" hint="订阅或源自带 tvg-logo 优先；缺失时按 tvg-id 拼接。旧 fanmingming 地址会自动改用 jsDelivr；前台还会依次回退 Fastly / Gcore / testingcf / ghproxy / gh-proxy / 多个 fork / vircloud / GitHub raw。">
@@ -402,8 +399,6 @@ export function SettingsPage() {
       </Card>
 
       <Button block variant="primary" className="save-bar" loading={save.isPending} onClick={() => save.mutate()}>保存全部设置</Button>
-        </div>
-      </div>
     </div>
   );
 }
