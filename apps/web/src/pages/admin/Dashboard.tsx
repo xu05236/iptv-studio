@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, Database, Download, Layers3, ListChecks, Pause, Play, PlayCircle, RefreshCw, RadioTower, Share2, Tv, Users } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, Cloud, Database, Download, Layers3, ListChecks, Pause, Play, PlayCircle, RefreshCw, RadioTower, Share2, Tv, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminStats, UsageSnapshot } from '../../lib/types';
 import { formatDuration, timeAgo } from '../../lib/format';
@@ -383,16 +383,15 @@ export function Dashboard() {
       </div>
 
       {stats.pool?.generatedAt && stats.index.generatedAt && Date.parse(stats.pool.generatedAt) > Date.parse(stats.index.generatedAt) ? (
-        <Card>
-          <div className="row row--between row--wrap" style={{ gap: 10 }}>
-            <div className="grow">
-              <div style={{ fontWeight: 600 }}>线路池已更新，尚未发布到前台</div>
-              <div className="caption">探测结果只更新线路池；发布后频道、订阅和节目单才会变化。</div>
-            </div>
-            <Button variant="primary" loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
-              发布更新
-            </Button>
+        <Card className="publish-warning">
+          <div className="publish-warning__icon"><RadioTower size={18} /></div>
+          <div className="grow">
+            <div className="publish-warning__title">线路池已更新，尚未发布到前台</div>
+            <div className="caption">探测结果只更新线路池；发布后频道、订阅和节目单才会变化。</div>
           </div>
+          <Button variant="primary" loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
+            发布更新
+          </Button>
         </Card>
       ) : null}
 
@@ -608,13 +607,17 @@ export function Dashboard() {
       </Card>
 
       {epgCoverage.data ? (
-        <Card>
-          <div className="row row--between">
-            <div className="title-3">EPG 覆盖率</div>
-            <span className="caption">{epgCoverage.data.covered} / {epgCoverage.data.total} 频道</span>
+        <Card className="epg-card">
+          <div className="epg-card__head">
+            <span className="epg-card__icon"><Tv size={17} /></span>
+            <div className="grow">
+              <div className="title-3">EPG 覆盖率</div>
+              <div className="caption">{epgCoverage.data.covered} / {epgCoverage.data.total} 频道有节目单</div>
+            </div>
+            <div className="epg-card__percent">{epgCoverage.data.percent}%</div>
           </div>
-          <UsageBar label={`有节目单 · ${epgCoverage.data.percent}%`} used={epgCoverage.data.covered} limit={epgCoverage.data.total} />
-          <div className="caption" style={{ marginTop: 8 }}>
+          <UsageBar label="有节目单" used={epgCoverage.data.covered} limit={epgCoverage.data.total} />
+          <div className="caption" style={{ marginTop: 10 }}>
             缺少节目单 {epgCoverage.data.missingTotal} 个
             {epgCoverage.data.missing.length
               ? ` · ${epgCoverage.data.missing.slice(0, 6).map((item) => item.name).join(' / ')}${epgCoverage.data.missingTotal > 6 ? ' …' : ''}`
@@ -629,10 +632,13 @@ export function Dashboard() {
           const yesterday = snapshot?.history?.at(-2);
           return (
             <>
-              <Card>
-                <div className="row row--between">
-                  <div className="title-3">GitHub Actions</div>
-                  <span className="caption">{snapshot ? timeAgo(snapshot.collectedAt) : '等待用量快照'}</span>
+              <Card className="usage-card usage-card--github">
+                <div className="usage-card__head">
+                  <span className="usage-card__icon"><ListChecks size={17} /></span>
+                  <div className="grow">
+                    <div className="title-3">GitHub Actions</div>
+                    <div className="caption">{snapshot ? timeAgo(snapshot.collectedAt) : '等待用量快照'}</div>
+                  </div>
                 </div>
                 {snapshot ? (
                   <>
@@ -647,10 +653,13 @@ export function Dashboard() {
                 <div className="caption" style={{ marginTop: 6 }}>私有仓库免费 2000 分钟/月，按运行时长估算，账单日重置</div>
               </Card>
 
-              <Card>
-                <div className="row row--between">
-                  <div className="title-3">Cloudflare KV</div>
-                  <span className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)}` : '等待快照'}</span>
+              <Card className="usage-card usage-card--kv">
+                <div className="usage-card__head">
+                  <span className="usage-card__icon"><Cloud size={17} /></span>
+                  <div className="grow">
+                    <div className="title-3">Cloudflare KV</div>
+                    <div className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)}` : '等待快照'}</div>
+                  </div>
                 </div>
                 {snapshot ? (
                   <>
@@ -670,10 +679,13 @@ export function Dashboard() {
                 )}
               </Card>
 
-              <Card>
-                <div className="row row--between">
-                  <div className="title-3">Cloudflare D1</div>
-                  <span className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)}` : '等待快照'}</span>
+              <Card className="usage-card usage-card--d1">
+                <div className="usage-card__head">
+                  <span className="usage-card__icon"><Database size={17} /></span>
+                  <div className="grow">
+                    <div className="title-3">Cloudflare D1</div>
+                    <div className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)}` : '等待快照'}</div>
+                  </div>
                 </div>
                 {snapshot ? (
                   <>
@@ -692,10 +704,10 @@ export function Dashboard() {
               </Card>
 
               {snapshot?.history?.length ? (
-                <Card>
+                <Card className="usage-trend">
                   <div className="row row--between">
                     <div className="title-3">近 7 天趋势</div>
-                    <span className="caption">UTC 日期</span>
+                    <span className="caption">UTC 日期 · KV / D1 / Actions</span>
                   </div>
                   <div className="table-wrap" style={{ marginTop: 8, border: 0 }}>
                     <table className="table" style={{ minWidth: 360 }}>

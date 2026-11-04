@@ -1023,6 +1023,87 @@ button {
   font-size: 12.5px;
 }
 
+.publish-warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--orange) 26%, transparent);
+  background: color-mix(in srgb, var(--orange) 7%, var(--bg-elev));
+}
+
+.publish-warning__icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+  color: var(--orange);
+}
+
+.publish-warning__title {
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.epg-card__head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 12px;
+}
+
+.epg-card__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--teal) 12%, transparent);
+  color: var(--teal);
+}
+
+.epg-card__percent {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.7px;
+  color: var(--teal);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 6px;
+}
+
+.usage-card__icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--fill-2);
+  color: var(--label-2);
+}
+
+.usage-trend .table {
+  font-size: 12.5px;
+}
+
+.usage-trend .table td,
+.usage-trend .table th {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
 .quick-grid {
   display: flex;
   flex-direction: column;
