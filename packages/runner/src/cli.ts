@@ -32,7 +32,7 @@ import { ApiClient, ArtifactStore, loadRemoteConfig, type ChannelRecord, type Re
 import { collectSource, type CollectedSource } from './pipeline/collect.js';
 import { planProbes, runProbes } from './pipeline/probe.js';
 import { buildArtifacts, publish, type ExportCatalog } from './pipeline/publish.js';
-import { collectEpg } from './pipeline/epg.js';
+import { buildGuide, collectEpg } from './pipeline/epg.js';
 import { loadLogoPacks } from './pipeline/logoFiles.js';
 import { prefilterLiveness } from './pipeline/liveness.js';
 import { publishSubscriptions } from './pipeline/subscriptions.js';
@@ -890,7 +890,9 @@ async function runBatchProbe(): Promise<void> {
     const lines = previousState?.lines ?? [];
     if (!lines.length) throw new Error('没有线路状态，请先运行 fetch/probe');
     report.sources = remote.sources.length;
-    const { output, logKey } = await publishPhase(api, store, config, remote, lines, logger, runId, 'fetch');
+    // EPG is refreshed by the daily `epg` task; publishing only rebuilds the
+    // line catalog from the stored guide.
+    const { output, logKey } = await publishPhase(api, store, config, remote, lines, logger, runId, 'guide');
     report = {
       ...report,
       status: 'success',
@@ -1320,6 +1322,11 @@ async function main(): Promise<void> {
         if (catalog) {
           await publishSubscriptions(api, store, catalog, remote.settings, config.publicBaseUrl, epg.data, logger);
         }
+        await store.put(
+          'state/guide.json',
+          JSON.stringify(buildGuide(epg.data, new Set(remote.channels.map((channel) => channel.id)), 24)),
+          'application/json; charset=utf-8',
+        );
       } else {
         logger.warn('没有生成任何节目单内容');
       }

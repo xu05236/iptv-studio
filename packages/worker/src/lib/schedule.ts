@@ -73,7 +73,7 @@ interface ScheduleState {
 }
 
 interface SchedulerConfig {
-  command: 'collect' | 'liveness' | 'publish';
+  command: 'collect' | 'liveness' | 'publish' | 'epg';
   enabled: boolean;
   times: string;
   stateKey: string;
@@ -92,6 +92,12 @@ function schedulerConfigs(settings: AppSettings): SchedulerConfig[] {
       enabled: Boolean(settings.autoPublishEnabled),
       times: settings.autoPublishTimes,
       stateKey: 'state/publish-schedule.json',
+    },
+    {
+      command: 'epg',
+      enabled: Boolean(settings.epgRefreshEnabled),
+      times: settings.epgRefreshTimes,
+      stateKey: 'state/epg-schedule.json',
     },
     {
       command: 'liveness',

@@ -317,6 +317,9 @@ export interface AppSettings {
   autoPublishIntervalHours: number;
   /** Publish automatically after a probe changes the pool. */
   autoPublishAfterProbeEnabled: boolean;
+  /** Refresh XMLTV once a day, independent of line publishing. */
+  epgRefreshEnabled: boolean;
+  epgRefreshTimes: string;
   epgUrls: string[];
   regionSuffix: boolean;
   notifyTelegram: boolean;
@@ -373,6 +376,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoPublishTimes: '08:30',
   autoPublishIntervalHours: 6,
   autoPublishAfterProbeEnabled: false,
+  epgRefreshEnabled: true,
+  epgRefreshTimes: '00:10',
   epgUrls: DEFAULT_EPG_URLS,
   regionSuffix: true,
   notifyTelegram: false,

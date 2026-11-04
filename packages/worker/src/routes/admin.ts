@@ -483,7 +483,7 @@ adminRoutes.put('/settings', async (c) => {
     'autoCollectEnabled', 'autoCollectTimes', 'autoLivenessEnabled', 'autoLivenessTimes',
     'autoProbeEnabled', 'probeBatchSize', 'autoProbeIntervalHours',
     'probePhaseOrder', 'probePausedPhases',
-    'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishTimes', 'autoPublishIntervalHours', 'autoPublishAfterProbeEnabled',
+    'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishTimes', 'autoPublishIntervalHours', 'autoPublishAfterProbeEnabled', 'epgRefreshEnabled', 'epgRefreshTimes',
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback',
   ];
   const clean: Partial<AppSettings> = {};
@@ -504,6 +504,11 @@ adminRoutes.put('/settings', async (c) => {
     const times = parseCollectTimes(clean.autoPublishTimes);
     if (!times.length) return fail('每日发布时间格式应为 HH:mm（北京时间）');
     clean.autoPublishTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
+  }
+  if (clean.epgRefreshTimes !== undefined) {
+    const times = parseCollectTimes(clean.epgRefreshTimes);
+    if (!times.length) return fail('EPG 刷新时间格式应为 HH:mm（北京时间）');
+    clean.epgRefreshTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
   }
   if (clean.probeBatchSize !== undefined) clean.probeBatchSize = Math.max(1, Number(clean.probeBatchSize) || 1200);
   if (clean.autoProbeIntervalHours !== undefined) clean.autoProbeIntervalHours = Math.max(1, Number(clean.autoProbeIntervalHours) || 2);

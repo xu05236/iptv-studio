@@ -231,7 +231,7 @@ export function SettingsPage() {
           <div className="list">
             <div className="list__row"><span className="grow">启用每日发布（只更新 EPG/catalog，不探测）</span><Switch checked={form.autoPublishEnabled ?? true} onChange={(value) => set('autoPublishEnabled', value)} /></div>
           </div>
-          <Field label="每天发布时刻（北京时间）" hint="只抓 EPG 并重建 catalog/index/订阅，不抓源、不测速；可填多个时刻，用逗号分隔">
+          <Field label="每天发布时刻（北京时间）" hint="只更新线路相关产物，不抓 EPG；可填多个时刻，用逗号分隔">
             <input className="input" value={form.autoPublishTimes ?? '08:30'} onChange={(event) => set('autoPublishTimes', event.target.value)} />
           </Field>
           <Field label="自动发布最小间隔（小时）" hint="探测更新线路池后，自动发布至少间隔多久；默认 6 小时，最小 1 小时">
@@ -242,7 +242,14 @@ export function SettingsPage() {
               <span className="grow">探测后自动发布（关闭后只按每日时刻发布）</span>
               <Switch checked={form.autoPublishAfterProbeEnabled ?? false} onChange={(value) => set('autoPublishAfterProbeEnabled', value)} />
             </div>
+            <div className="list__row">
+              <span className="grow">每日固定刷新 EPG（独立于线路发布）</span>
+              <Switch checked={form.epgRefreshEnabled ?? true} onChange={(value) => set('epgRefreshEnabled', value)} />
+            </div>
           </div>
+          <Field label="EPG 每日刷新时刻（北京时间）" hint="节目单每天 0 点后已更新，建议 00:10；支持多个时刻，用逗号分隔">
+            <input className="input" value={form.epgRefreshTimes ?? '00:10'} onChange={(event) => set('epgRefreshTimes', event.target.value)} />
+          </Field>
         </div>
       </Card>
 
