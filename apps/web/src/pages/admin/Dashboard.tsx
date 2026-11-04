@@ -86,6 +86,12 @@ const PHASE_DETAIL: Record<string, string> = {
   rejected: '失效后到达复活时间的线路',
 };
 
+const PHASE_MESSAGE_KEY: Record<string, string> = {
+  pending: '待测',
+  quarantine: '待复测',
+  rejected: '待复活',
+};
+
 interface TaskBoard {
   batchSize: number;
   intervalHours: number;
@@ -531,6 +537,9 @@ export function Dashboard() {
               <div className="task-phase-list">
                 {tasks.data.phases.map((phase, index) => {
                   const backlog = tasks.data!.phases.reduce((sum, item) => sum + item.count, 0);
+                  const phaseKey = PHASE_MESSAGE_KEY[phase.id] ?? phase.label;
+                  const lastBatch = recentTasks.find((task) => task.type === 'probe-batch' && task.message?.includes(phaseKey))
+                    ?? recentTasks.find((task) => task.type === 'probe-batch');
                   return (
                     <div className="task-phase" key={phase.id}>
                       <div className="task-phase__order">{index + 1}</div>
@@ -549,6 +558,16 @@ export function Dashboard() {
                         <div className="task-phase__track">
                           <div className="task-phase__fill" style={{ width: `${backlog > 0 ? Math.max(2, (phase.count / backlog) * 100) : 0}%` }} />
                         </div>
+                        {lastBatch ? (
+                          <div className="task-phase__last">
+                            <div className="task-phase__last-head">
+                              <span>最近一批</span>
+                              <span>{lastBatch.finishedAt ? timeAgo(lastBatch.finishedAt) : ''}</span>
+                            </div>
+                            <div>{lastBatch.message}</div>
+                            {lastBatch.failureReason ? <div className="task-failure">失败原因：{lastBatch.failureReason}</div> : null}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="task-phase__actions">
                         <Button size="sm" variant="glass" disabled={index === 0 || savePhasePlan.isPending} onClick={() => movePhase(index, -1)}>

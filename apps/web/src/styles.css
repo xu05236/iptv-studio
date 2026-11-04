@@ -1747,6 +1747,27 @@ button {
   transition: width 0.3s var(--ease);
 }
 
+.task-phase__last {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--fill-2) 80%, transparent);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--label-2);
+  word-break: break-word;
+}
+
+.task-phase__last-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+  font-weight: 650;
+  color: var(--label);
+}
+
 @media (max-width: 700px) {
   .task-phase {
     align-items: flex-start;
