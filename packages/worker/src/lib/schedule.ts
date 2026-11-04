@@ -5,7 +5,7 @@ import { workflowRunStatus } from './github.js';
 import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 import { createSnapshot } from './snapshots.js';
-import { createTask, dispatchNext, loadTasks, type Task } from './tasks.js';
+import { createTask, dispatchNext, loadTasks, recordFinishedTask, type Task } from './tasks.js';
 
 /** Beijing is UTC+8 with no DST; the scheduler stores local HH:mm and matches in UTC. */
 const BEIJING_OFFSET_MS = 8 * 3_600_000;
@@ -180,6 +180,14 @@ export async function runScheduler(env: Env): Promise<void> {
     }
     if (config.command === 'snapshot') {
       const item = await createSnapshot(env, 'scheduler');
+      if (item) {
+        await recordFinishedTask(env, {
+          type: 'snapshot',
+          source: 'schedule',
+          message: `快照完成 · ${item.channels} 频道 · ${item.lines} 行 · ${item.alive} 可用`,
+          payload: { origin: 'schedule' },
+        });
+      }
       await record(config, scheduledAt, item ? 'snapshot created' : 'skipped: no artifacts');
       continue;
     }

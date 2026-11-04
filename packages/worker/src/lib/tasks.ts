@@ -146,6 +146,33 @@ async function saveTasks(env: Env, tasks: Task[]): Promise<void> {
   }
 }
 
+export async function recordFinishedTask(
+  env: Env,
+  input: { type: string; source: TaskSource; message: string; payload?: Record<string, string>; total?: number },
+): Promise<Task> {
+  return withTaskLock(env, async () => {
+    const tasks = await loadTasks(env);
+    const now = new Date().toISOString();
+    const task: Task = {
+      id: `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      type: input.type,
+      source: input.source,
+      status: 'done',
+      priority: 50,
+      payload: input.payload ?? {},
+      progress: { done: input.total ?? 1, total: input.total ?? 1, unit: '' },
+      message: input.message,
+      createdAt: now,
+      startedAt: now,
+      finishedAt: now,
+      lastHeartbeatAt: now,
+    };
+    tasks.push(task);
+    await saveTasks(env, tasks);
+    return task;
+  });
+}
+
 async function createTaskCore(
   env: Env,
   input: { type: string; source: TaskSource; priority?: number; payload?: Record<string, string>; total?: number; unit?: string; message?: string },

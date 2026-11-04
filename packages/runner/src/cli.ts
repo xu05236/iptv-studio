@@ -589,7 +589,7 @@ async function publishPhase(
   // rebuilding from the compact guide would truncate schedules.
   await publishSubscriptions(api, store, output.catalog, settings, config.publicBaseUrl, epgMode === 'fetch' ? epg.data : null, logger);
   if (settings.snapshotOnPublishEnabled) {
-    await api.post('/api/admin/snapshots').catch((error) => logger.warn('发布后创建快照失败', { error: String(error) }));
+    await api.post('/api/admin/snapshots', { origin: 'publish' }).catch((error) => logger.warn('发布后创建快照失败', { error: String(error) }));
   }
   await reportTaskProgress(api, 4, 5, '订阅生成完成');
   await api.post('/api/admin/sync/channels', { channels: output.channels.map((channel) => ({ ...channel, aliases: [] })) });

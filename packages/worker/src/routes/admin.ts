@@ -29,7 +29,7 @@ import { getRuntimeJson } from '../lib/runtime-state.js';
 import { clearSnapshots, createSnapshot } from '../lib/snapshots.js';
 import { inferResolution } from '@iptv/core';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
-import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask } from '../lib/tasks.js';
+import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask, recordFinishedTask } from '../lib/tasks.js';
 import { registerTelegramWebhook } from '../lib/telegram.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
 import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, nextScheduledAt, parseCollectTimes } from '../lib/schedule.js';
@@ -354,8 +354,16 @@ adminRoutes.get('/snapshots', async (c) => {
 });
 
 adminRoutes.post('/snapshots', async (c) => {
+  const body = (await readJson<{ origin?: string }>(c)) ?? {};
+  const origin = body.origin === 'publish' ? 'publish' : 'manual';
   const item = await createSnapshot(c.env, c.get('actor'));
   if (!item) return fail('当前没有可快照的发布产物', 404);
+  await recordFinishedTask(c.env, {
+    type: 'snapshot',
+    source: origin === 'publish' ? 'source' : 'manual',
+    message: `快照完成 · ${item.channels} 频道 · ${item.lines} 行 · ${item.alive} 可用`,
+    payload: { origin },
+  });
   await audit(c.env, c.get('actor'), 'snapshot.create', item.id);
   return ok({ item });
 });
@@ -596,6 +604,9 @@ adminRoutes.get('/tasks', async (c) => {
     else if (task.type === 'collect') label = '完整采集 · 全部源';
     else if (task.type === 'liveness') label = '存活检测';
     else if (task.type === 'cleanup-orphans') label = '孤儿线路清理';
+    else if (task.type === 'snapshot') label = task.payload?.origin === 'publish'
+      ? '快照 · 发布后自动'
+      : task.payload?.origin === 'schedule' ? '快照 · 定时' : '快照 · 手动';
     const run = runByTask.get(task.id);
     return { ...task, label, failureReason: task.status === 'failed' ? run?.error ?? task.message ?? null : null };
   });
@@ -611,6 +622,10 @@ adminRoutes.get('/tasks', async (c) => {
   }
   if (settings.epgRefreshEnabled) {
     scheduledItems.push({ id: 'scheduled-epg', type: 'epg', label: 'EPG 节目单刷新', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: nextEpg ? new Date(nextEpg).toISOString() : '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
+  }
+  if (settings.snapshotScheduleEnabled) {
+    const nextSnapshot = nextScheduledAt(parseCollectTimes(settings.snapshotScheduleTimes), Date.now());
+    scheduledItems.push({ id: 'scheduled-snapshot', type: 'snapshot', label: '快照 · 定时', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: nextSnapshot ? new Date(nextSnapshot).toISOString() : '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
   }
   return ok({
     batchSize,
@@ -645,6 +660,14 @@ adminRoutes.get('/tasks', async (c) => {
         nextAt: nextEpg ? new Date(nextEpg).toISOString() : null,
         lastRunAt: epgState?.lastRunAt ?? null,
         result: epgState?.result ?? null,
+      },
+      snapshot: {
+        enabled: settings.snapshotScheduleEnabled,
+        times: settings.snapshotScheduleTimes,
+        nextAt: (() => {
+          const value = nextScheduledAt(parseCollectTimes(settings.snapshotScheduleTimes), Date.now());
+          return value ? new Date(value).toISOString() : null;
+        })(),
       },
     },
   });
