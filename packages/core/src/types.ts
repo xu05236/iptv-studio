@@ -313,6 +313,8 @@ export interface AppSettings {
   /** Daily publish-only (EPG/catalog) without probing. */
   autoPublishEnabled: boolean;
   autoPublishTimes: string;
+  /** Minimum hours between automatic publish-after-probe runs. */
+  autoPublishIntervalHours: number;
   epgUrls: string[];
   regionSuffix: boolean;
   notifyTelegram: boolean;
@@ -367,6 +369,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fetchIntervalDays: 7,
   autoPublishEnabled: true,
   autoPublishTimes: '08:30',
+  autoPublishIntervalHours: 6,
   epgUrls: DEFAULT_EPG_URLS,
   regionSuffix: true,
   notifyTelegram: false,

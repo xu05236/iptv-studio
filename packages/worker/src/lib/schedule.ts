@@ -9,7 +9,6 @@ import { createTask, dispatchNext, loadTasks, type Task } from './tasks.js';
 /** Beijing is UTC+8 with no DST; the scheduler stores local HH:mm and matches in UTC. */
 const BEIJING_OFFSET_MS = 8 * 3_600_000;
 const RUN_WINDOW_MS = 15 * 60_000;
-const AUTO_PUBLISH_INTERVAL_MS = 6 * 3_600_000;
 
 export interface CollectTime {
   hour: number;
@@ -219,7 +218,7 @@ async function runAutoPublishAfterProbe(env: Env, settings: AppSettings, now: nu
   ]);
   if (!index?.generatedAt || !pool?.generatedAt) return false;
   if (Date.parse(pool.generatedAt) <= Date.parse(index.generatedAt)) return false;
-  if (now - Date.parse(last?.at ?? '') < AUTO_PUBLISH_INTERVAL_MS) return false;
+  if (now - Date.parse(last?.at ?? '') < Math.max(1, Number(settings.autoPublishIntervalHours) || 6) * 3_600_000) return false;
   if (tasks.some((task: Task) => task.type === 'publish' && (task.status === 'queued' || task.status === 'running'))) return false;
   const task = await createTask(env, { type: 'publish', source: 'schedule', priority: 40, payload: { auto: 'after-probe' } });
   await putRuntimeJson(env, 'state/auto-publish-after-probe.json', { at: new Date(now).toISOString(), taskId: task.id });
