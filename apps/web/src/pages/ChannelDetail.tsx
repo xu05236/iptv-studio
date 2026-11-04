@@ -108,21 +108,21 @@ export function ChannelDetail() {
   const checkedLines = lines.filter((line) => relayChecks.has(line.key));
   const relayBlocked = checkedLines.length > 0 && checkedLines.every((line) => !relayChecks.get(line.key)?.ok);
   const directPlayback = query.data.features?.directPlayback ?? false;
+  const bestSpeed = Math.max(0, ...alive.map((line) => line.speedKbps ?? 0));
 
   return (
     <div className="stack" style={{ marginTop: 2 }}>
-      <button className="btn btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => navigate(-1)}>
-        <ArrowLeft size={15} /> 返回
+      <button className="btn btn--sm detail-back" onClick={() => navigate(-1)}>
+        <ArrowLeft size={15} /> 返回频道
       </button>
 
-      <Card>
-        <div className="row" style={{ alignItems: 'flex-start' }}>
+      <Card className="channel-hero">
+        <div className="channel-hero__top">
           <ChannelLogo src={channel.logo} name={channel.name} size="lg" tvgId={channel.tvgId} />
-          <div className="grow">
-            <h1 className="title-2">{channel.name}</h1>
-            <div className="row row--wrap" style={{ marginTop: 6, gap: 6 }}>
-              <Badge>{channel.group}</Badge>
-              {channel.tvgId ? <Badge tone="blue">{channel.tvgId}</Badge> : null}
+          <div className="grow" style={{ minWidth: 0 }}>
+            <div className="channel-hero__eyebrow">{channel.group}{channel.tvgId ? ` · ${channel.tvgId}` : ''}</div>
+            <h1 className="channel-hero__title">{channel.name}</h1>
+            <div className="row row--wrap" style={{ marginTop: 8, gap: 6 }}>
               <Badge tone={alive.length ? 'green' : 'red'}>{alive.length} / {lines.length} 可用</Badge>
               {/^cctv\d+/i.test(channel.id) ? (
                 <a
@@ -138,17 +138,27 @@ export function ChannelDetail() {
           </div>
         </div>
 
+        <div className="channel-hero__stats">
+          <div><strong>{alive.length}</strong><span>可用线路</span></div>
+          <div><strong>{lines.length}</strong><span>线路总数</span></div>
+          <div><strong>{bestSpeed ? formatSpeed(bestSpeed) : '—'}</strong><span>最佳速度</span></div>
+          <div><strong>{checkedLines.length ? `${checkedLines.filter((line) => relayChecks.get(line.key)?.ok).length}/${checkedLines.length}` : '—'}</strong><span>中继可用</span></div>
+        </div>
+
         {epg?.now ? (
-          <div style={{ marginTop: 14, padding: 12, borderRadius: 12, background: 'var(--fill-2)' }}>
-            <div className="caption">正在播出</div>
-            <div className="title-3" style={{ marginTop: 2 }}>{epg.now.title}</div>
-            <div className="caption">{formatClock(epg.now.start)} – {formatClock(epg.now.stop)}</div>
+          <div className="channel-now">
+            <span className="dot dot--live" />
+            <div className="grow" style={{ minWidth: 0 }}>
+              <div className="caption">正在播出</div>
+              <div className="channel-now__title">{epg.now.title}</div>
+              <div className="caption">{formatClock(epg.now.start)} – {formatClock(epg.now.stop)}</div>
+            </div>
           </div>
         ) : null}
 
         {shotOk ? (
           <img
-            className="shot"
+            className="shot channel-shot"
             src={`/shots/${encodeURIComponent(channel.id)}.jpg`}
             alt={`${channel.name} 截图`}
             loading="lazy"
@@ -157,92 +167,103 @@ export function ChannelDetail() {
         ) : null}
       </Card>
 
-      <Segmented
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: 'lines', label: `线路 ${lines.length}` },
-          { value: 'epg', label: '节目单' },
-        ]}
-      />
+      <div className="channel-tabs">
+        <Segmented
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'lines', label: `线路 ${lines.length}` },
+            { value: 'epg', label: '节目单' },
+          ]}
+        />
+      </div>
 
       {tab === 'lines' ? (
         lines.length ? (
-          <div className="list">
-            {relayBlocked ? (
-              <p className="caption" style={{ padding: '0 4px 8px', color: 'var(--red, #e5484d)' }}>
-                当前 Cloudflare 中继无法访问该频道的任何线路（源站按 IP 限制）。请复制订阅地址，在 VLC/盒子中直连播放。
-              </p>
-            ) : null}
-            <p className="caption" style={{ padding: '0 4px 8px' }}>
-              状态来自 GitHub Actions 探测节点；中继标签是 Cloudflare 实测。可按 10/20/全部查看线路。
-            </p>
-            <div className="row row--between row--wrap" style={{ padding: '0 4px 10px' }}>
-              <span className="caption">共 {paginatedLines.length} 条 · 第 {currentPage}/{pageCount} 页</span>
-              <label className="row" style={{ gap: 6 }}>
-                <span className="caption">每页</span>
-                <select
-                  className="input"
-                  style={{ width: 90 }}
-                  value={linePageSize}
-                  onChange={(event) => {
-                    setLinePageSize(event.target.value as '10' | '20' | 'all');
-                    setLinePage(1);
-                  }}
-                >
-                  <option value="10">10</option>
-                  <option value="20">20</option>
-                  <option value="all">全部</option>
-                </select>
-              </label>
-            </div>
-            {visibleLines.map((line, index) => (
-              <div key={line.key} className="list__row" style={{ alignItems: 'flex-start' }}>
-                <div className="logo logo--fallback" style={{ fontSize: 12 }}>#{(currentPage - 1) * (linePageSize === 'all' ? paginatedLines.length : pageSize) + index + 1}</div>
-                <div className="grow" style={{ minWidth: 0 }}>
-                  <div className="row row--wrap" style={{ gap: 6 }}>
-                    <Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge>
-                    {relayChecks.has(line.key) ? (
-                      <Badge tone={relayChecks.get(line.key)?.ok ? 'green' : 'red'}>
-                        {relayChecks.get(line.key)?.ok ? '中继可播' : `中继不可用${relayChecks.get(line.key)?.status ? ` ${relayChecks.get(line.key)?.status}` : ''}`}
-                      </Badge>
-                    ) : null}
-                    {directPlayback && relayChecks.get(line.key)?.direct === 'https' ? <Badge tone="green">直连可用</Badge> : null}
-                    {directPlayback && relayChecks.get(line.key)?.direct === 'http' ? <Badge tone="orange">HTTP 需中继</Badge> : null}
-                    {isHevc(line) ? <Badge tone="orange">H.265</Badge> : codecsOf(line).includes('avc') ? <Badge tone="green">H.264</Badge> : null}
-                    <Badge>{formatResolution(line.resolution)}</Badge>
-                    {line.speedKbps ? <Badge tone="green">{formatSpeed(line.speedKbps)}</Badge> : null}
-                    {line.latencyMs ? <span className="caption">{formatLatency(line.latencyMs)}</span> : null}
-                    {line.loop ? <Badge tone="orange">循环流</Badge> : null}
-                  </div>
-                  <div className="list__sub truncate" style={{ marginTop: 4 }}>
-                    {line.sourceName ?? line.sourceId}
-                    {line.sourceSite ? ` · ${line.sourceSite}` : ''}
-                    {' · '}{line.protocol.toUpperCase()}
-                    {line.lastProbeAt ? ` · 检测于 ${probeAge(line.lastProbeAt)}` : ''}
-                  </div>
-                  <div className="row row--wrap" style={{ marginTop: 8, gap: 6 }}>
-                    <Button
-                      size="sm"
-                      variant={line.status === 'alive' ? 'primary' : 'default'}
-                      onClick={() => setPlaying(line)}
-                    >
-                      <Play size={13} /> 试播
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      loading={feedback.isPending}
-                      onClick={() => feedback.mutate({ entryKey: line.key, sourceId: line.sourceId })}
-                    >
-                      报错
-                    </Button>
+          <div className="line-list">
+            <Card className="line-toolbar">
+              {relayBlocked ? (
+                <div className="line-warning">
+                  <TriangleAlert size={15} />
+                  <span>当前 Cloudflare 中继无法访问该频道的任何线路（源站按 IP 限制）。请复制订阅地址，在 VLC/盒子中直连播放。</span>
+                </div>
+              ) : null}
+              <div className="row row--between row--wrap">
+                <div>
+                  <div className="title-3">线路列表</div>
+                  <div className="caption">共 {paginatedLines.length} 条 · 第 {currentPage}/{pageCount} 页 · 状态来自 GitHub Actions 探测节点</div>
+                </div>
+                <label className="row" style={{ gap: 6 }}>
+                  <span className="caption">每页</span>
+                  <select
+                    className="input"
+                    style={{ width: 90 }}
+                    value={linePageSize}
+                    onChange={(event) => {
+                      setLinePageSize(event.target.value as '10' | '20' | 'all');
+                      setLinePage(1);
+                    }}
+                  >
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                    <option value="all">全部</option>
+                  </select>
+                </label>
+              </div>
+            </Card>
+
+            {visibleLines.map((line, index) => {
+              const check = relayChecks.get(line.key);
+              const order = (currentPage - 1) * (linePageSize === 'all' ? paginatedLines.length : pageSize) + index + 1;
+              return (
+                <div key={line.key} className={`line-card line-card--${statusTone(line.status)}`}>
+                  <div className="line-card__index">#{order}</div>
+                  <div className="grow" style={{ minWidth: 0 }}>
+                    <div className="row row--wrap" style={{ gap: 5 }}>
+                      <Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge>
+                      {check ? (
+                        <Badge tone={check.ok ? 'green' : 'red'}>
+                          {check.ok ? '中继可播' : `中继不可用${check.status ? ` ${check.status}` : ''}`}
+                        </Badge>
+                      ) : null}
+                      {directPlayback && check?.direct === 'https' ? <Badge tone="green">直连可用</Badge> : null}
+                      {directPlayback && check?.direct === 'http' ? <Badge tone="orange">HTTP 需中继</Badge> : null}
+                      {isHevc(line) ? <Badge tone="orange">H.265</Badge> : codecsOf(line).includes('avc') ? <Badge tone="green">H.264</Badge> : null}
+                      <Badge>{formatResolution(line.resolution)}</Badge>
+                      {line.speedKbps ? <Badge tone="green">{formatSpeed(line.speedKbps)}</Badge> : null}
+                      {line.latencyMs ? <span className="caption">{formatLatency(line.latencyMs)}</span> : null}
+                      {line.loop ? <Badge tone="orange">循环流</Badge> : null}
+                    </div>
+                    <div className="line-card__meta">
+                      <span>{line.sourceName ?? line.sourceId}</span>
+                      {line.sourceSite ? <span>{line.sourceSite}</span> : null}
+                      <span>{line.protocol.toUpperCase()}</span>
+                      {line.lastProbeAt ? <span>检测于 {probeAge(line.lastProbeAt)}</span> : null}
+                    </div>
+                    <div className="line-card__actions">
+                      <Button
+                        size="sm"
+                        variant={line.status === 'alive' ? 'primary' : 'default'}
+                        onClick={() => setPlaying(line)}
+                      >
+                        <Play size={13} /> 试播
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        loading={feedback.isPending}
+                        onClick={() => feedback.mutate({ entryKey: line.key, sourceId: line.sourceId })}
+                      >
+                        报错
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
+
             {linePageSize !== 'all' ? (
-              <div className="row row--wrap" style={{ justifyContent: 'space-between', padding: '4px' }}>
+              <div className="line-pager">
                 <Button size="sm" variant="glass" disabled={currentPage <= 1} onClick={() => setLinePage((value) => Math.max(1, value - 1))}>
                   上一页
                 </Button>
@@ -270,24 +291,24 @@ export function ChannelDetail() {
           <EmptyState icon={<Radio size={22} />} title="暂无线路" description="该频道刚被识别，等待下一轮采集与测速。" />
         )
       ) : (
-        <Card>
+        <Card className="epg-panel">
           {epg?.now || epg?.next?.length ? (
-            <div className="stack stack--tight">
+            <div className="epg-list">
               {epg.now ? (
-                <div className="list__row" style={{ padding: 0, background: 'transparent' }}>
+                <div className="epg-program epg-program--now">
                   <span className="dot dot--live" />
                   <div className="grow">
-                    <div className="list__title">{epg.now.title}</div>
-                    <div className="list__sub">{formatClock(epg.now.start)} – {formatClock(epg.now.stop)} · 正在播出</div>
+                    <div className="epg-program__title">{epg.now.title}</div>
+                    <div className="caption">{formatClock(epg.now.start)} – {formatClock(epg.now.stop)} · 正在播出</div>
                   </div>
                 </div>
               ) : null}
               {(epg.next ?? []).map((programme) => (
-                <div key={`${programme.start}-${programme.title}`} className="list__row" style={{ padding: 0, background: 'transparent' }}>
+                <div key={`${programme.start}-${programme.title}`} className="epg-program">
                   <span className="dot" />
                   <div className="grow">
-                    <div className="list__title">{programme.title}</div>
-                    <div className="list__sub">{formatClock(programme.start)} – {formatClock(programme.stop)}</div>
+                    <div className="epg-program__title">{programme.title}</div>
+                    <div className="caption">{formatClock(programme.start)} – {formatClock(programme.stop)}</div>
                   </div>
                 </div>
               ))}
