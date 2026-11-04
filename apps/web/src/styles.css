@@ -953,6 +953,134 @@ button {
   color: var(--label-2);
 }
 
+.health-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.health-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--fill-2);
+}
+
+.health-stat__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.health-stat--green .health-stat__dot { background: var(--green); }
+.health-stat--orange .health-stat__dot { background: var(--orange); }
+.health-stat--red .health-stat__dot { background: var(--red); }
+
+.health-stat__value {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-stat__label {
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--label-2);
+}
+
+.health-bar {
+  display: flex;
+  height: 6px;
+  margin-top: 12px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--fill);
+  gap: 2px;
+}
+
+.health-bar__part {
+  height: 100%;
+}
+
+.health-bar__part--green { background: var(--green); }
+.health-bar__part--orange { background: var(--orange); }
+.health-bar__part--red { background: var(--red); }
+
+.health-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--orange) 10%, transparent);
+  color: var(--orange);
+  font-size: 12.5px;
+}
+
+.quick-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.quick-tile {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  border-radius: 13px;
+  border: 1px solid color-mix(in srgb, var(--sep) 78%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 76%, var(--fill-2));
+  color: var(--label);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.quick-tile:hover {
+  background: var(--fill-2);
+  transform: translateY(-1px);
+}
+
+.quick-tile__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--blue) 11%, transparent);
+  color: var(--blue);
+}
+
+.quick-tile__title {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+@media (max-width: 900px) {
+  .run-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .run-row__metrics {
+    width: 100%;
+    justify-content: space-between;
+    padding-left: 2px;
+  }
+
+  .run-row__time {
+    margin-left: auto;
+  }
+}
+
 @media (max-width: 900px) {
   .run-row {
     align-items: flex-start;

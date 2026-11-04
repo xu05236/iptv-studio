@@ -721,37 +721,79 @@ export function Dashboard() {
         })()}
       </div>
 
-      <div className="grid grid--wide">
-        <Card>
+      <div className="grid grid--wide dashboard-bottom-grid">
+        <Card className="health-card">
           <div className="row row--between">
-            <div className="title-3">源健康度</div>
+            <div>
+              <div className="title-3">源健康度</div>
+              <div className="caption">{stats.sources.total} 个采集站</div>
+            </div>
             <Link to="/admin/sources" className="caption">管理 <ArrowUpRight size={12} /></Link>
           </div>
-          <div className="grid" style={{ marginTop: 12, gridTemplateColumns: 'repeat(3, 1fr)' }}>
-            <div><div className="title-2" style={{ color: 'var(--green)' }}>{stats.sources.reputation.high}</div><div className="caption">优质</div></div>
-            <div><div className="title-2" style={{ color: 'var(--orange)' }}>{stats.sources.reputation.normal}</div><div className="caption">正常</div></div>
-            <div><div className="title-2" style={{ color: 'var(--red)' }}>{stats.sources.reputation.low}</div><div className="caption">降权</div></div>
-          </div>
+          {(() => {
+            const total = Math.max(1, stats.sources.reputation.high + stats.sources.reputation.normal + stats.sources.reputation.low);
+            const items = [
+              { label: '优质', value: stats.sources.reputation.high, tone: 'green' },
+              { label: '正常', value: stats.sources.reputation.normal, tone: 'orange' },
+              { label: '降权', value: stats.sources.reputation.low, tone: 'red' },
+            ];
+            return (
+              <>
+                <div className="health-stats">
+                  {items.map((item) => (
+                    <div className={`health-stat health-stat--${item.tone}`} key={item.label}>
+                      <span className="health-stat__dot" />
+                      <div>
+                        <div className="health-stat__value">{formatNumber(item.value)}</div>
+                        <div className="health-stat__label">{item.label}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="health-bar">
+                  {items.map((item) => (
+                    <span key={item.label} className={`health-bar__part health-bar__part--${item.tone}`} style={{ width: `${(item.value / total) * 100}%` }} />
+                  ))}
+                </div>
+              </>
+            );
+          })()}
           {stats.sources.failing > 0 ? (
-            <div className="row" style={{ marginTop: 12, color: 'var(--orange)', fontSize: 13 }}>
-              <AlertTriangle size={15} /> {stats.sources.failing} 个源连续抓取失败
-            </div>
-          ) : null}
+            <div className="health-warning"><AlertTriangle size={15} /> {stats.sources.failing} 个源连续抓取失败</div>
+          ) : (
+            <div className="caption" style={{ marginTop: 10 }}>暂无连续失败源</div>
+          )}
         </Card>
 
-        <Card>
+        <Card className="quick-card">
           <div className="row row--between">
             <div className="title-3">快捷入口</div>
+            <span className="caption">常用操作</span>
           </div>
-          <div className="stack stack--tight" style={{ marginTop: 10 }}>
-            <Link className="list__row" style={{ padding: 8, borderRadius: 10 }} to="/admin/probe">
-              <RadioTower size={17} /> <span className="grow">检测中心</span> <span className="caption">测速 / 单条调试</span>
+          <div className="quick-grid">
+            <Link className="quick-tile" to="/admin/probe">
+              <span className="quick-tile__icon"><RadioTower size={18} /></span>
+              <span className="grow">
+                <span className="quick-tile__title">检测中心</span>
+                <span className="caption">测速 / 单条调试</span>
+              </span>
+              <ArrowUpRight size={14} />
             </Link>
-            <Link className="list__row" style={{ padding: 8, borderRadius: 10 }} to="/admin/subscriptions">
-              <Users size={17} /> <span className="grow">订阅与导出</span> <span className="caption">M3U / TXT / JSON</span>
+            <Link className="quick-tile" to="/admin/subscriptions">
+              <span className="quick-tile__icon"><Users size={18} /></span>
+              <span className="grow">
+                <span className="quick-tile__title">订阅与导出</span>
+                <span className="caption">M3U / TXT / JSON</span>
+              </span>
+              <ArrowUpRight size={14} />
             </Link>
-            <Link className="list__row" style={{ padding: 8, borderRadius: 10 }} to="/admin/settings">
-              <RefreshCw size={17} /> <span className="grow">采集与 EPG 设置</span> <span className="caption">预算 / 保留</span>
+            <Link className="quick-tile" to="/admin/settings">
+              <span className="quick-tile__icon"><RefreshCw size={18} /></span>
+              <span className="grow">
+                <span className="quick-tile__title">采集与 EPG 设置</span>
+                <span className="caption">预算 / 保留</span>
+              </span>
+              <ArrowUpRight size={14} />
             </Link>
           </div>
         </Card>
