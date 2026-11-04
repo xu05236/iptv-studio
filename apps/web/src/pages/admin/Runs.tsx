@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 import type { RunItem } from '../../lib/types';
 import { formatBytes, formatDateTime, formatDuration, timeAgo } from '../../lib/format';
 import { Badge, Button, Card, Field, Sheet, Skeleton, Switch, useToast } from '../../components/ui';
+import { AdminPageHeader } from '../../components/AdminPageHeader';
 
 const TASK_LABEL: Record<string, string> = {
   collect: '完整采集',
@@ -108,10 +109,11 @@ export function Runs() {
 
   return (
     <div className="stack">
-      <div>
-        <h1 className="large-title">运行与日志</h1>
-        <p className="subhead" style={{ marginTop: 4 }}>每次采集的抓取、测速、聚合结果都会留下结构化日志。</p>
-      </div>
+      <AdminPageHeader
+        eyebrow="OPERATIONS"
+        title="运行与日志"
+        description="每次采集的抓取、测速、聚合结果都会留下结构化日志。"
+      />
 
       <Card>
         <div className="title-3">快照策略</div>

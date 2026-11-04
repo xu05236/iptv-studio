@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link2, Plus, RefreshCw, Trash2, Wand2, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminChannel, SubscriptionItem } from '../../lib/types';
+import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { Badge, Button, Card, CopyField, EmptyState, Field, Sheet, Switch, useToast } from '../../components/ui';
 
 const FORMATS = ['m3u', 'txt', 'json', 'diyp'];
@@ -169,13 +170,12 @@ export function SubscriptionsAdmin() {
 
   return (
     <div className="stack">
-      <div className="row row--between row--wrap">
-        <div>
-          <h1 className="large-title">订阅与导出</h1>
-          <p className="subhead" style={{ marginTop: 4 }}>同一份聚合结果，按过滤器生成 M3U / TXT / JSON / DIYP 出口。</p>
-        </div>
-        <Button variant="primary" onClick={() => openEdit()}><Plus size={16} /> 新建订阅</Button>
-      </div>
+      <AdminPageHeader
+        eyebrow="SUBSCRIPTIONS"
+        title="订阅与导出"
+        description="同一份聚合结果，按过滤器生成 M3U / TXT / JSON / DIYP 出口。"
+        actions={<Button variant="primary" onClick={() => openEdit()}><Plus size={16} /> 新建订阅</Button>}
+      />
 
       <Card>
         <div className="title-3">线路显示与导出上限</div>

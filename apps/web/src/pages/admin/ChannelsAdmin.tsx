@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Eraser, Link2, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { AdminPageHeader } from '../../components/AdminPageHeader';
 import type { AdminChannel } from '../../lib/types';
 import { formatResolution, formatSpeed } from '../../lib/format';
 import { Badge, Button, Card, Field, Pagination, Sheet, Switch, useToast } from '../../components/ui';
@@ -211,34 +212,20 @@ export function ChannelsAdmin() {
 
   return (
     <div className="stack">
-      <div className="row row--between row--wrap">
-        <div>
-          <h1 className="large-title">频道</h1>
-          <p className="subhead" style={{ marginTop: 4 }}>频道身份由别名库驱动；改名、合并、禁用都会影响下一轮聚合。</p>
-        </div>
-        <div className="row">
-          <Button
-            loading={cleanupEmpty.isPending}
-            onClick={() => {
-              if (confirm('删除不在当前发布目录、且没有任何别名的频道？这不会影响已发布频道。')) cleanupEmpty.mutate();
-            }}
-          >
-            <Trash2 size={15} /> 清理空频道
-          </Button>
-          <Button loading={cleanupNames.isPending} onClick={() => cleanupNames.mutate()}>
-            <Eraser size={15} /> 清理名称
-          </Button>
-          <Button onClick={() => setConflictsOpen(true)}>
-            <AlertTriangle size={15} /> 别名冲突
-          </Button>
-          <Button onClick={() => setEpgOpen(true)}>
-            <Link2 size={15} /> EPG 映射
-          </Button>
-          <Button loading={reclassify.isPending} onClick={() => reclassify.mutate()}>
-            <Wand2 size={15} /> 修复分类
-          </Button>
-        </div>
-      </div>
+      <AdminPageHeader
+        eyebrow="CHANNELS"
+        title="频道"
+        description="频道身份由别名库驱动；改名、合并、禁用都会影响下一轮聚合。"
+        actions={
+          <>
+            <Button loading={cleanupEmpty.isPending} onClick={() => { if (confirm('删除不在当前发布目录、且没有任何别名的频道？这不会影响已发布频道。')) cleanupEmpty.mutate(); }}><Trash2 size={15} /> 清理空频道</Button>
+            <Button loading={cleanupNames.isPending} onClick={() => cleanupNames.mutate()}><Eraser size={15} /> 清理名称</Button>
+            <Button onClick={() => setConflictsOpen(true)}><AlertTriangle size={15} /> 别名冲突</Button>
+            <Button onClick={() => setEpgOpen(true)}><Link2 size={15} /> EPG 映射</Button>
+            <Button loading={reclassify.isPending} onClick={() => reclassify.mutate()}><Wand2 size={15} /> 修复分类</Button>
+          </>
+        }
+      />
 
       <div className="search">
         <Search size={16} className="search__icon" />

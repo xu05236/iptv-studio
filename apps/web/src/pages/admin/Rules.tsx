@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Badge, Button, Card, Field, Sheet, Skeleton, Switch, useToast } from '../../components/ui';
+import { AdminPageHeader } from '../../components/AdminPageHeader';
 
 interface RuleMatch {
   groups?: string[];
@@ -174,13 +175,12 @@ export function Rules() {
 
   return (
     <div className="stack">
-      <div className="row row--between row--wrap">
-        <div>
-          <h1 className="large-title">规则</h1>
-          <p className="subhead" style={{ marginTop: 4 }}>用可视化条件过滤/分组/重命名频道或线路，按优先级从高到低执行，下一轮采集生效。</p>
-        </div>
-        <Button variant="primary" onClick={() => { setForm(EMPTY); setOpen(true); }}><Plus size={15} /> 新建规则</Button>
-      </div>
+      <AdminPageHeader
+        eyebrow="RULES"
+        title="规则"
+        description="用可视化条件过滤/分组/重命名频道或线路，按优先级从高到低执行，下一轮采集生效。"
+        actions={<Button variant="primary" onClick={() => { setForm(EMPTY); setOpen(true); }}><Plus size={15} /> 新建规则</Button>}
+      />
 
       {rules.isLoading ? <Skeleton height={160} radius={16} /> : null}
 

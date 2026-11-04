@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Activity, Copy, Gauge, PlayCircle, RefreshCw, Search, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../../lib/api';
+import { AdminPageHeader } from '../../components/AdminPageHeader';
 import type { RunItem } from '../../lib/types';
 import { formatDuration, formatLatency, formatResolution, formatSpeed, statusLabel, statusTone, timeAgo } from '../../lib/format';
 import { Badge, Button, Card, Field, Pagination, Segmented, Sheet, Skeleton, Stat, useToast } from '../../components/ui';
@@ -162,40 +163,23 @@ export function Probe() {
 
   return (
     <div className="stack">
-      <div className="row row--between row--wrap">
-        <div>
-          <h1 className="large-title">检测中心</h1>
-          <p className="subhead" style={{ marginTop: 4 }}>每条线路的连通性、分辨率、稳态速率与检测时间。</p>
-        </div>
-        <div className="row row--wrap">
-          <Button onClick={() => setOpenTester(true)}><Zap size={15} /> 单条探测</Button>
-          <Button
-            loading={quickLiveness.isPending}
-            disabled={!livenessTargets.length}
-            title={`每批 ${LIVENESS_BATCH} 条，自动分批，不限总数`}
-            onClick={() => quickLiveness.mutate(livenessTargets.map((row) => row.key))}
-          >
-            <Activity size={15} />{' '}
-            {quickLiveness.isPending && livenessProgress
-              ? `测活中 ${livenessProgress.done}/${livenessProgress.total}`
-              : `快速测活（${livenessTargets.length} 条）`}
-          </Button>
-          <Button variant="primary" loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'collect' })}>
-            <PlayCircle size={15} /> 全量检测
-          </Button>
-          <Button
-            loading={dispatch.isPending}
-            onClick={() => {
-              if (confirm('强制重测预算内所有线路（忽略到期时间），耗时较长，确定继续？')) dispatch.mutate({ command: 'collect', force: true });
-            }}
-          >
-            强制全量
-          </Button>
-          <Button loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'export' })}>
-            <RefreshCw size={15} /> 重建导出
-          </Button>
-        </div>
-      </div>
+      <AdminPageHeader
+        eyebrow="PROBE CENTER"
+        title="检测中心"
+        description="每条线路的连通性、分辨率、稳态速率与检测时间。"
+        actions={
+          <>
+            <Button onClick={() => setOpenTester(true)}><Zap size={15} /> 单条探测</Button>
+            <Button loading={quickLiveness.isPending} disabled={!livenessTargets.length} title={`每批 ${LIVENESS_BATCH} 条，自动分批，不限总数`} onClick={() => quickLiveness.mutate(livenessTargets.map((row) => row.key))}>
+              <Activity size={15} />{' '}
+              {quickLiveness.isPending && livenessProgress ? `测活中 ${livenessProgress.done}/${livenessProgress.total}` : `快速测活（${livenessTargets.length} 条）`}
+            </Button>
+            <Button variant="primary" loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'collect' })}><PlayCircle size={15} /> 全量检测</Button>
+            <Button loading={dispatch.isPending} onClick={() => { if (confirm('强制重测预算内所有线路（忽略到期时间），耗时较长，确定继续？')) dispatch.mutate({ command: 'collect', force: true }); }}>强制全量</Button>
+            <Button loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'export' })}><RefreshCw size={15} /> 重建导出</Button>
+          </>
+        }
+      />
 
       <div className="grid">
         <Stat value={summary?.total ?? '—'} label="已检测线路" />

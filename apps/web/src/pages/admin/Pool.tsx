@@ -4,6 +4,7 @@ import { Ban, Download, Filter, Layers3, RefreshCw, RotateCcw, Star, Trash2 } fr
 import { api, getToken } from '../../lib/api';
 import { formatResolution, formatSpeed, statusLabel, statusTone } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Pagination, Sheet, Skeleton, useToast } from '../../components/ui';
+import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { ReputationBadge } from '../../components/ReputationBadge';
 import { timeAgo } from '../../lib/format';
 
@@ -357,26 +358,19 @@ export function Pool() {
 
   return (
     <div className="stack">
-      <div className="row row--between row--wrap">
-        <div>
-          <h1 className="large-title">线路池</h1>
-          <p className="subhead" style={{ marginTop: 4 }}>
-            按国家 / 分组 / 频道或订阅查看线路；可移动、删除、墓碑；candidate 为测活通过但质量待确认。
-          </p>
-        </div>
-        <Button loading={tree.isFetching || lines.isFetching} onClick={() => { void tree.refetch(); void lines.refetch(); }}>
-          <RefreshCw size={15} /> 刷新
-        </Button>
-        <Button loading={exportPool.isPending} onClick={() => exportPool.mutate()}>
-          <Download size={15} /> 导出当前筛选
-        </Button>
-        <Button loading={saveSubscription.isPending} onClick={() => saveSubscription.mutate()}>
-          <Layers3 size={15} /> 保存为订阅
-        </Button>
-        <Button onClick={() => setTombstonesOpen(true)}>
-          <Ban size={15} /> 墓碑列表
-        </Button>
-      </div>
+      <AdminPageHeader
+        eyebrow="LINE POOL"
+        title="线路池"
+        description="按国家 / 分组 / 频道或订阅查看线路；可移动、删除、墓碑；candidate 为测活通过但质量待确认。"
+        actions={
+          <>
+            <Button loading={tree.isFetching || lines.isFetching} onClick={() => { void tree.refetch(); void lines.refetch(); }}><RefreshCw size={15} /> 刷新</Button>
+            <Button loading={exportPool.isPending} onClick={() => exportPool.mutate()}><Download size={15} /> 导出筛选</Button>
+            <Button loading={saveSubscription.isPending} onClick={() => saveSubscription.mutate()}><Layers3 size={15} /> 保存为订阅</Button>
+            <Button onClick={() => setTombstonesOpen(true)}><Ban size={15} /> 墓碑</Button>
+          </>
+        }
+      />
 
       <div className="row row--wrap" style={{ gap: 6 }}>
         {(tree.data?.countries ?? []).map((item) => (

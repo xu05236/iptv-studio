@@ -5,6 +5,7 @@ import type { AppSettings } from '@iptv/core';
 import { api } from '../../lib/api';
 import type { SettingsResponse } from '../../lib/types';
 import { Button, Card, Field, Skeleton, Switch, useToast } from '../../components/ui';
+import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { RulesGuide } from '../../components/RulesGuide';
 
 /** Rough measurements from the 2026-10-30 1200-budget run (probe ~2 min / 302 MB). */
@@ -95,13 +96,12 @@ export function SettingsPage() {
 
   return (
     <div className="stack">
-      <div className="row row--between row--wrap">
-        <div>
-          <h1 className="large-title">设置</h1>
-          <p className="subhead" style={{ marginTop: 4 }}>影响下一轮采集、测速预算与导出行为。</p>
-        </div>
-        <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}><Save size={15} /> 保存</Button>
-      </div>
+      <AdminPageHeader
+        eyebrow="SETTINGS"
+        title="设置"
+        description="影响下一轮采集、测速预算与导出行为。"
+        actions={<Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}><Save size={15} /> 保存设置</Button>}
+      />
 
       <Card>
         <details>

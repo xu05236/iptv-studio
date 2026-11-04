@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 import type { SourceItem } from '../../lib/types';
 import { timeAgo } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Field, Segmented, Sheet, Switch, useToast } from '../../components/ui';
+import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { ReputationBadge } from '../../components/ReputationBadge';
 
 interface SourceHealthPoint {
@@ -245,16 +246,13 @@ export function Sources() {
 
   return (
     <div className="stack">
-      <div className="row row--between row--wrap">
-        <div>
-          <h1 className="large-title">采集站</h1>
-          <p className="subhead" style={{ marginTop: 4 }}>这里列出所有采集来源（GitHub 项目 / 自建站点 / 上传文件），可启停、检查、抽样测速或删除。</p>
-          <p className="caption" style={{ marginTop: 4 }}>信誉分综合可用率、线路质量、抓取成功率：80+ 优质 / 50–79 正常 / &lt;50 降权，会影响探测排序、复测间隔和每轮预算份额。</p>
-        </div>
-        <Button variant="primary" onClick={() => setOpen(true)}>
-          <Plus size={16} /> 添加采集站
-        </Button>
-      </div>
+      <AdminPageHeader
+        eyebrow="SOURCES"
+        title="采集站"
+        description="这里列出所有采集来源（GitHub 项目 / 自建站点 / 上传文件），可启停、检查、抽样测速或删除。"
+        meta={<>信誉分综合可用率、线路质量、抓取成功率：80+ 优质 / 50–79 正常 / &lt;50 降权，会影响探测排序、复测间隔和每轮预算份额。</>}
+        actions={<Button variant="primary" onClick={() => setOpen(true)}><Plus size={16} /> 添加采集站</Button>}
+      />
 
       {sites.length ? (
         <div className="row row--wrap">
