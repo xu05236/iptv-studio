@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, Database, Download, ListChecks, Pause, Play, PlayCircle, RefreshCw, RadioTower, Users } from 'lucide-react';
@@ -106,6 +107,7 @@ function taskEta(task: TaskItem): string {
 export function Dashboard() {
   const queryClient = useQueryClient();
   const { show } = useToast();
+  const [moreOpen, setMoreOpen] = useState(false);
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'stats'],
     queryFn: () => api.get<AdminStats>('/api/admin/stats'),
@@ -303,20 +305,22 @@ export function Dashboard() {
           <Button loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
             <RefreshCw size={15} /> 发布更新
           </Button>
-          <details className="admin-more">
-            <summary className="btn btn--sm btn--glass">更多操作</summary>
-            <div className="admin-more__menu">
-              <button className="admin-more__item" disabled={refreshUsage.isPending} onClick={() => refreshUsage.mutate()}>
-                <RefreshCw size={14} /> 刷新用量
-              </button>
-              <button className="admin-more__item" disabled={dispatch.isPending || kvBlocked} onClick={() => dispatch.mutate('export')}>
-                <RefreshCw size={14} /> 重建导出
-              </button>
-              <button className="admin-more__item" disabled={backup.isPending} onClick={() => backup.mutate()}>
-                <Download size={14} /> 备份配置
-              </button>
-            </div>
-          </details>
+          <div className="admin-more">
+            <Button size="sm" onClick={() => setMoreOpen((value) => !value)}>更多操作</Button>
+            {moreOpen ? (
+              <div className="admin-more__menu">
+                <button className="admin-more__item" disabled={refreshUsage.isPending} onClick={() => { setMoreOpen(false); refreshUsage.mutate(); }}>
+                  <RefreshCw size={14} /> 刷新用量
+                </button>
+                <button className="admin-more__item" disabled={dispatch.isPending || kvBlocked} onClick={() => { setMoreOpen(false); dispatch.mutate('export'); }}>
+                  <RefreshCw size={14} /> 重建导出
+                </button>
+                <button className="admin-more__item" disabled={backup.isPending} onClick={() => { setMoreOpen(false); backup.mutate(); }}>
+                  <Download size={14} /> 备份配置
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 

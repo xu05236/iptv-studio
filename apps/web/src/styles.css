@@ -1346,13 +1346,25 @@ button {
 
 /* Unified page header for every admin module except the dashboard hero. */
 .page--admin > .stack > .row--between:has(.large-title) {
-  padding: 18px 20px;
-  border-radius: 22px;
-  border: 1px solid color-mix(in srgb, var(--sep) 75%, transparent);
-  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.025), 0 14px 36px rgba(0, 0, 0, 0.045);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  padding: 22px 24px;
+  border-radius: 26px;
+  border: 1px solid color-mix(in srgb, var(--sep) 72%, transparent);
+  background:
+    radial-gradient(460px 190px at 4% -30%, color-mix(in srgb, var(--blue) 15%, transparent), transparent 65%),
+    radial-gradient(420px 180px at 98% 120%, color-mix(in srgb, var(--purple) 9%, transparent), transparent 65%),
+    color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.025), 0 18px 44px rgba(0, 0, 0, 0.055);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+}
+
+.page--admin > .stack > .row--between:has(.large-title) .subhead {
+  max-width: 760px;
+  line-height: 1.45;
+}
+
+.admin-more > .btn {
+  background: var(--fill-2);
 }
 
 .page--admin .input,
