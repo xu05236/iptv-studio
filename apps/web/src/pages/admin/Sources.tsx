@@ -117,6 +117,7 @@ export function Sources() {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [content, setContent] = useState('');
+  const [kind, setKind] = useState('auto');
   const [skipFetch, setSkipFetch] = useState(false);
   const [refreshHours, setRefreshHours] = useState('24');
   const [filterSource, setFilterSource] = useState<SourceItem | null>(null);
@@ -144,6 +145,7 @@ export function Sources() {
       api.post<PreviewResult>('/api/admin/sources/preview', {
         url: mode === 'url' ? url.trim() : undefined,
         content: mode === 'url' ? undefined : content,
+        kind,
       }),
     onSuccess: (result) => setPreview(result),
     onError: (error: Error) => { setPreview(null); show(error.message, 'error'); },
@@ -154,6 +156,7 @@ export function Sources() {
       name: name.trim() || undefined,
       url: mode === 'url' ? url.trim() : undefined,
       content: mode === 'url' ? undefined : content,
+      kind,
       skipFetch: mode === 'url' ? skipFetch : undefined,
       refresh_hours: Number(refreshHours) || 24,
       filters: buildFilters(filterForm),
@@ -163,7 +166,7 @@ export function Sources() {
     onSuccess: (result) => {
       show(`已添加，解析到 ${result.summary?.entries ?? 0} 条`);
       setOpen(false);
-      setName(''); setUrl(''); setContent(''); setRegion(''); setOperator(''); setSkipFetch(false); setFilterForm(EMPTY_FILTER_FORM); setPreview(null); setRefreshHours('24');
+      setName(''); setUrl(''); setContent(''); setKind('auto'); setRegion(''); setOperator(''); setSkipFetch(false); setFilterForm(EMPTY_FILTER_FORM); setPreview(null); setRefreshHours('24');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
@@ -402,6 +405,15 @@ export function Sources() {
               { value: 'file', label: '上传文件' },
             ]}
           />
+          <Field label="列表格式" hint="自动识别失败时可手动指定，尤其是 M3U / TXT 内容不规范时">
+            <select className="input" value={kind} onChange={(event) => setKind(event.target.value)}>
+              <option value="auto">自动识别</option>
+              <option value="m3u">M3U / M3U8</option>
+              <option value="txt">TXT</option>
+              <option value="json">JSON / TVBox</option>
+              <option value="hwctc">华为 HWCTC</option>
+            </select>
+          </Field>
           <Field label="名称（可选）">
             <input className="input" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：社区 4K 源" />
           </Field>

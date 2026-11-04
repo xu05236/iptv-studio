@@ -724,6 +724,7 @@ export async function applySourceStats(
   for (const stat of stats) {
     const before = existing.get(stat.sourceId);
     if (!before) continue;
+    const empty = stat.fetched && !stat.error && stat.parsed === 0;
     const failures = stat.fetched && !stat.error && stat.parsed > 0 ? 0 : before.consecutive_failures + 1;
     // Permanently broken sources should not linger in the list. Delete them
     // after five consecutive failures; orphan line cleanup removes leftovers.
@@ -732,7 +733,7 @@ export async function applySourceStats(
       statements.push(env.DB.prepare('DELETE FROM source_stats WHERE source_id = ?').bind(stat.sourceId));
       continue;
     }
-    const status = failures >= 3 ? 'degraded' : 'active';
+    const status = failures >= 3 || empty ? 'degraded' : 'active';
     statements.push(
       env.DB.prepare(
         `UPDATE sources SET entry_count = ?, alive_count = ?, last_fetch_at = ?,
@@ -745,8 +746,8 @@ export async function applySourceStats(
         stat.parsed,
         stat.alive,
         new Date().toISOString(),
-        stat.fetched && !stat.error ? 1 : 0,
-        stat.error ?? null,
+        stat.fetched && !stat.error && stat.parsed > 0 ? 1 : 0,
+        empty ? '解析出 0 条' : stat.error ?? null,
         stat.etag ?? null,
         stat.lastModified ?? null,
         stat.reputation ?? null,
