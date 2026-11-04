@@ -453,7 +453,7 @@ export function Dashboard() {
                 </div>
                 <div className="task-plan-grid">
                   {scheduledTasks.map((task) => (
-                    <div className="task-plan" key={task.id}>
+                    <div className="task-plan task-plan--blue" key={task.id}>
                       <div className="grow">
                         <div className="task-plan__title">{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</div>
                         <div className="caption">
@@ -475,8 +475,10 @@ export function Dashboard() {
                   <span className="caption">手动/检测优先</span>
                 </div>
                 <div className="task-list">
-                  {queuedTasks.map((task, index) => (
-                    <div className="task-item" key={task.id}>
+                  {queuedTasks.map((task, index) => {
+                    const tone = task.status === 'paused' ? 'orange' : task.source === 'source' ? 'green' : task.source === 'manual' || task.source === 'detection' ? 'blue' : 'default';
+                    return (
+                    <div className={`task-item task-item--${tone}`} key={task.id}>
                       <div className="grow">
                         <div className="row row--wrap" style={{ gap: 6 }}>
                           <Badge tone={task.source === 'manual' || task.source === 'detection' ? 'blue' : task.source === 'source' ? 'green' : 'default'}>
@@ -498,7 +500,8 @@ export function Dashboard() {
                         <Button size="sm" variant="glass" title="插到队首" onClick={() => taskAction.mutate({ id: task.id, action: 'run-now' })}>插队</Button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   {!queuedTasks.length ? <div className="task-empty">队列为空</div> : null}
                 </div>
               </div>
@@ -511,7 +514,7 @@ export function Dashboard() {
               </div>
               <div className="task-list">
                 {recentTasks.map((task) => (
-                  <div className="task-item" key={task.id}>
+                  <div className={`task-item task-item--${task.status === 'done' ? 'green' : task.status === 'failed' ? 'red' : 'orange'}`} key={task.id}>
                     <div className="grow">
                       <div className="row row--wrap" style={{ gap: 6 }}>
                         <Badge tone={task.source === 'manual' || task.source === 'detection' ? 'blue' : 'default'}>{TASK_SOURCE_LABEL[task.source]}</Badge>

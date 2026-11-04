@@ -1930,8 +1930,16 @@ button {
   padding: 12px 14px;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--sep) 80%, transparent);
+  border-left-width: 3px;
   background: color-mix(in srgb, var(--bg-elev) 70%, var(--fill-2));
 }
+
+.task-plan--blue { border-left-color: var(--blue); }
+.task-item--blue { border-left-color: var(--blue); }
+.task-item--green { border-left-color: var(--green); }
+.task-item--orange { border-left-color: var(--orange); }
+.task-item--red { border-left-color: var(--red); }
+.task-item--default { border-left-color: var(--sep); }
 
 .task-plan__title,
 .task-item__title {
