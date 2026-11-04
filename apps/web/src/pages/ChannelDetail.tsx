@@ -322,25 +322,42 @@ export function ChannelDetail() {
       <Sheet
         open={Boolean(playing)}
         onClose={() => setPlaying(null)}
-        title={channel.name}
-        subtitle="在线试播仅供调试，页面不展示真实线路地址"
+        title="在线试播"
+        subtitle={channel.name}
         footer={
-          playing ? (
-            <Button
-              className="grow"
-              variant="danger"
-              onClick={() => {
-                feedback.mutate({ entryKey: playing.key, sourceId: playing.sourceId });
-                setPlaying(null);
-              }}
-            >
-              报告失效
-            </Button>
-          ) : null
+          <div className="preview-footer">
+            <Button variant="ghost" onClick={() => setPlaying(null)}>关闭</Button>
+            {playing ? (
+              <Button
+                variant="danger"
+                onClick={() => {
+                  feedback.mutate({ entryKey: playing.key, sourceId: playing.sourceId });
+                  setPlaying(null);
+                }}
+              >
+                报告失效
+              </Button>
+            ) : null}
+          </div>
         }
       >
         {playing ? (
-          <div className="stack">
+          <div className="preview-sheet">
+            <div className="preview-meta">
+              <div className="preview-meta__head">
+                <Badge tone={statusTone(playing.status)}>{statusLabel(playing.status)}</Badge>
+                <Badge>{formatResolution(playing.resolution)}</Badge>
+                {playing.speedKbps ? <Badge tone="green">{formatSpeed(playing.speedKbps)}</Badge> : null}
+                <Badge>{playing.protocol.toUpperCase()}</Badge>
+              </div>
+              <div className="preview-meta__source">
+                {playing.sourceName ?? playing.sourceId}
+                {playing.sourceSite ? ` · ${playing.sourceSite}` : ''}
+                {relayChecks.get(playing.key)?.ok ? ' · 中继可播' : ''}
+                {playing.lastProbeAt ? ` · 检测于 ${probeAge(playing.lastProbeAt)}` : ''}
+              </div>
+            </div>
+
             <Player
               url={playing.url}
               protocol={playing.protocol}
@@ -351,13 +368,10 @@ export function ChannelDetail() {
               directKind={relayChecks.get(playing.key)?.direct}
               autoPlay
             />
-            <div className="row row--wrap">
-              <Badge tone={statusTone(playing.status)}>{statusLabel(playing.status)}</Badge>
-              <Badge>{formatResolution(playing.resolution)}</Badge>
-              <Badge tone="blue">{formatSpeed(playing.speedKbps)}</Badge>
-              <span className="caption">{playing.protocol.toUpperCase()}</span>
+
+            <div className="preview-tip">
+              试播依赖浏览器和源站策略，失败不代表线路失效。真实线路地址不会在页面展示，订阅地址在 VLC / 盒子中仍可正常播放。
             </div>
-            <p className="caption">试播依赖浏览器与源站策略；失败不代表线路失效，订阅地址在播放器中仍可正常使用。</p>
           </div>
         ) : null}
       </Sheet>
