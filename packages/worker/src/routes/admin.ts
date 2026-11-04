@@ -653,6 +653,9 @@ adminRoutes.get('/tasks', async (c) => {
   if (settings.autoProbeEnabled) {
     scheduledItems.push({ id: 'scheduled-probe', type: 'probe-batch', label: '分批探测 · 自动', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: probeState?.nextRunAt ?? '', lastRunAt: probeState?.lastRunAt ?? '', result: probeState?.result ?? '' }, progress: { done: 0, total: batchSize, unit: 'lines' }, createdAt: scheduledAt });
   }
+  if (settings.snapshotOnPublishEnabled) {
+    scheduledItems.push({ id: 'policy-snapshot-on-publish', type: 'snapshot', label: '快照 · 发布后自动', source: 'schedule', status: 'scheduled', priority: 50, payload: { afterPublish: 'true' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
+  }
   if (settings.epgRefreshEnabled) {
     scheduledItems.push({ id: 'scheduled-epg', type: 'epg', label: 'EPG 节目单刷新', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: nextEpg ? new Date(nextEpg).toISOString() : '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
   }

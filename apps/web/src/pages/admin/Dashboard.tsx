@@ -452,25 +452,32 @@ export function Dashboard() {
                   <span className="caption">到点自动执行</span>
                 </div>
                 <div className="task-plan-grid">
-                  {scheduledTasks.map((task) => (
-                    <div className="task-plan task-plan--blue" key={task.id}>
-                      <div className="grow">
-                        <div className="task-plan__title">{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</div>
-                        <div className="caption">
-                          {task.payload.nextAt ? `下次 ${formatSnapshot(task.payload.nextAt)}` : '等待新线路'}
-                        </div>
-                        {task.payload.result && task.payload.result !== 'queued' ? (
-                          <div className="caption" style={{ marginTop: 2, color: task.payload.result.startsWith('skipped') ? 'var(--orange)' : undefined }}>
-                            上次调度：{task.payload.result}
-                            {task.payload.lastRunAt ? ` · ${formatSnapshot(task.payload.lastRunAt)}` : ''}
+                  {scheduledTasks.map((task) => {
+                    const isPolicy = task.payload.afterPublish === 'true';
+                    return (
+                      <div className="task-plan task-plan--blue" key={task.id}>
+                        <div className="grow">
+                          <div className="task-plan__title">{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</div>
+                          <div className="caption">
+                            {isPolicy ? '发布成功后自动执行' : task.payload.nextAt ? `下次 ${formatSnapshot(task.payload.nextAt)}` : '等待新线路'}
                           </div>
-                        ) : null}
+                          {task.payload.result && task.payload.result !== 'queued' ? (
+                            <div className="caption" style={{ marginTop: 2, color: task.payload.result.startsWith('skipped') ? 'var(--orange)' : undefined }}>
+                              上次调度：{task.payload.result}
+                              {task.payload.lastRunAt ? ` · ${formatSnapshot(task.payload.lastRunAt)}` : ''}
+                            </div>
+                          ) : null}
+                        </div>
+                        {!isPolicy ? (
+                          <Button loading={runTask.isPending} onClick={() => runTask.mutate({ command: task.type as 'probe-batch' | 'fetch' | 'publish' | 'epg' })}>
+                            {task.type === 'probe-batch' ? '立即探测' : '立即执行'}
+                          </Button>
+                        ) : (
+                          <Badge tone="green">发布后</Badge>
+                        )}
                       </div>
-                      <Button size="sm" variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: task.type as 'probe-batch' | 'fetch' | 'publish' | 'epg' })}>
-                        立即执行
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {!scheduledTasks.length ? <div className="task-empty">没有启用的定时任务</div> : null}
                 </div>
               </div>
