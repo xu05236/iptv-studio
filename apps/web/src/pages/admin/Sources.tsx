@@ -245,6 +245,26 @@ export function Sources() {
     return [...base].sort((a, b) => favorite(b) - favorite(a) || added(b) - added(a) || (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
   }, [data, healthSort, health.data]);
   const sites = useMemo(() => [...new Set(items.map(sourceSite))], [items]);
+  const healthSummary = useMemo(() => {
+    if (!health.data?.items.length) return null;
+    let alive = 0;
+    let parsed = 0;
+    let failToday = 0;
+    for (const item of health.data.items) {
+      const last = item.points.at(-1);
+      if (!last?.fetched) failToday++;
+      for (const point of item.points) {
+        if (!point.fetched) continue;
+        alive += point.alive;
+        parsed += point.parsed;
+      }
+    }
+    return {
+      average: parsed > 0 ? Math.round((alive / parsed) * 100) : 0,
+      failToday,
+      sources: health.data.items.length,
+    };
+  }, [health.data]);
 
   return (
     <div className="stack">
@@ -271,44 +291,54 @@ export function Sources() {
       ) : null}
 
       {health.data?.items.length ? (
-        <Card>
-          <div className="row row--between">
-            <div className="row" style={{ gap: 6 }}><Activity size={15} /><span className="title-3">近 7 天源健康</span></div>
-            <span className="caption">可用 / 解析 · UTC 日期</span>
-          </div>
-          <div className="table-wrap" style={{ marginTop: 10, border: 0 }}>
-            <table className="table table--cards">
-              <thead>
-                <tr>
-                  <th>采集站</th>
-                  {Array.from({ length: health.data.days }, (_, index) => {
-                    const date = new Date(Date.now() - (health.data.days - 1 - index) * 86_400_000).toISOString().slice(5, 10);
-                    return <th key={date}>{date}</th>;
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {health.data.items.map((item) => (
-                  <tr key={item.sourceId}>
-                    <td data-label="采集站" className="truncate" style={{ maxWidth: 160 }}>{item.name}</td>
+        <details className="source-health">
+          <summary className="source-health__summary">
+            <span className="source-health__icon"><Activity size={16} /></span>
+            <div className="grow">
+              <div className="source-health__title">近 7 天源健康</div>
+              <div className="caption">{healthSummary?.sources ?? health.data.items.length} 个采集站 · 可用 / 解析</div>
+            </div>
+            <div className="source-health__metrics">
+              <span><strong>{healthSummary?.average ?? 0}%</strong><em>平均可用率</em></span>
+              <span><strong className={healthSummary?.failToday ? 'is-bad' : undefined}>{healthSummary?.failToday ?? 0}</strong><em>今日失败源</em></span>
+            </div>
+            <span className="source-health__toggle">明细</span>
+          </summary>
+          <div className="source-health__body">
+            <div className="table-wrap" style={{ border: 0 }}>
+              <table className="table table--cards">
+                <thead>
+                  <tr>
+                    <th>采集站</th>
                     {Array.from({ length: health.data.days }, (_, index) => {
-                      const date = new Date(Date.now() - (health.data.days - 1 - index) * 86_400_000).toISOString().slice(0, 10);
-                      const point = item.points.find((entry) => entry.day === date);
-                      if (!point) return <td key={date} data-label={date.slice(5)} className="caption">—</td>;
-                      const pct = point.parsed ? Math.round((point.alive / point.parsed) * 100) : 0;
-                      return (
-                        <td key={date} data-label={date.slice(5)} style={{ color: !point.fetched ? 'var(--red)' : pct >= 30 ? 'var(--green)' : 'var(--orange)' }}>
-                          {point.fetched ? `${point.alive}/${point.parsed}` : '失败'}
-                          <div className="caption">{pct}%</div>
-                        </td>
-                      );
+                      const date = new Date(Date.now() - (health.data.days - 1 - index) * 86_400_000).toISOString().slice(5, 10);
+                      return <th key={date}>{date}</th>;
                     })}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {health.data.items.map((item) => (
+                    <tr key={item.sourceId}>
+                      <td data-label="采集站" className="truncate" style={{ maxWidth: 160 }}>{item.name}</td>
+                      {Array.from({ length: health.data.days }, (_, index) => {
+                        const date = new Date(Date.now() - (health.data.days - 1 - index) * 86_400_000).toISOString().slice(0, 10);
+                        const point = item.points.find((entry) => entry.day === date);
+                        if (!point) return <td key={date} data-label={date.slice(5)} className="caption">—</td>;
+                        const pct = point.parsed ? Math.round((point.alive / point.parsed) * 100) : 0;
+                        return (
+                          <td key={date} data-label={date.slice(5)} style={{ color: !point.fetched ? 'var(--red)' : pct >= 30 ? 'var(--green)' : 'var(--orange)' }}>
+                            {point.fetched ? `${point.alive}/${point.parsed}` : '失败'}
+                            <div className="caption">{pct}%</div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </Card>
+        </details>
       ) : null}
 
       {isLoading ? <Card><div className="caption">加载中…</div></Card> : null}
