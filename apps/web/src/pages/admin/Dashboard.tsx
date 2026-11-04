@@ -278,8 +278,9 @@ export function Dashboard() {
 
   return (
     <div className="stack">
-      <div className="row row--between row--wrap">
-        <div>
+      <div className="admin-hero">
+        <div className="admin-hero__content">
+          <div className="admin-eyebrow">CONTROL CENTER</div>
           <h1 className="large-title">概览</h1>
           <p className="subhead" style={{ marginTop: 4 }}>
             {ready ? `数据更新于 ${timeAgo(stats.index.generatedAt)}` : '还没有生成频道数据'}
@@ -289,23 +290,33 @@ export function Dashboard() {
               已发布 {stats.index.generatedAt ? formatSnapshot(stats.index.generatedAt) : '—'} · 线路池 {stats.pool?.generatedAt ? formatSnapshot(stats.pool.generatedAt) : '—'}
             </p>
           ) : null}
+          <div className="row row--wrap" style={{ marginTop: 12, gap: 6 }}>
+            <Badge tone={ready ? 'green' : 'orange'}>{ready ? '数据已就绪' : '等待首次采集'}</Badge>
+            <Badge tone={kvBlocked ? 'red' : kvWarn ? 'orange' : 'blue'}>KV {formatNumber(kvWrites)}/1000</Badge>
+            <Badge>{stats.index.totals.channels} 频道 · {stats.index.totals.alive} 可用</Badge>
+          </div>
         </div>
-        <div className="row">
-          <Button loading={dispatch.isPending} disabled={kvBlocked} onClick={() => dispatch.mutate('collect')}>
+        <div className="admin-hero__actions">
+          <Button variant="primary" loading={dispatch.isPending} disabled={kvBlocked} onClick={() => dispatch.mutate('collect')}>
             <PlayCircle size={15} /> 立即采集
           </Button>
           <Button loading={runTask.isPending} onClick={() => runTask.mutate({ command: 'publish' })}>
             <RefreshCw size={15} /> 发布更新
           </Button>
-          <Button loading={refreshUsage.isPending} onClick={() => refreshUsage.mutate()}>
-            <RefreshCw size={15} /> 刷新用量
-          </Button>
-          <Button loading={dispatch.isPending} disabled={kvBlocked} onClick={() => dispatch.mutate('export')}>
-            <RefreshCw size={15} /> 重建导出
-          </Button>
-          <Button loading={backup.isPending} onClick={() => backup.mutate()}>
-            <Download size={15} /> 备份
-          </Button>
+          <details className="admin-more">
+            <summary className="btn btn--sm btn--glass">更多操作</summary>
+            <div className="admin-more__menu">
+              <button className="admin-more__item" disabled={refreshUsage.isPending} onClick={() => refreshUsage.mutate()}>
+                <RefreshCw size={14} /> 刷新用量
+              </button>
+              <button className="admin-more__item" disabled={dispatch.isPending || kvBlocked} onClick={() => dispatch.mutate('export')}>
+                <RefreshCw size={14} /> 重建导出
+              </button>
+              <button className="admin-more__item" disabled={backup.isPending} onClick={() => backup.mutate()}>
+                <Download size={14} /> 备份配置
+              </button>
+            </div>
+          </details>
         </div>
       </div>
 

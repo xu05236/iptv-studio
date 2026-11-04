@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   ClipboardList,
   Gauge,
@@ -8,79 +8,121 @@ import {
   LogOut,
   RadioTower,
   Settings,
+  Share2,
   SlidersHorizontal,
   Tv,
-  Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { UsageAlert } from '../components/UsageAlert';
 
-const LINKS = [
-  { to: '/admin', label: '概览', icon: Gauge, end: true },
-  { to: '/admin/sources', label: '采集站', icon: RadioTower },
-  { to: '/admin/pool', label: '线路池', icon: Layers3 },
-  { to: '/admin/channels', label: '频道', icon: Tv },
-  { to: '/admin/probe', label: '检测中心', icon: SlidersHorizontal },
-  { to: '/admin/subscriptions', label: '订阅与导出', icon: Users },
-  { to: '/admin/runs', label: '运行与日志', icon: ClipboardList },
-  { to: '/admin/rules', label: '规则', icon: ListFilter },
-  { to: '/admin/settings', label: '设置', icon: Settings },
+const GROUPS = [
+  {
+    label: '总览',
+    links: [{ to: '/admin', label: '概览', icon: Gauge, end: true }],
+  },
+  {
+    label: '内容管理',
+    links: [
+      { to: '/admin/sources', label: '采集站', icon: RadioTower, end: false },
+      { to: '/admin/pool', label: '线路池', icon: Layers3, end: false },
+      { to: '/admin/channels', label: '频道', icon: Tv, end: false },
+    ],
+  },
+  {
+    label: '运营发布',
+    links: [
+      { to: '/admin/probe', label: '检测中心', icon: SlidersHorizontal, end: false },
+      { to: '/admin/subscriptions', label: '订阅与导出', icon: Share2, end: false },
+    ],
+  },
+  {
+    label: '系统',
+    links: [
+      { to: '/admin/runs', label: '运行与日志', icon: ClipboardList, end: false },
+      { to: '/admin/rules', label: '规则', icon: ListFilter, end: false },
+      { to: '/admin/settings', label: '设置', icon: Settings, end: false },
+    ],
+  },
 ];
+
+const LINKS = GROUPS.flatMap((group) => group.links);
+
+const PAGE_TITLES: Record<string, string> = {
+  '/admin': '概览',
+  '/admin/sources': '采集站',
+  '/admin/pool': '线路池',
+  '/admin/channels': '频道',
+  '/admin/probe': '检测中心',
+  '/admin/subscriptions': '订阅与导出',
+  '/admin/runs': '运行与日志',
+  '/admin/rules': '规则',
+  '/admin/settings': '设置',
+};
 
 export function AdminLayout() {
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const currentTitle = PAGE_TITLES[location.pathname] ?? '管理后台';
 
   return (
     <div className="admin">
       <aside className="sidebar">
-        <div className="topbar__brand" style={{ padding: '0 10px 18px' }}>
+        <div className="sidebar__brand">
           <span className="brand-mark">
-            <ListVideo size={15} />
+            <ListVideo size={16} />
           </span>
           <div>
-            <div style={{ fontSize: 15 }}>IPTV Studio</div>
+            <div className="sidebar__brand-name">IPTV Studio</div>
             <div className="caption">管理后台</div>
           </div>
         </div>
 
-        {LINKS.map((link) => {
-          const Icon = link.icon;
-          return (
-            <NavLink
-              key={link.to}
-              to={link.to}
-              end={link.end}
-              className={({ isActive }) => clsx('sidebar__link', isActive && 'sidebar__link--active')}
-            >
-              <Icon size={17} />
-              {link.label}
-            </NavLink>
-          );
-        })}
+        <div className="sidebar__nav">
+          {GROUPS.map((group) => (
+            <div className="sidebar__group" key={group.label}>
+              <div className="sidebar__title">{group.label}</div>
+              {group.links.map((link) => {
+                const Icon = link.icon;
+                return (
+                  <NavLink
+                    key={link.to}
+                    to={link.to}
+                    end={link.end === true}
+                    className={({ isActive }) => clsx('sidebar__link', isActive && 'sidebar__link--active')}
+                  >
+                    <Icon size={17} />
+                    {link.label}
+                  </NavLink>
+                );
+              })}
+            </div>
+          ))}
+        </div>
 
-        <div className="grow" />
-        <NavLink to="/" className="sidebar__link">
-          <Tv size={17} /> 返回前台
-        </NavLink>
-        <button
-          className="sidebar__link"
-          onClick={() => {
-            logout();
-            navigate('/admin/login');
-          }}
-          style={{ textAlign: 'left', width: '100%' }}
-        >
-          <LogOut size={17} /> 退出登录
-        </button>
+        <div className="sidebar__footer">
+          <NavLink to="/" className="sidebar__link">
+            <Tv size={17} /> 返回前台
+          </NavLink>
+          <button
+            className="sidebar__link sidebar__link--button"
+            onClick={() => {
+              logout();
+              navigate('/admin/login');
+            }}
+          >
+            <LogOut size={17} /> 退出登录
+          </button>
+        </div>
       </aside>
 
       <div className="admin__main">
-        <header className="topbar" style={{ position: 'sticky' }}>
-          <div className="topbar__brand" style={{ fontSize: 15 }}>
-            管理后台
+        <header className="topbar admin-topbar">
+          <div className="admin-topbar__title">
+            <span className="caption">管理后台</span>
+            <strong>{currentTitle}</strong>
           </div>
           <div className="grow" />
           <ThemeToggle compact />
@@ -100,7 +142,7 @@ export function AdminLayout() {
             <NavLink
               key={link.to}
               to={link.to}
-              end={link.end}
+              end={link.end === true}
               className={({ isActive }) => clsx('chip', isActive && 'chip--active')}
             >
               {link.label}
