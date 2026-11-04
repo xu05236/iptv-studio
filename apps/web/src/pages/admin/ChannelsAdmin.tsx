@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Copy, Eraser, Info, Link2, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
+import { AlertTriangle, Copy, Eraser, Info, LayoutGrid, Link2, List, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import type { AdminChannel } from '../../lib/types';
 import { formatResolution, formatSpeed, statusLabel, statusTone, timeAgo } from '../../lib/format';
 import { Badge, Button, Card, Field, Pagination, Sheet, Skeleton, Switch, useToast } from '../../components/ui';
 
-const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 12;
 
 /** Parse `channelId => EPG name` lines (also accepts comma or tab). */
 function parseBulkMappings(text: string): Array<{ channelId: string; alias: string }> {
@@ -66,6 +66,7 @@ export function ChannelsAdmin() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [view, setView] = useState<'grid' | 'list'>('grid');
   const [conflictsOpen, setConflictsOpen] = useState(false);
   const [epgOpen, setEpgOpen] = useState(false);
   const [epgSearch, setEpgSearch] = useState('');
@@ -263,6 +264,13 @@ export function ChannelsAdmin() {
           </div>
           <Button size="sm" variant="ghost" onClick={() => { setSearch(''); setCountry(''); setGroup(''); setPage(1); }}>重置筛选</Button>
         </div>
+        <div className="channel-view-row">
+          <div className="source-view-toggle">
+            <Button size="sm" variant={view === 'grid' ? 'primary' : 'ghost'} onClick={() => setView('grid')}><LayoutGrid size={14} /> 网格</Button>
+            <Button size="sm" variant={view === 'list' ? 'primary' : 'ghost'} onClick={() => setView('list')}><List size={14} /> 列表</Button>
+          </div>
+          <span className="caption">每页 {pageSize} 个</span>
+        </div>
         <div className="search">
           <Search size={16} className="search__icon" />
           <input className="input" placeholder="搜索频道名称或 ID" value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -336,34 +344,36 @@ export function ChannelsAdmin() {
         <Card><div className="caption">加载中…</div></Card>
       ) : null}
 
-      <div className="channel-grid">
+      <div className={`channel-grid${view === 'list' ? ' channel-grid--list' : ''}`}>
         {items.map((channel) => {
           const isSelected = selected.has(channel.id);
           const tone = !channel.enabled ? 'orange' : channel.lines > 0 && channel.alive === 0 ? 'red' : channel.alive > 0 ? 'green' : 'default';
           return (
             <div key={channel.id} className={`channel-card channel-card--${tone}${isSelected ? ' is-selected' : ''}`}>
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={(event) => {
-                  const next = new Set(selected);
-                  if (event.target.checked) next.add(channel.id);
-                  else next.delete(channel.id);
-                  setSelected(next);
-                }}
-              />
-              <div className="logo logo--fallback" style={{ fontSize: 13 }}>{channel.name.slice(0, 1)}</div>
-              <div className="grow" style={{ minWidth: 0 }}>
-                <div className="row" style={{ gap: 6 }}>
-                  <span className="channel-card__name truncate">{channel.name}</span>
-                  {channel.bestResolution ? <Badge tone="blue">{formatResolution(channel.bestResolution)}</Badge> : null}
+              <div className="channel-card__head">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={(event) => {
+                    const next = new Set(selected);
+                    if (event.target.checked) next.add(channel.id);
+                    else next.delete(channel.id);
+                    setSelected(next);
+                  }}
+                />
+                <div className="logo logo--fallback" style={{ fontSize: 13 }}>{channel.name.slice(0, 1)}</div>
+                <div className="grow" style={{ minWidth: 0 }}>
+                  <div className="row row--wrap" style={{ gap: 6 }}>
+                    <span className="channel-card__name">{channel.name}</span>
+                    {channel.bestResolution ? <Badge tone="blue">{formatResolution(channel.bestResolution)}</Badge> : null}
+                  </div>
+                  <div className="caption" style={{ marginTop: 2 }}>{channel.group}</div>
                 </div>
-                <div className="caption" style={{ marginTop: 2 }}>{channel.group}</div>
-                <div className="channel-card__metrics">
-                  <span><strong>{channel.alive}</strong>/{channel.lines} 可用</span>
-                  <span><strong>{channel.sources}</strong> 个源</span>
-                  {channel.bestSpeedKbps ? <span>{formatSpeed(channel.bestSpeedKbps)}</span> : null}
-                </div>
+              </div>
+              <div className="channel-card__metrics">
+                <span><strong>{channel.alive}</strong>/{channel.lines} 可用</span>
+                <span><strong>{channel.sources}</strong> 个源</span>
+                {channel.bestSpeedKbps ? <span>{formatSpeed(channel.bestSpeedKbps)}</span> : null}
               </div>
               <div className="channel-card__actions">
                 <Button size="sm" variant="ghost" onClick={() => setDetailId(channel.id)} title="查看线路和订阅源">
@@ -398,10 +408,10 @@ export function ChannelsAdmin() {
         <label className="row" style={{ gap: 6 }}>
           <span className="caption">每页</span>
           <select className="input" style={{ width: 88 }} value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-            <option value={30}>30</option>
-            <option value={50}>50</option>
+            <option value={12}>12</option>
+            <option value={24}>24</option>
+            <option value={36}>36</option>
+            <option value={48}>48</option>
           </select>
         </label>
       </div>
