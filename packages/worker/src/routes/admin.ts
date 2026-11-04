@@ -482,6 +482,28 @@ adminRoutes.post('/actions/cancel-stuck', async (c) => {
   return ok({ cancelled });
 });
 
+adminRoutes.post('/actions/recover-stuck', async (c) => {
+  let cancelled = 0;
+  if (c.env.GITHUB_TOKEN && c.env.GITHUB_REPO) {
+    const headers = { Authorization: `Bearer ${c.env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'iptv-studio' };
+    for (const status of ['in_progress', 'queued']) {
+      const response = await fetch(
+        `https://api.github.com/repos/${c.env.GITHUB_REPO}/actions/workflows/collect.yml/runs?status=${status}&per_page=20`,
+        { headers },
+      );
+      const payload = (await response.json()) as { workflow_runs?: Array<{ id: number }> };
+      for (const run of payload.workflow_runs ?? []) {
+        const result = await fetch(`https://api.github.com/repos/${c.env.GITHUB_REPO}/actions/runs/${run.id}/cancel`, { method: 'POST', headers });
+        if (result.ok) cancelled++;
+      }
+    }
+  }
+  const tasks = await loadTasks(c.env);
+  const running = tasks.filter((task) => task.status === 'running');
+  for (const task of running) await mutateTask(c.env, task.id, 'force-fail');
+  return ok({ cancelled, failed: running.length });
+});
+
 adminRoutes.get('/settings', async (c) => {
   const settings = await loadSettings(c.env);
   return ok({ settings, publicBaseUrl: c.env.PUBLIC_BASE_URL ?? new URL(c.req.url).origin });

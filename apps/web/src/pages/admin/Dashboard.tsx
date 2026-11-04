@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, Cloud, Database, Download, Layers3, ListChecks, Pause, Play, PlayCircle, RefreshCw, RadioTower, Share2, Tv, Users } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, Ban, Cloud, Database, Download, Layers3, ListChecks, Pause, Play, PlayCircle, RefreshCw, RadioTower, Share2, Tv, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminStats, UsageSnapshot } from '../../lib/types';
 import { formatDuration, timeAgo } from '../../lib/format';
@@ -173,6 +173,16 @@ export function Dashboard() {
     onSuccess: (result) => {
       show(result.message);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'tasks'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const recoverStuck = useMutation({
+    mutationFn: () => api.post<{ cancelled: number; failed: number }>('/api/admin/actions/recover-stuck'),
+    onSuccess: (result) => {
+      show(`已结束 ${result.failed} 个卡死任务${result.cancelled ? `，取消 ${result.cancelled} 个 Actions 运行` : ''}`);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'tasks'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
@@ -419,7 +429,19 @@ export function Dashboard() {
             <div className="task-section">
               <div className="task-section__head">
                 <span>运行中</span>
-                <span className="caption">{runningTask ? taskEta(runningTask) : '当前空闲'}</span>
+                <div className="row" style={{ gap: 8 }}>
+                  <span className="caption">{runningTask ? taskEta(runningTask) : '当前空闲'}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    loading={recoverStuck.isPending}
+                    onClick={() => {
+                      if (confirm('取消 GitHub 上运行中/排队的 Actions，并把本地所有运行中任务标记失败？')) recoverStuck.mutate();
+                    }}
+                  >
+                    <Ban size={13} /> 结束卡死
+                  </Button>
+                </div>
               </div>
               {runningTask ? (
                 <div className="task-running">
@@ -439,6 +461,16 @@ export function Dashboard() {
                       </div>
                     ) : null}
                   </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    loading={taskAction.isPending}
+                    onClick={() => {
+                      if (confirm('强制结束这个任务？GitHub Actions 运行可能还在继续，必要时再点「结束卡死」。')) taskAction.mutate({ id: runningTask.id, action: 'force-fail' });
+                    }}
+                  >
+                    强制结束
+                  </Button>
                 </div>
               ) : (
                 <div className="task-empty">当前没有运行中的任务</div>
