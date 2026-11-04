@@ -358,8 +358,9 @@ export function Sources() {
           const pendingTotal = source.progress?.pendingTotal ?? source.progress?.pending ?? 0;
           const quarantineDue = source.progress?.quarantine ?? 0;
           const quarantineTotal = source.progress?.quarantineTotal ?? source.progress?.quarantine ?? 0;
+          const cardTone = !source.enabled ? 'orange' : source.status === 'degraded' || source.last_error ? 'red' : (source.alive_count ?? 0) > 0 ? 'green' : 'default';
           return (
-            <Card className="source-card" key={source.id}>
+            <Card className={`source-card source-card--${cardTone}`} key={source.id}>
               <div className="source-card__head">
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="row row--wrap" style={{ gap: 6 }}>

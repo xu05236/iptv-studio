@@ -1168,7 +1168,13 @@ button {
   flex-direction: column;
   gap: 12px;
   padding: 18px;
+  border-left-width: 3px;
 }
+
+.source-card--green { border-left-color: var(--green); }
+.source-card--red { border-left-color: var(--red); }
+.source-card--orange { border-left-color: var(--orange); }
+.source-card--default { border-left-color: var(--sep); }
 
 .source-card__head {
   display: flex;
