@@ -73,14 +73,12 @@ function filtersToForm(filters: SourceItem['filters']): FilterForm {
 
 function FilterFields({ form, onChange }: { form: FilterForm; onChange: (next: FilterForm) => void }) {
   return (
-    <div className="stack">
-      <div className="row">
-        <div className="grow"><Field label="只保留分组" hint="逗号分隔，匹配分组或频道名"><input className="input" value={form.groups} onChange={(event) => onChange({ ...form, groups: event.target.value })} placeholder="央视, 卫视, 翡翠" /></Field></div>
-        <div className="grow"><Field label="排除分组"><input className="input" value={form.excludeGroups} onChange={(event) => onChange({ ...form, excludeGroups: event.target.value })} placeholder="购物, 测试" /></Field></div>
-      </div>
-      <div className="row">
-        <div className="grow"><Field label="只保留频道名包含"><input className="input" value={form.keywords} onChange={(event) => onChange({ ...form, keywords: event.target.value })} placeholder="CCTV, 湖南" /></Field></div>
-        <div className="grow"><Field label="排除频道名包含"><input className="input" value={form.excludeKeywords} onChange={(event) => onChange({ ...form, excludeKeywords: event.target.value })} placeholder="支付, 广告" /></Field></div>
+    <div className="stack stack--tight">
+      <div className="form-grid">
+        <Field label="只保留分组" hint="逗号分隔，匹配分组或频道名"><input className="input" value={form.groups} onChange={(event) => onChange({ ...form, groups: event.target.value })} placeholder="央视, 卫视, 翡翠" /></Field>
+        <Field label="排除分组"><input className="input" value={form.excludeGroups} onChange={(event) => onChange({ ...form, excludeGroups: event.target.value })} placeholder="购物, 测试" /></Field>
+        <Field label="只保留频道名包含"><input className="input" value={form.keywords} onChange={(event) => onChange({ ...form, keywords: event.target.value })} placeholder="CCTV, 湖南" /></Field>
+        <Field label="排除频道名包含"><input className="input" value={form.excludeKeywords} onChange={(event) => onChange({ ...form, excludeKeywords: event.target.value })} placeholder="支付, 广告" /></Field>
       </div>
       <Field label="最多保留条数" hint="过滤后硬上限，留空不限制">
         <input className="input" type="number" min={0} value={form.maxEntries} onChange={(event) => onChange({ ...form, maxEntries: event.target.value })} placeholder="例如 300" />
@@ -445,46 +443,50 @@ export function Sources() {
         title="添加采集站"
         subtitle="支持 M3U / TXT / JSON / TVBox lives / 华为 JSP，自动识别"
         footer={
-          <div className="row">
+          <div className="sheet-actions">
             <Button loading={checkDuplicate.isPending} onClick={() => checkDuplicate.mutate()}>
               检查是否已存在
             </Button>
-            <Button block variant="primary" loading={create.isPending} disabled={preview?.exists} onClick={() => create.mutate()}>
+            <Button variant="primary" loading={create.isPending} disabled={preview?.exists} onClick={() => create.mutate()}>
               添加并解析
             </Button>
           </div>
         }
       >
         <div className="stack">
-          <Segmented
-            value={mode}
-            onChange={setMode}
-            options={[
-              { value: 'url', label: '订阅地址' },
-              { value: 'paste', label: '粘贴文本' },
-              { value: 'file', label: '上传文件' },
-            ]}
-          />
+          <div className="source-mode-toggle">
+            <Segmented
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: 'url', label: '订阅地址' },
+                { value: 'paste', label: '粘贴文本' },
+                { value: 'file', label: '上传文件' },
+              ]}
+            />
+          </div>
           <div className="sheet-section">基础信息</div>
-          <Field label="列表格式" hint="自动识别失败时可手动指定，尤其是 M3U / TXT 内容不规范时">
-            <select className="input" value={kind} onChange={(event) => setKind(event.target.value)}>
-              <option value="auto">自动识别</option>
-              <option value="m3u">M3U / M3U8</option>
-              <option value="txt">TXT</option>
-              <option value="json">JSON / TVBox</option>
-              <option value="hwctc">华为 HWCTC</option>
-            </select>
-          </Field>
-          <Field label="名称（可选）">
-            <input className="input" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：社区 4K 源" />
-          </Field>
+          <div className="form-grid">
+            <Field label="列表格式" hint="自动识别失败时可手动指定">
+              <select className="input" value={kind} onChange={(event) => setKind(event.target.value)}>
+                <option value="auto">自动识别</option>
+                <option value="m3u">M3U / M3U8</option>
+                <option value="txt">TXT</option>
+                <option value="json">JSON / TVBox</option>
+                <option value="hwctc">华为 HWCTC</option>
+              </select>
+            </Field>
+            <Field label="名称（可选）">
+              <input className="input" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：社区 4K 源" />
+            </Field>
+          </div>
           {mode === 'url' ? (
             <Field label="订阅 URL" hint="仅支持 http/https；添加时会先真实抓取一次并校验可解析。">
               <input className="input" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com/iptv.m3u" inputMode="url" />
             </Field>
           ) : null}
           {mode === 'url' ? (
-            <div className="list__row" style={{ padding: '4px 0' }}>
+            <div className="source-check">
               <div className="grow">
                 <div className="list__title">跳过预检，交给采集器抓取</div>
                 <div className="caption">源站限制 Cloudflare/海外 IP 时使用；添加时不再校验，下一轮采集由 GitHub Actions 抓取。</div>
@@ -513,9 +515,9 @@ export function Sources() {
               />
             </Field>
           ) : null}
-          <div className="row">
-            <div className="grow"><Field label="地区（可选）"><input className="input" value={region} onChange={(event) => setRegion(event.target.value)} placeholder="江苏" /></Field></div>
-            <div className="grow"><Field label="运营商（可选）"><input className="input" value={operator} onChange={(event) => setOperator(event.target.value)} placeholder="电信" /></Field></div>
+          <div className="form-grid">
+            <Field label="地区（可选）"><input className="input" value={region} onChange={(event) => setRegion(event.target.value)} placeholder="江苏" /></Field>
+            <Field label="运营商（可选）"><input className="input" value={operator} onChange={(event) => setOperator(event.target.value)} placeholder="电信" /></Field>
           </div>
           <div className="sheet-section">线路过滤</div>
           <FilterFields form={filterForm} onChange={setFilterForm} />
@@ -525,7 +527,7 @@ export function Sources() {
           </Field>
           {mode !== 'url' && content ? <div className="caption"><Upload size={12} /> 已读取 {content.length.toLocaleString()} 字符</div> : null}
           {preview ? (
-            <div className="caption" style={{ color: preview.exists ? 'var(--red)' : preview.reachable ? 'var(--green)' : 'var(--orange)' }}>
+            <div className={`source-preview source-preview--${preview.exists ? 'red' : preview.reachable ? 'green' : 'orange'}`}>
               {preview.exists
                 ? `该订阅已存在：${preview.duplicateOf?.name}（${preview.duplicateOf?.reason === 'content' ? '内容相同' : '地址相同'}）`
                 : preview.reachable
