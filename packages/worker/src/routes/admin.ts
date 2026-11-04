@@ -29,7 +29,7 @@ import { getRuntimeJson } from '../lib/runtime-state.js';
 import { clearSnapshots, createSnapshot } from '../lib/snapshots.js';
 import { inferResolution } from '@iptv/core';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
-import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask, recordFinishedTask } from '../lib/tasks.js';
+import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask, recordFinishedTask, type Task } from '../lib/tasks.js';
 import { registerTelegramWebhook } from '../lib/telegram.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
 import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, nextScheduledAt, parseCollectTimes } from '../lib/schedule.js';
@@ -172,6 +172,7 @@ adminRoutes.get('/stats', async (c) => {
   ]);
 
   const reputation = { high: 0, normal: 0, low: 0 };
+  const sourceNames = new Map(sources.map((source) => [source.id, source.name]));
   for (const source of sources) {
     if (source.reputation >= 80) reputation.high++;
     else if (source.reputation >= 50) reputation.normal++;
@@ -206,15 +207,22 @@ adminRoutes.get('/stats', async (c) => {
     },
     runs: runs.map((run) => {
       const task = run.task_id ? tasks.find((item) => item.id === run.task_id) : undefined;
-      return { ...run, task_type: task?.type ?? null, task_source: task?.source ?? null, task_message: task?.message ?? null };
+      return {
+        ...run,
+        task_type: task?.type ?? null,
+        task_source: task?.source ?? null,
+        task_message: task?.message ?? null,
+        task_label: task ? describeTask(task, sourceNames) : null,
+      };
     }),
   });
 });
 
 adminRoutes.get('/runs', async (c) => {
   const limit = Math.max(1, Math.min(Number(c.req.query('limit') ?? 20), 100));
-  const [runs, tasks] = await Promise.all([listRuns(c.env, limit), loadTasks(c.env)]);
+  const [runs, tasks, sourceRows] = await Promise.all([listRuns(c.env, limit), loadTasks(c.env), listSources(c.env)]);
   const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const sourceNames = new Map(sourceRows.map((row) => [row.id, row.name]));
   return ok({
     items: runs.map((run) => {
       const task = run.task_id ? taskById.get(run.task_id) : undefined;
@@ -223,6 +231,8 @@ adminRoutes.get('/runs', async (c) => {
         task_type: task?.type ?? null,
         task_source: task?.source ?? null,
         task_message: task?.message ?? null,
+        task_label: task ? describeTask(task, sourceNames) : null,
+        task_failure_reason: run.status === 'failed' ? run.error ?? null : null,
         warnings: parseJsonField<string[]>(run.warnings, []),
       };
     }),
@@ -559,6 +569,32 @@ const TASK_PHASE_LABEL: Record<string, string> = {
   rejected: '已淘汰（可复活）',
 };
 
+function describeTask(task: Task, sourceNames: Map<string, string>): string {
+  const sourceId = String(task.payload?.source_id ?? '');
+  const sourceName = sourceNames.get(sourceId);
+  const phase = TASK_PHASE_LABEL[String(task.payload?.phase ?? '')];
+  const keyCount = String(task.payload?.line_keys ?? '').split(',').filter(Boolean).length;
+  if (task.type === 'fetch') return `抓源 · ${sourceName ?? '全部启用源'}`;
+  if (task.type === 'probe-batch') return `分批探测 · ${phase ?? '自动阶段'}${sourceName ? ` · ${sourceName}` : ''}`;
+  if (task.type === 'probe') return `完整测速 · ${sourceName ?? '全部源'}`;
+  if (task.type === 'probe-lines') return `线路复测 · ${keyCount} 条`;
+  if (task.type === 'publish') return task.source === 'schedule'
+    ? (task.payload?.auto ? '线路发布 · 探测后自动' : '线路发布 · 定时')
+    : '线路发布 · 手动';
+  if (task.type === 'epg') return 'EPG 节目单刷新';
+  if (task.type === 'collect') return '完整采集 · 全部源';
+  if (task.type === 'liveness') return '存活检测';
+  if (task.type === 'cleanup-orphans') return '孤儿线路清理';
+  if (task.type === 'snapshot') {
+    return task.payload?.origin === 'publish'
+      ? '快照 · 发布后自动'
+      : task.payload?.origin === 'schedule'
+        ? '快照 · 定时'
+        : task.payload?.origin === 'restore' ? '快照 · 回滚' : task.payload?.origin === 'clear' ? '快照 · 清理' : '快照 · 手动';
+  }
+  return task.type;
+}
+
 /** Derived detection task board for the overview page. */
 adminRoutes.get('/tasks', async (c) => {
   const settings = await loadSettings(c.env);
@@ -600,29 +636,12 @@ adminRoutes.get('/tasks', async (c) => {
   const nextEpg = nextScheduledAt(parseCollectTimes(settings.epgRefreshTimes), Date.now());
   const scheduledAt = new Date().toISOString();
   const detailedTasks = taskItems.map((task) => {
-    const sourceId = String(task.payload?.source_id ?? '');
-    const sourceName = sourceNames.get(sourceId);
-    const phase = TASK_PHASE_LABEL[String(task.payload?.phase ?? '')];
-    const keyCount = String(task.payload?.line_keys ?? '').split(',').filter(Boolean).length;
-    let label = task.type;
-    if (task.type === 'fetch') label = `抓源 · ${sourceName ?? '全部启用源'}`;
-    else if (task.type === 'probe-batch') label = `分批探测 · ${phase ?? '自动阶段'}${sourceName ? ` · ${sourceName}` : ''}`;
-    else if (task.type === 'probe') label = `完整测速 · ${sourceName ?? '全部源'}`;
-    else if (task.type === 'probe-lines') label = `线路复测 · ${keyCount} 条`;
-    else if (task.type === 'publish') label = task.source === 'schedule'
-      ? (task.payload?.auto ? '线路发布 · 探测后自动' : '线路发布 · 定时')
-      : '线路发布 · 手动';
-    else if (task.type === 'epg') label = 'EPG 节目单刷新';
-    else if (task.type === 'collect') label = '完整采集 · 全部源';
-    else if (task.type === 'liveness') label = '存活检测';
-    else if (task.type === 'cleanup-orphans') label = '孤儿线路清理';
-    else if (task.type === 'snapshot') label = task.payload?.origin === 'publish'
-      ? '快照 · 发布后自动'
-      : task.payload?.origin === 'schedule'
-        ? '快照 · 定时'
-        : task.payload?.origin === 'restore' ? '快照 · 回滚' : task.payload?.origin === 'clear' ? '快照 · 清理' : '快照 · 手动';
     const run = runByTask.get(task.id);
-    return { ...task, label, failureReason: task.status === 'failed' ? run?.error ?? task.message ?? null : null };
+    return {
+      ...task,
+      label: describeTask(task, sourceNames),
+      failureReason: task.status === 'failed' ? run?.error ?? task.message ?? null : null,
+    };
   });
   const scheduledItems: Array<Record<string, unknown>> = [];
   if (settings.autoFetchEnabled) {

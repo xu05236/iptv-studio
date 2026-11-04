@@ -73,6 +73,8 @@ export interface RunItem {
   task_type?: string | null;
   task_source?: string | null;
   task_message?: string | null;
+  task_label?: string | null;
+  task_failure_reason?: string | null;
   trigger: string;
   status: string;
   started_at: string;

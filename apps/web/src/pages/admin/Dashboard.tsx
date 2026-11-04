@@ -694,8 +694,9 @@ export function Dashboard() {
                     </Badge>
                   </td>
                   <td data-label="任务">
-                    <div>{run.task_type ? TASK_TYPE_LABEL[run.task_type] ?? run.task_type : '—'}</div>
-                    {run.task_source ? <div className="caption">{run.task_source}</div> : null}
+                    <div>{run.task_label ?? (run.task_type ? TASK_TYPE_LABEL[run.task_type] ?? run.task_type : '—')}</div>
+                    {run.task_message ? <div className="caption">{run.task_message}</div> : null}
+                    {run.task_failure_reason ? <div className="caption" style={{ color: 'var(--red, #e5484d)' }}>{run.task_failure_reason}</div> : null}
                   </td>
                   <td data-label="开始" className="caption">{timeAgo(run.started_at)}</td>
                   <td data-label="频道">{run.channels}</td>

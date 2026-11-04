@@ -188,8 +188,9 @@ export function Runs() {
                 <tr key={run.id}>
                   <td data-label="状态"><Badge tone={run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange'}>{run.status}</Badge></td>
                   <td data-label="任务">
-                    <div>{run.task_type ? TASK_LABEL[run.task_type] ?? run.task_type : '—'}</div>
-                    {run.task_source ? <div className="caption">{run.task_source}</div> : null}
+                    <div>{run.task_label ?? (run.task_type ? TASK_LABEL[run.task_type] ?? run.task_type : '—')}</div>
+                    {run.task_message ? <div className="caption">{run.task_message}</div> : null}
+                    {run.task_failure_reason ? <div className="caption" style={{ color: 'var(--red, #e5484d)' }}>{run.task_failure_reason}</div> : null}
                   </td>
                   <td data-label="触发" className="caption">{run.trigger}</td>
                   <td data-label="开始" className="caption">{timeAgo(run.started_at)}</td>
@@ -225,6 +226,8 @@ export function Runs() {
               <div><div className="caption">流量</div><div className="title-3">{formatBytes(selected.bytes)}</div></div>
               <div><div className="caption">耗时</div><div className="title-3">{formatDuration(selected.duration_ms)}</div></div>
             </div>
+            {selected.task_message ? <div className="caption">{selected.task_message}</div> : null}
+            {selected.task_failure_reason ? <div className="caption" style={{ color: 'var(--red, #e5484d)' }}>失败原因：{selected.task_failure_reason}</div> : null}
             {selected.error ? <div className="caption" style={{ color: 'var(--red)' }}>{selected.error}</div> : null}
             {selected.warnings?.length ? (
               <div className="stack stack--tight">
