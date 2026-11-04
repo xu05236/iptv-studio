@@ -1625,6 +1625,108 @@ button {
   display: none;
 }
 
+/* ---------------------------------------------------------- admin typography */
+.page--admin {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.page--admin .caption {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.page--admin .subhead {
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.page--admin .title-3 {
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+
+.page--admin .btn {
+  font-size: 13.5px;
+  font-weight: 550;
+}
+
+.page--admin .badge {
+  font-size: 11.5px;
+  letter-spacing: 0;
+}
+
+.page--admin .input,
+.page--admin .textarea,
+.page--admin select {
+  font-size: 13.5px;
+}
+
+.page--admin .table {
+  font-size: 13px;
+}
+
+.page--admin .stat__value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.8px;
+}
+
+.task-phase-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.task-phase {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--sep) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 70%, var(--fill-2));
+}
+
+.task-phase__order {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: var(--fill);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--label-2);
+}
+
+.task-phase__title {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.task-phase__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 700px) {
+  .task-phase {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .task-phase__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
 @media (max-width: 900px) {
   .task-columns {
     grid-template-columns: 1fr;

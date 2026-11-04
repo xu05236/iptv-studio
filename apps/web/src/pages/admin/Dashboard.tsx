@@ -80,6 +80,12 @@ const TASK_TYPE_LABEL: Record<string, string> = {
   export: '重建导出',
 };
 
+const PHASE_DETAIL: Record<string, string> = {
+  pending: '从未完整探测的线路',
+  quarantine: '已到期、等待复测的线路',
+  rejected: '失效后到达复活时间的线路',
+};
+
 interface TaskBoard {
   batchSize: number;
   intervalHours: number;
@@ -522,20 +528,26 @@ export function Dashboard() {
 
             <details className="task-phases">
               <summary className="caption">分批阶段设置（顺序 / 暂停）</summary>
-              <div className="list">
+              <div className="task-phase-list">
                 {tasks.data.phases.map((phase, index) => (
-                  <div className="list__row" key={phase.id}>
+                  <div className="task-phase" key={phase.id}>
+                    <div className="task-phase__order">{index + 1}</div>
                     <div className="grow">
-                      <div className="row" style={{ gap: 6 }}>
-                        <span>{phase.label}</span>
-                        {phase.paused ? <Badge tone="orange">已暂停</Badge> : null}
+                      <div className="row row--wrap" style={{ gap: 6 }}>
+                        <span className="task-phase__title">{phase.label}</span>
+                        <Badge tone={phase.paused ? 'orange' : 'blue'}>{phase.paused ? '已暂停' : '自动执行'}</Badge>
                       </div>
-                      <div className="caption">{formatNumber(phase.count)} 条 · 约 {phase.estimatedBatches} 批</div>
+                      <div className="caption" style={{ marginTop: 3 }}>
+                        {PHASE_DETAIL[phase.id] ?? phase.label} · {formatNumber(phase.count)} 条待处理 · 预计 {phase.estimatedBatches} 批
+                      </div>
                     </div>
-                    <div className="row" style={{ gap: 4 }}>
+                    <div className="task-phase__actions">
                       <Button size="sm" variant="ghost" disabled={index === 0 || savePhasePlan.isPending} onClick={() => movePhase(index, -1)} title="提升阶段"><ArrowUp size={14} /></Button>
                       <Button size="sm" variant="ghost" disabled={index === tasks.data!.phases.length - 1 || savePhasePlan.isPending} onClick={() => movePhase(index, 1)} title="延后阶段"><ArrowDown size={14} /></Button>
-                      <Button size="sm" variant="ghost" disabled={savePhasePlan.isPending} onClick={() => togglePhase(phase.id)} title={phase.paused ? '恢复阶段' : '暂停阶段'}>{phase.paused ? <Play size={14} /> : <Pause size={14} />}</Button>
+                      <Button size="sm" variant="glass" disabled={savePhasePlan.isPending} onClick={() => togglePhase(phase.id)}>
+                        {phase.paused ? <Play size={14} /> : <Pause size={14} />}
+                        {phase.paused ? '恢复' : '暂停'}
+                      </Button>
                     </div>
                   </div>
                 ))}
