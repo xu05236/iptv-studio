@@ -138,6 +138,7 @@ export function Dashboard() {
   const tasks = useQuery({
     queryKey: ['admin', 'tasks'],
     queryFn: () => api.get<TaskBoard>('/api/admin/tasks'),
+    refetchInterval: 15_000,
   });
 
   const runTask = useMutation({
