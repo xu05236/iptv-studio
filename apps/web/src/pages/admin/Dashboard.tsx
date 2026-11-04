@@ -604,7 +604,8 @@ export function Dashboard() {
             </div>
 
             <details className="task-phases">
-              <summary className="caption">分批阶段设置（顺序 / 暂停）</summary>
+              <summary className="caption">分批阶段设置（到期可测 / 顺序 / 暂停）</summary>
+              <div className="caption" style={{ marginBottom: 8 }}>这里的数量只统计已到期可测的线路；可用线路未到复测时间时不会出现在待测/待复测里。</div>
               <div className="task-phase-list">
                 {tasks.data.phases.map((phase, index) => {
                   const backlog = tasks.data!.phases.reduce((sum, item) => sum + item.count, 0);
@@ -621,7 +622,7 @@ export function Dashboard() {
                         </div>
                         <div className="caption" style={{ marginTop: 3 }}>{PHASE_DETAIL[phase.id] ?? phase.label}</div>
                         <div className="task-phase__stats">
-                          <span><strong>{formatNumber(phase.count)}</strong> 条待处理</span>
+                          <span><strong>{formatNumber(phase.count)}</strong> 条到期可测</span>
                           <span>预计 <strong>{phase.estimatedBatches}</strong> 批</span>
                           <span>每批 <strong>{tasks.data!.batchSize}</strong> 条</span>
                           <span>下次 {tasks.data!.schedules.probe.nextAt ? formatSnapshot(tasks.data!.schedules.probe.nextAt) : '待定'}</span>
