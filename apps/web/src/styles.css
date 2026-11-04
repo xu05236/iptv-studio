@@ -1344,6 +1344,57 @@ button {
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03), 0 12px 36px rgba(0, 0, 0, 0.055);
 }
 
+/* Unified page header for every admin module except the dashboard hero. */
+.page--admin > .stack > .row--between:has(.large-title) {
+  padding: 18px 20px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--sep) 75%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.025), 0 14px 36px rgba(0, 0, 0, 0.045);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+
+.page--admin .input,
+.page--admin .textarea,
+.page--admin select.input {
+  min-height: 38px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--fill-2) 70%, transparent);
+}
+
+.page--admin .chip {
+  border-radius: var(--radius-pill);
+  padding: 7px 12px;
+  font-weight: 500;
+}
+
+.page--admin .card__header {
+  padding: 16px 18px 10px;
+}
+
+.page--admin .table th {
+  background: color-mix(in srgb, var(--fill-2) 70%, transparent);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.page--admin .table td {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.page--admin .table tbody tr {
+  transition: background 0.12s;
+}
+
+.page--admin .list__row {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
 .page--admin .large-title {
   font-size: clamp(28px, 3vw, 36px);
   letter-spacing: -1.2px;
@@ -1351,7 +1402,8 @@ button {
 
 .admin-hero {
   position: relative;
-  overflow: hidden;
+  z-index: 2;
+  overflow: visible;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
