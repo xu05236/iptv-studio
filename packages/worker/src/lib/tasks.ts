@@ -122,8 +122,14 @@ export async function loadTasks(env: Env): Promise<Task[]> {
 }
 
 async function saveTasks(env: Env, tasks: Task[]): Promise<void> {
-  const active = tasks.filter((task) => task.status === 'queued' || task.status === 'running' || task.status === 'paused');
-  const finished = tasks
+  // Merge with current D1 rows first: a stale caller must not erase a task
+  // another request just created, finished, or scheduled.
+  const existing = await loadTasks(env);
+  const merged = new Map(existing.map((task) => [task.id, task]));
+  for (const task of tasks) merged.set(task.id, task);
+  const all = [...merged.values()];
+  const active = all.filter((task) => task.status === 'queued' || task.status === 'running' || task.status === 'paused' || task.status === 'scheduled');
+  const finished = all
     .filter((task) => task.status === 'done' || task.status === 'failed' || task.status === 'cancelled')
     .sort((a, b) => (b.finishedAt ?? b.createdAt).localeCompare(a.finishedAt ?? a.createdAt))
     .slice(0, MAX_FINISHED);
