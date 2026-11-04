@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, Database, Download, ListChecks, Pause, Play, PlayCircle, RefreshCw, RadioTower, Users } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight, Database, Download, Layers3, ListChecks, Pause, Play, PlayCircle, RefreshCw, RadioTower, Share2, Tv, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminStats, UsageSnapshot } from '../../lib/types';
 import { formatDuration, timeAgo } from '../../lib/format';
-import { Badge, Button, Card, EmptyState, Skeleton, Stat, useToast } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Skeleton, useToast } from '../../components/ui';
 
 function formatNumber(value: number): string {
   return value.toLocaleString('zh-CN');
@@ -359,12 +359,27 @@ export function Dashboard() {
         </Card>
       ) : null}
 
-      <div className="grid">
-        <Stat value={stats.index.totals.channels} label="已发布频道" />
-        <Stat value={stats.index.totals.alive} label={`已发布可用 · ${publishedRatio}% / 共 ${stats.index.totals.lines}`} />
-        <Stat value={poolAlive} label={`线路池可用 · ${poolRatio}% / 共 ${poolTotal}`} />
-        <Stat value={stats.sources.enabled} label={`启用源 / 共 ${stats.sources.total}`} />
-        <Stat value={stats.subscriptions} label="订阅出口" />
+      <div className="dashboard-stats">
+        <div className="dash-stat">
+          <span className="dash-stat__icon dash-stat__icon--blue"><Tv size={16} /></span>
+          <div><div className="dash-stat__value">{formatNumber(stats.index.totals.channels)}</div><div className="dash-stat__label">已发布频道</div></div>
+        </div>
+        <div className="dash-stat">
+          <span className="dash-stat__icon dash-stat__icon--green"><RadioTower size={16} /></span>
+          <div><div className="dash-stat__value">{formatNumber(stats.index.totals.alive)}</div><div className="dash-stat__label">已发布可用 · {publishedRatio}% / 共 {formatNumber(stats.index.totals.lines)}</div></div>
+        </div>
+        <div className="dash-stat">
+          <span className="dash-stat__icon dash-stat__icon--teal"><Layers3 size={16} /></span>
+          <div><div className="dash-stat__value">{formatNumber(poolAlive)}</div><div className="dash-stat__label">线路池可用 · {poolRatio}% / 共 {formatNumber(poolTotal)}</div></div>
+        </div>
+        <div className="dash-stat">
+          <span className="dash-stat__icon dash-stat__icon--orange"><RadioTower size={16} /></span>
+          <div><div className="dash-stat__value">{formatNumber(stats.sources.enabled)}</div><div className="dash-stat__label">启用源 / 共 {formatNumber(stats.sources.total)}</div></div>
+        </div>
+        <div className="dash-stat">
+          <span className="dash-stat__icon dash-stat__icon--purple"><Share2 size={16} /></span>
+          <div><div className="dash-stat__value">{formatNumber(stats.subscriptions)}</div><div className="dash-stat__label">订阅出口</div></div>
+        </div>
       </div>
 
       {stats.pool?.generatedAt && stats.index.generatedAt && Date.parse(stats.pool.generatedAt) > Date.parse(stats.index.generatedAt) ? (
@@ -608,7 +623,7 @@ export function Dashboard() {
         </Card>
       ) : null}
 
-      <div className="grid">
+      <div className="grid grid--wide usage-grid">
         {(() => {
           const snapshot = usageQuery.data?.usage ?? null;
           const yesterday = snapshot?.history?.at(-2);
