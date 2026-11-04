@@ -74,10 +74,13 @@ export async function publishSubscriptions(
       if (epgChannelById.has(id)) continue;
       const baseId = id.replace(/-(?:4k|8k)$/i, '');
       if (baseId === id) continue;
-      const base = epgChannelById.get(baseId);
+      // Satellite channels often use `hunan-weishi` while their 4K variant is
+      // `hunan-4k`; try both the raw base and the -weishi alias.
+      const base = epgChannelById.get(baseId) ?? epgChannelById.get(`${baseId}-weishi`);
       if (!base) continue;
+      const sourceId = base.id;
       channels.push({ ...base, id });
-      programmes.push(...epg.programmes.filter((programme) => programme.channelId === baseId).map((programme) => ({ ...programme, channelId: id })));
+      programmes.push(...epg.programmes.filter((programme) => programme.channelId === sourceId).map((programme) => ({ ...programme, channelId: id })));
     }
     if (!channels.length) return false;
     const xml = buildXmltv(
