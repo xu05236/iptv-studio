@@ -306,7 +306,7 @@ export function Dashboard() {
             <RefreshCw size={15} /> 发布更新
           </Button>
           <div className="admin-more">
-            <Button size="sm" onClick={() => setMoreOpen((value) => !value)}>更多操作</Button>
+            <Button onClick={() => setMoreOpen((value) => !value)}>更多操作</Button>
             {moreOpen ? (
               <div className="admin-more__menu">
                 <button className="admin-more__item" disabled={refreshUsage.isPending} onClick={() => { setMoreOpen(false); refreshUsage.mutate(); }}>
