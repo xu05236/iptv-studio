@@ -909,6 +909,7 @@ button {
 .run-row--green { border-left-color: var(--green); }
 .run-row--red { border-left-color: var(--red); }
 .run-row--orange { border-left-color: var(--orange); }
+.run-row--blue { border-left-color: var(--blue); }
 
 .run-row__status {
   flex-shrink: 0;

@@ -146,24 +146,31 @@ export function Runs() {
       </Card>
 
       <Card>
-        <div className="row row--between">
-          <div className="title-3">快照回滚</div>
-          <div className="row" style={{ gap: 8 }}>
-            <span className="caption">手动创建 · 保留最近 10 个</span>
-            <Button size="sm" variant="primary" loading={createSnapshot.isPending} onClick={() => createSnapshot.mutate()}>
-              <Camera size={14} /> 创建快照
-            </Button>
+        <div className="card__header" style={{ padding: '2px 2px 12px' }}>
+          <div>
+            <div className="title-3">快照回滚</div>
+            <div className="caption">手动创建 · 保留最近 10 个</div>
           </div>
+          <Button size="sm" variant="primary" loading={createSnapshot.isPending} onClick={() => createSnapshot.mutate()}>
+            <Camera size={14} /> 创建快照
+          </Button>
         </div>
-        <div className="list" style={{ marginTop: 8 }}>
+        <div className="run-list">
           {(snapshots.data?.items ?? []).map((item) => (
-            <div className="list__row" key={item.id}>
+            <div className="run-row run-row--blue" key={item.id}>
+              <div className="run-row__status"><Badge tone="blue">快照</Badge></div>
               <div className="grow">
-                <div>{formatDateTime(item.generatedAt)}</div>
-                <div className="caption">{item.channels} 频道 · {item.lines} 行 · {item.alive} 可用</div>
+                <div className="run-row__title">{formatDateTime(item.generatedAt)}</div>
+                <div className="caption run-row__message">发布版本 · 可用于回滚频道、线路、订阅池和节目单</div>
+              </div>
+              <div className="run-row__metrics">
+                <span><strong>{item.channels}</strong> 频道</span>
+                <span><strong>{item.lines}</strong> 线路</span>
+                <span><strong>{item.alive}</strong> 可用</span>
               </div>
               <Button
                 size="sm"
+                variant="glass"
                 loading={restore.isPending}
                 onClick={() => {
                   if (window.confirm(`恢复到 ${formatDateTime(item.generatedAt)} 的快照？`)) restore.mutate(item.id);
@@ -173,7 +180,7 @@ export function Runs() {
               </Button>
             </div>
           ))}
-          {!snapshots.data?.items.length ? <div className="caption">还没有快照，点击「创建快照」手动保存当前发布版本。</div> : null}
+          {!snapshots.data?.items.length ? <div className="task-empty">还没有快照，点击右上角「创建快照」保存当前发布版本。</div> : null}
         </div>
       </Card>
 
