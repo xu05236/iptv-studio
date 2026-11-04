@@ -26,6 +26,7 @@ import {
 import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
 import { getRuntimeJson } from '../lib/runtime-state.js';
+import { clearSnapshots, createSnapshot } from '../lib/snapshots.js';
 import { inferResolution } from '@iptv/core';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask } from '../lib/tasks.js';
@@ -353,33 +354,16 @@ adminRoutes.get('/snapshots', async (c) => {
 });
 
 adminRoutes.post('/snapshots', async (c) => {
-  const [index, catalog, pool, guide] = await Promise.all([
-    getJson<Record<string, unknown>>(c.env, 'state/index.json'),
-    getJson<Record<string, unknown>>(c.env, 'out/catalog.json'),
-    getJson<Record<string, unknown>>(c.env, 'state/pool.json'),
-    getJson<Record<string, unknown>>(c.env, 'state/guide.json'),
-  ]);
-  if (!index || !catalog) return fail('当前没有可快照的发布产物', 404);
-  const id = `manual-${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}`;
-  const base = `state/snapshots/${id}`;
-  const json = 'application/json; charset=utf-8';
-  await putArtifact(c.env, `${base}/index.json`, JSON.stringify(index), json);
-  await putArtifact(c.env, `${base}/catalog.json`, JSON.stringify(catalog), json);
-  if (pool) await putArtifact(c.env, `${base}/pool.json`, JSON.stringify(pool), json);
-  if (guide) await putArtifact(c.env, `${base}/guide.json`, JSON.stringify(guide), json);
-  const manifest = await getJson<{ items: Array<Record<string, unknown>> }>(c.env, 'state/snapshots.json');
-  const items = (manifest?.items ?? []).filter((item) => item['id'] !== id);
-  items.unshift({
-    id,
-    generatedAt: new Date().toISOString(),
-    channels: Number(index['totalChannels'] ?? 0),
-    lines: Number(index['totalLines'] ?? 0),
-    alive: Number(index['aliveLines'] ?? 0),
-    createdAt: new Date().toISOString(),
-  });
-  await putArtifact(c.env, 'state/snapshots.json', JSON.stringify({ items: items.slice(0, 10) }), json);
-  await audit(c.env, c.get('actor'), 'snapshot.create', id);
-  return ok({ item: items[0] });
+  const item = await createSnapshot(c.env, c.get('actor'));
+  if (!item) return fail('当前没有可快照的发布产物', 404);
+  await audit(c.env, c.get('actor'), 'snapshot.create', item.id);
+  return ok({ item });
+});
+
+adminRoutes.delete('/snapshots', async (c) => {
+  const removed = await clearSnapshots(c.env);
+  await audit(c.env, c.get('actor'), 'snapshot.clear', 'all', { removed });
+  return ok({ removed });
 });
 
 adminRoutes.post('/snapshots/:id/restore', async (c) => {
@@ -484,6 +468,7 @@ adminRoutes.put('/settings', async (c) => {
     'autoProbeEnabled', 'probeBatchSize', 'autoProbeIntervalHours',
     'probePhaseOrder', 'probePausedPhases',
     'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishTimes', 'autoPublishIntervalHours', 'autoPublishAfterProbeEnabled', 'epgRefreshEnabled', 'epgRefreshTimes',
+    'snapshotOnPublishEnabled', 'snapshotScheduleEnabled', 'snapshotScheduleTimes',
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback',
   ];
   const clean: Partial<AppSettings> = {};
@@ -509,6 +494,11 @@ adminRoutes.put('/settings', async (c) => {
     const times = parseCollectTimes(clean.epgRefreshTimes);
     if (!times.length) return fail('EPG 刷新时间格式应为 HH:mm（北京时间）');
     clean.epgRefreshTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
+  }
+  if (clean.snapshotScheduleTimes !== undefined) {
+    const times = parseCollectTimes(clean.snapshotScheduleTimes);
+    if (!times.length) return fail('快照时间格式应为 HH:mm（北京时间）');
+    clean.snapshotScheduleTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
   }
   if (clean.probeBatchSize !== undefined) clean.probeBatchSize = Math.max(1, Number(clean.probeBatchSize) || 1200);
   if (clean.autoProbeIntervalHours !== undefined) clean.autoProbeIntervalHours = Math.max(1, Number(clean.autoProbeIntervalHours) || 2);

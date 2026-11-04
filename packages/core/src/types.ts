@@ -320,6 +320,11 @@ export interface AppSettings {
   /** Refresh XMLTV once a day, independent of line publishing. */
   epgRefreshEnabled: boolean;
   epgRefreshTimes: string;
+  /** Create a rollback snapshot after each successful publish. */
+  snapshotOnPublishEnabled: boolean;
+  /** Create rollback snapshots on independent daily times. */
+  snapshotScheduleEnabled: boolean;
+  snapshotScheduleTimes: string;
   epgUrls: string[];
   regionSuffix: boolean;
   notifyTelegram: boolean;
@@ -378,6 +383,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoPublishAfterProbeEnabled: false,
   epgRefreshEnabled: true,
   epgRefreshTimes: '00:10',
+  snapshotOnPublishEnabled: false,
+  snapshotScheduleEnabled: false,
+  snapshotScheduleTimes: '03:00',
   epgUrls: DEFAULT_EPG_URLS,
   regionSuffix: true,
   notifyTelegram: false,

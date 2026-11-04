@@ -4,6 +4,7 @@ import { audit, loadSettings } from '../db.js';
 import { workflowRunStatus } from './github.js';
 import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
+import { createSnapshot } from './snapshots.js';
 import { createTask, dispatchNext, loadTasks, type Task } from './tasks.js';
 
 /** Beijing is UTC+8 with no DST; the scheduler stores local HH:mm and matches in UTC. */
@@ -73,7 +74,7 @@ interface ScheduleState {
 }
 
 interface SchedulerConfig {
-  command: 'collect' | 'liveness' | 'publish' | 'epg';
+  command: 'collect' | 'liveness' | 'publish' | 'epg' | 'snapshot';
   enabled: boolean;
   times: string;
   stateKey: string;
@@ -98,6 +99,12 @@ function schedulerConfigs(settings: AppSettings): SchedulerConfig[] {
       enabled: Boolean(settings.epgRefreshEnabled),
       times: settings.epgRefreshTimes,
       stateKey: 'state/epg-schedule.json',
+    },
+    {
+      command: 'snapshot',
+      enabled: Boolean(settings.snapshotScheduleEnabled),
+      times: settings.snapshotScheduleTimes,
+      stateKey: 'state/snapshot-schedule.json',
     },
     {
       command: 'liveness',
@@ -169,6 +176,11 @@ export async function runScheduler(env: Env): Promise<void> {
   for (const { config, scheduledAt } of due) {
     if (writes >= 920) {
       await record(config, scheduledAt, 'skipped: KV quota');
+      continue;
+    }
+    if (config.command === 'snapshot') {
+      const item = await createSnapshot(env, 'scheduler');
+      await record(config, scheduledAt, item ? 'snapshot created' : 'skipped: no artifacts');
       continue;
     }
     if (running) {

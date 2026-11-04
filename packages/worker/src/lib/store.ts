@@ -68,6 +68,10 @@ export async function getText(env: Env, key: string): Promise<string | null> {
   return env.KV.get(key, 'text');
 }
 
+export async function deleteArtifact(env: Env, key: string): Promise<void> {
+  await env.KV.delete(key);
+}
+
 /** Convenience wrapper used by the source-upload endpoint. */
 export async function putText(
   env: Env,

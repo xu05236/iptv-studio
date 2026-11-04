@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, FileText, RotateCcw } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { RunItem } from '../../lib/types';
 import { formatBytes, formatDateTime, formatDuration, timeAgo } from '../../lib/format';
-import { Badge, Button, Card, Sheet, Skeleton, useToast } from '../../components/ui';
+import { Badge, Button, Card, Field, Sheet, Skeleton, Switch, useToast } from '../../components/ui';
 
 const TASK_LABEL: Record<string, string> = {
   collect: '完整采集',
@@ -25,6 +25,43 @@ export function Runs() {
   const [selected, setSelected] = useState<RunItem | null>(null);
   const [log, setLog] = useState<string | null>(null);
   const [loadingLog, setLoadingLog] = useState(false);
+  const [snapshotOnPublish, setSnapshotOnPublish] = useState(false);
+  const [snapshotSchedule, setSnapshotSchedule] = useState(false);
+  const [snapshotTimes, setSnapshotTimes] = useState('03:00');
+
+  const settings = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => api.get<{ settings: { snapshotOnPublishEnabled?: boolean; snapshotScheduleEnabled?: boolean; snapshotScheduleTimes?: string } }>('/api/admin/settings'),
+  });
+
+  useEffect(() => {
+    if (!settings.data) return;
+    setSnapshotOnPublish(Boolean(settings.data.settings.snapshotOnPublishEnabled));
+    setSnapshotSchedule(Boolean(settings.data.settings.snapshotScheduleEnabled));
+    setSnapshotTimes(settings.data.settings.snapshotScheduleTimes ?? '03:00');
+  }, [settings.data]);
+
+  const saveSnapshotSettings = useMutation({
+    mutationFn: () => api.put('/api/admin/settings', {
+      snapshotOnPublishEnabled: snapshotOnPublish,
+      snapshotScheduleEnabled: snapshotSchedule,
+      snapshotScheduleTimes: snapshotTimes,
+    }),
+    onSuccess: () => {
+      show('快照策略已保存');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const clearSnapshots = useMutation({
+    mutationFn: () => api.del<{ removed: number }>('/api/admin/snapshots'),
+    onSuccess: (result) => {
+      show(`已清空 ${result.removed} 个快照`);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'snapshots'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'runs', 50],
@@ -75,6 +112,36 @@ export function Runs() {
         <h1 className="large-title">运行与日志</h1>
         <p className="subhead" style={{ marginTop: 4 }}>每次采集的抓取、测速、聚合结果都会留下结构化日志。</p>
       </div>
+
+      <Card>
+        <div className="title-3">快照策略</div>
+        <div className="list" style={{ marginTop: 8 }}>
+          <div className="list__row">
+            <span className="grow">发布成功后自动创建快照</span>
+            <Switch checked={snapshotOnPublish} onChange={setSnapshotOnPublish} />
+          </div>
+          <div className="list__row">
+            <span className="grow">独立定时创建快照</span>
+            <Switch checked={snapshotSchedule} onChange={setSnapshotSchedule} />
+          </div>
+        </div>
+        <Field label="快照时间（北京时间）" hint="开启独立定时后生效；支持多个时间，逗号分隔">
+          <input className="input" value={snapshotTimes} onChange={(event) => setSnapshotTimes(event.target.value)} />
+        </Field>
+        <div className="row row--between" style={{ marginTop: 10 }}>
+          <Button size="sm" variant="primary" loading={saveSnapshotSettings.isPending} onClick={() => saveSnapshotSettings.mutate()}>保存策略</Button>
+          <Button
+            size="sm"
+            variant="danger"
+            loading={clearSnapshots.isPending}
+            onClick={() => {
+              if (window.confirm('删除所有快照记录和文件，此操作不可恢复？')) clearSnapshots.mutate();
+            }}
+          >
+            清空快照
+          </Button>
+        </div>
+      </Card>
 
       <Card>
         <div className="row row--between">
