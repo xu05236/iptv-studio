@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Eraser, Link2, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
+import { AlertTriangle, Copy, Eraser, Info, Link2, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import type { AdminChannel } from '../../lib/types';
-import { formatResolution, formatSpeed } from '../../lib/format';
-import { Badge, Button, Card, Field, Pagination, Sheet, Switch, useToast } from '../../components/ui';
+import { formatResolution, formatSpeed, statusLabel, statusTone, timeAgo } from '../../lib/format';
+import { Badge, Button, Card, Field, Pagination, Sheet, Skeleton, Switch, useToast } from '../../components/ui';
 
 const DEFAULT_PAGE_SIZE = 10;
 
@@ -29,6 +29,27 @@ interface AliasConflict {
   channels: Array<{ id: string; name: string }>;
 }
 
+interface ChannelLineDetail {
+  key?: string;
+  url: string;
+  name?: string;
+  sourceId?: string;
+  sourceName?: string;
+  sourceSite?: string;
+  resolution?: string;
+  speedKbps?: number;
+  latencyMs?: number;
+  status?: string;
+  transport?: string;
+  lastProbeAt?: string;
+}
+
+interface ChannelDetailResponse {
+  channel: { id: string; name: string; group_title?: string; enabled?: number };
+  aliases: string[];
+  lines: ChannelLineDetail[];
+}
+
 export function ChannelsAdmin() {
   const queryClient = useQueryClient();
   const { show } = useToast();
@@ -44,6 +65,7 @@ export function ChannelsAdmin() {
   const [aliasInput, setAliasInput] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState('');
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [conflictsOpen, setConflictsOpen] = useState(false);
   const [epgOpen, setEpgOpen] = useState(false);
   const [epgSearch, setEpgSearch] = useState('');
@@ -71,6 +93,12 @@ export function ChannelsAdmin() {
       return api.get<{ items: AdminChannel[]; total: number; offset: number; limit: number }>(`/api/admin/channels/page?${params.toString()}`);
     },
     enabled: !country || Boolean(tree.data),
+  });
+
+  const detail = useQuery({
+    queryKey: ['admin', 'channels', 'detail', detailId],
+    queryFn: () => api.get<ChannelDetailResponse>(`/api/admin/channels/${detailId}`),
+    enabled: Boolean(detailId),
   });
 
   const conflicts = useQuery({
@@ -338,6 +366,9 @@ export function ChannelsAdmin() {
                 </div>
               </div>
               <div className="channel-card__actions">
+                <Button size="sm" variant="ghost" onClick={() => setDetailId(channel.id)} title="查看线路和订阅源">
+                  <Info size={14} /> 详情
+                </Button>
                 <Button size="sm" variant="ghost" onClick={() => void openAliases(channel)} title="别名">
                   <Tag size={14} />
                 </Button>
@@ -392,6 +423,59 @@ export function ChannelsAdmin() {
           <Field label="台标 URL"><input className="input" value={form.logo} onChange={(event) => setForm({ ...form, logo: event.target.value })} /></Field>
           <div className="caption">别名用于把不同写法归并到同一频道，可在列表页的 Tag 图标中维护。</div>
         </div>
+      </Sheet>
+
+      <Sheet open={Boolean(detailId)} onClose={() => setDetailId(null)} title="频道详情" subtitle={detail.data?.channel.name ?? detailId ?? ''}>
+        {detail.isLoading ? <Skeleton height={240} radius={14} /> : detail.isError ? (
+          <div className="caption" style={{ color: 'var(--red)' }}>{detail.error instanceof Error ? detail.error.message : '详情加载失败'}</div>
+        ) : detail.data ? (() => {
+          const lines = detail.data.lines;
+          const alive = lines.filter((line) => line.status === 'alive').length;
+          const sources = new Set(lines.map((line) => line.sourceName ?? line.sourceId ?? '未知')).size;
+          return (
+            <div className="stack">
+              <div className="channel-detail-stats">
+                <div><strong>{lines.length}</strong><span>线路</span></div>
+                <div><strong>{alive}</strong><span>可用</span></div>
+                <div><strong>{sources}</strong><span>来源</span></div>
+                <div><strong>{detail.data.aliases.length}</strong><span>别名</span></div>
+              </div>
+              <div className="row row--between">
+                <div className="title-3">线路明细</div>
+                <span className="caption">来自哪个订阅源 / 站点</span>
+              </div>
+              <div className="channel-lines">
+                {lines.map((line, index) => (
+                  <div className="channel-line" key={line.key ?? `${line.url}-${index}`}>
+                    <div className="grow" style={{ minWidth: 0 }}>
+                      <div className="row row--wrap" style={{ gap: 5 }}>
+                        <Badge tone={statusTone(line.status ?? '')}>{statusLabel(line.status ?? '')}</Badge>
+                        <span className="channel-line__source">{line.sourceName ?? line.sourceId ?? '未知源'}</span>
+                        <span className="caption">{line.sourceSite ?? '未知站点'}</span>
+                      </div>
+                      <div className="channel-line__meta">
+                        {line.resolution ? formatResolution(line.resolution) : '未知分辨率'}
+                        {line.speedKbps ? ` · ${formatSpeed(line.speedKbps)}` : ' · 未测速'}
+                        {` · ${line.transport === 'relay' ? '需中继' : '直连'}`}
+                        {line.lastProbeAt ? ` · ${timeAgo(line.lastProbeAt)}` : ' · 未检测'}
+                      </div>
+                      <div className="channel-line__url mono truncate">{line.url}</div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="复制地址"
+                      onClick={() => navigator.clipboard.writeText(line.url).then(() => show('已复制线路地址'))}
+                    >
+                      <Copy size={14} />
+                    </Button>
+                  </div>
+                ))}
+                {!lines.length ? <div className="task-empty">这个频道当前没有线路</div> : null}
+              </div>
+            </div>
+          );
+        })() : null}
       </Sheet>
 
       <Sheet open={Boolean(aliasChannel)} onClose={() => setAliasChannel(null)} title="频道别名" subtitle={aliasChannel?.name}>
