@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, FileText, RotateCcw } from 'lucide-react';
+import { CalendarClock, Camera, FileText, RotateCcw, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { RunItem } from '../../lib/types';
 import { formatBytes, formatDateTime, formatDuration, timeAgo } from '../../lib/format';
@@ -115,32 +115,55 @@ export function Runs() {
         description="每次采集的抓取、测速、聚合结果都会留下结构化日志。"
       />
 
-      <Card>
-        <div className="title-3">快照策略</div>
-        <div className="list" style={{ marginTop: 8 }}>
-          <div className="list__row">
-            <span className="grow">发布成功后自动创建快照</span>
+      <Card className="snapshot-policy">
+        <div className="snapshot-policy__head">
+          <span className="snapshot-policy__icon"><Camera size={17} /></span>
+          <div className="grow">
+            <div className="title-3">快照策略</div>
+            <div className="caption">发布后或定时保存一个可回滚的版本</div>
+          </div>
+          <div className="row" style={{ gap: 5 }}>
+            <Badge tone={snapshotOnPublish ? 'green' : 'default'}>{snapshotOnPublish ? '发布后自动' : '发布后关闭'}</Badge>
+            <Badge tone={snapshotSchedule ? 'green' : 'default'}>{snapshotSchedule ? '定时开启' : '定时关闭'}</Badge>
+          </div>
+        </div>
+
+        <div className="snapshot-options">
+          <div className="snapshot-option">
+            <span className="snapshot-option__icon"><Camera size={15} /></span>
+            <div className="grow">
+              <div className="snapshot-option__title">发布成功后自动创建</div>
+              <div className="caption">每次发布完成保存频道、线路、订阅池和节目单</div>
+            </div>
             <Switch checked={snapshotOnPublish} onChange={setSnapshotOnPublish} />
           </div>
-          <div className="list__row">
-            <span className="grow">独立定时创建快照</span>
+          <div className="snapshot-option">
+            <span className="snapshot-option__icon"><CalendarClock size={15} /></span>
+            <div className="grow">
+              <div className="snapshot-option__title">独立定时创建</div>
+              <div className="caption">按指定时间自动保存，不依赖发布任务</div>
+            </div>
             <Switch checked={snapshotSchedule} onChange={setSnapshotSchedule} />
           </div>
         </div>
-        <Field label="快照时间（北京时间）" hint="开启独立定时后生效；支持多个时间，逗号分隔">
-          <input className="input" value={snapshotTimes} onChange={(event) => setSnapshotTimes(event.target.value)} />
-        </Field>
-        <div className="row row--between" style={{ marginTop: 10 }}>
+
+        <div className="snapshot-time">
+          <Field label="快照时间（北京时间）" hint="开启独立定时后生效；支持多个时间，逗号分隔">
+            <input className="input" value={snapshotTimes} onChange={(event) => setSnapshotTimes(event.target.value)} placeholder="00:10, 17:10" />
+          </Field>
+        </div>
+
+        <div className="snapshot-policy__footer">
           <Button size="sm" variant="primary" loading={saveSnapshotSettings.isPending} onClick={() => saveSnapshotSettings.mutate()}>保存策略</Button>
           <Button
             size="sm"
-            variant="danger"
+            variant="ghost"
             loading={clearSnapshots.isPending}
             onClick={() => {
               if (window.confirm('删除所有快照记录和文件，此操作不可恢复？')) clearSnapshots.mutate();
             }}
           >
-            清空快照
+            <Trash2 size={13} /> 清空快照
           </Button>
         </div>
       </Card>

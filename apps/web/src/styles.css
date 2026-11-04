@@ -1893,6 +1893,85 @@ button {
   border-top: 1px solid var(--sep);
 }
 
+/* ---------------------------------------------------------- snapshot policy */
+.snapshot-policy {
+  padding: 18px;
+}
+
+.snapshot-policy__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--sep);
+}
+
+.snapshot-policy__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+  color: var(--blue);
+}
+
+.snapshot-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.snapshot-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 13px;
+  border: 1px solid color-mix(in srgb, var(--sep) 78%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 70%, var(--fill-2));
+}
+
+.snapshot-option__icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: var(--fill-2);
+  color: var(--label-2);
+}
+
+.snapshot-option__title {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.snapshot-time {
+  margin-top: 12px;
+  max-width: 460px;
+}
+
+.snapshot-policy__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sep);
+}
+
+@media (max-width: 800px) {
+  .snapshot-options {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 700px) {
   .subscription-grid {
     grid-template-columns: 1fr;
