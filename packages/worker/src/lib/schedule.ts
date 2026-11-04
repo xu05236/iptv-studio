@@ -9,7 +9,7 @@ import { createTask, dispatchNext, loadTasks, type Task } from './tasks.js';
 /** Beijing is UTC+8 with no DST; the scheduler stores local HH:mm and matches in UTC. */
 const BEIJING_OFFSET_MS = 8 * 3_600_000;
 const RUN_WINDOW_MS = 15 * 60_000;
-const AUTO_PUBLISH_INTERVAL_MS = 2 * 3_600_000;
+const AUTO_PUBLISH_INTERVAL_MS = 6 * 3_600_000;
 
 export interface CollectTime {
   hour: number;
@@ -171,6 +171,10 @@ export async function runScheduler(env: Env): Promise<void> {
       continue;
     }
     const budget = Math.max(1, Number(settings.probeBudget) || 1200);
+    if (config.command === 'publish' && await publishIsCurrent(env)) {
+      await record(config, scheduledAt, 'skipped: already up to date');
+      continue;
+    }
     const task = await createTask(env, {
       type: config.command,
       source: 'schedule',
@@ -191,9 +195,18 @@ export async function runScheduler(env: Env): Promise<void> {
   await dispatchNext(env);
 }
 
+async function publishIsCurrent(env: Env): Promise<boolean> {
+  const [index, pool] = await Promise.all([
+    getJson<{ generatedAt?: string }>(env, 'state/index.json'),
+    getJson<{ generatedAt?: string }>(env, 'state/pool-stats.json'),
+  ]);
+  if (!index?.generatedAt || !pool?.generatedAt) return false;
+  return Date.parse(index.generatedAt) >= Date.parse(pool.generatedAt);
+}
+
 /**
  * Probe only updates the line pool. If the pool is newer than the published
- * catalog, publish automatically, but at most once every two hours so hourly
+ * catalog, publish automatically, but at most once every six hours so hourly
  * probes cannot exhaust the KV write budget.
  */
 async function runAutoPublishAfterProbe(env: Env, settings: AppSettings, now: number): Promise<boolean> {
