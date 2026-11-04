@@ -2035,6 +2035,61 @@ button {
   font-size: 13px;
 }
 
+.page--admin .search {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--sep) 82%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.02), 0 8px 22px rgba(0, 0, 0, 0.035);
+}
+
+.page--admin .search .input {
+  border: 0;
+  background: transparent;
+  padding-left: 0;
+  height: 42px;
+}
+
+.page--admin .filter-details {
+  border-radius: 16px;
+}
+
+.page--admin .card > .title-3:first-child {
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--sep);
+}
+
+.page--admin .table thead th {
+  position: sticky;
+  top: var(--nav-h);
+  z-index: 2;
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+}
+
+.page--admin .list__row {
+  border-radius: 10px;
+  transition: background 0.12s;
+}
+
+.page--admin .list__row:hover {
+  background: var(--fill-2);
+}
+
+@media (max-width: 800px) {
+  .page--admin .filter-details {
+    padding: 10px 12px;
+    border: 1px solid var(--sep);
+    background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  }
+
+  .page--admin .search {
+    height: 42px;
+  }
+}
+
 .page--admin .stat__value {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.8px;
