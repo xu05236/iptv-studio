@@ -242,26 +242,22 @@ export function Rules() {
       >
         <div className="stack">
           <div className="sheet-section">基础信息</div>
-          <div className="row">
-            <div className="grow"><Field label="规则名称"><input className="input" value={form.name} onChange={(event) => set('name', event.target.value)} /></Field></div>
-            <div className="grow"><Field label="优先级" hint="数字越大越先执行"><input className="input" inputMode="numeric" value={form.priority} onChange={(event) => set('priority', Number(event.target.value))} /></Field></div>
+          <div className="form-grid">
+            <Field label="规则名称"><input className="input" value={form.name} onChange={(event) => set('name', event.target.value)} /></Field>
+            <Field label="优先级" hint="数字越大越先执行"><input className="input" inputMode="numeric" value={form.priority} onChange={(event) => set('priority', Number(event.target.value))} /></Field>
           </div>
           <div className="list">
             <div className="list__row"><span className="grow">启用规则</span><Switch checked={form.enabled} onChange={(value) => set('enabled', value)} /></div>
           </div>
 
           <div className="sheet-section">匹配条件</div>
-          <div className="row">
-            <div className="grow"><Field label="分组" hint="逗号分隔，例如 央视,卫视"><input className="input" value={form.groups} onChange={(event) => set('groups', event.target.value)} /></Field></div>
-            <div className="grow"><Field label="频道名包含" hint="支持正则表达式"><input className="input" value={form.namePattern} onChange={(event) => set('namePattern', event.target.value)} /></Field></div>
-          </div>
-          <div className="row">
-            <div className="grow"><Field label="线路名包含" hint="支持正则表达式"><input className="input" value={form.channelPattern} onChange={(event) => set('channelPattern', event.target.value)} /></Field></div>
-            <div className="grow"><Field label="协议" hint="hls,http,rtmp"><input className="input" value={form.protocols} onChange={(event) => set('protocols', event.target.value)} /></Field></div>
-          </div>
-          <div className="row">
-            <div className="grow"><Field label="最低分辨率"><select className="input" value={form.minResolution} onChange={(event) => set('minResolution', event.target.value)}><option value="">不限</option><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option><option value="2160p">2160p</option></select></Field></div>
-            <div className="grow"><Field label="最低速率 (kbps)"><input className="input" inputMode="numeric" value={form.minSpeedKbps} onChange={(event) => set('minSpeedKbps', event.target.value)} /></Field></div>
+          <div className="form-grid">
+            <Field label="分组" hint="逗号分隔，例如 央视,卫视"><input className="input" value={form.groups} onChange={(event) => set('groups', event.target.value)} /></Field>
+            <Field label="频道名包含" hint="支持正则表达式"><input className="input" value={form.namePattern} onChange={(event) => set('namePattern', event.target.value)} /></Field>
+            <Field label="线路名包含" hint="支持正则表达式"><input className="input" value={form.channelPattern} onChange={(event) => set('channelPattern', event.target.value)} /></Field>
+            <Field label="协议" hint="hls,http,rtmp"><input className="input" value={form.protocols} onChange={(event) => set('protocols', event.target.value)} /></Field>
+            <Field label="最低分辨率"><select className="input" value={form.minResolution} onChange={(event) => set('minResolution', event.target.value)}><option value="">不限</option><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option><option value="2160p">2160p</option></select></Field>
+            <Field label="最低速率 (kbps)"><input className="input" inputMode="numeric" value={form.minSpeedKbps} onChange={(event) => set('minSpeedKbps', event.target.value)} /></Field>
           </div>
           <Field label="采集站 ID" hint="逗号分隔，留空表示所有源"><input className="input" value={form.sourceIds} onChange={(event) => set('sourceIds', event.target.value)} /></Field>
           <Field label="标签" hint="逗号分隔"><input className="input" value={form.tags} onChange={(event) => set('tags', event.target.value)} /></Field>
@@ -270,9 +266,9 @@ export function Rules() {
           <div className="list">
             <div className="list__row"><span className="grow">排除匹配的线路</span><Switch checked={form.exclude} onChange={(value) => set('exclude', value)} /></div>
           </div>
-          <div className="row">
-            <div className="grow"><Field label="改分组"><input className="input" value={form.setGroup} onChange={(event) => set('setGroup', event.target.value)} /></Field></div>
-            <div className="grow"><Field label="重命名"><input className="input" value={form.rename} onChange={(event) => set('rename', event.target.value)} /></Field></div>
+          <div className="form-grid">
+            <Field label="改分组"><input className="input" value={form.setGroup} onChange={(event) => set('setGroup', event.target.value)} /></Field>
+            <Field label="重命名"><input className="input" value={form.rename} onChange={(event) => set('rename', event.target.value)} /></Field>
           </div>
           <Field label="追加标签" hint="逗号分隔"><input className="input" value={form.addTags} onChange={(event) => set('addTags', event.target.value)} /></Field>
           <Field label="设置台标 URL"><input className="input" value={form.setLogo} onChange={(event) => set('setLogo', event.target.value)} /></Field>

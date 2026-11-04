@@ -341,33 +341,25 @@ export function SubscriptionsAdmin() {
             </div>
           ) : null}
           <div className="sheet-section">画质与数量</div>
-          <div className="row">
-            <div className="grow">
-              <Field label="最低分辨率">
-                <select className="select" value={form.minResolution} onChange={(event) => setForm({ ...form, minResolution: event.target.value })}>
-                  {RESOLUTIONS.map((value) => <option key={value} value={value}>{value === 'any' ? '不限' : value}</option>)}
-                </select>
-              </Field>
-            </div>
-            <div className="grow">
-              <Field label="最低速率 (kbps)">
-                <input className="input" inputMode="numeric" value={form.minSpeedKbps} onChange={(event) => setForm({ ...form, minSpeedKbps: event.target.value })} />
-              </Field>
-            </div>
+          <div className="form-grid">
+            <Field label="最低分辨率">
+              <select className="select" value={form.minResolution} onChange={(event) => setForm({ ...form, minResolution: event.target.value })}>
+                {RESOLUTIONS.map((value) => <option key={value} value={value}>{value === 'any' ? '不限' : value}</option>)}
+              </select>
+            </Field>
+            <Field label="最低速率 (kbps)">
+              <input className="input" inputMode="numeric" value={form.minSpeedKbps} onChange={(event) => setForm({ ...form, minSpeedKbps: event.target.value })} />
+            </Field>
           </div>
-          <div className="row">
-            <div className="grow">
-              <Field label="每频道线路数" hint="0 = 导出全部可用线路">
-                <input className="input" inputMode="numeric" value={form.maxLines} onChange={(event) => setForm({ ...form, maxLines: event.target.value })} />
-              </Field>
-            </div>
-            <div className="grow">
-              <Field label="导出格式">
-                <select className="select" value={form.format} onChange={(event) => setForm({ ...form, format: event.target.value })}>
-                  {FORMATS.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
-                </select>
-              </Field>
-            </div>
+          <div className="form-grid">
+            <Field label="每频道线路数" hint="0 = 导出全部可用线路">
+              <input className="input" inputMode="numeric" value={form.maxLines} onChange={(event) => setForm({ ...form, maxLines: event.target.value })} />
+            </Field>
+            <Field label="导出格式">
+              <select className="select" value={form.format} onChange={(event) => setForm({ ...form, format: event.target.value })}>
+                {FORMATS.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
+              </select>
+            </Field>
           </div>
           <div className="sheet-section">输出选项</div>
           <div className="list">
