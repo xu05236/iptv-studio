@@ -1713,6 +1713,38 @@ button {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.task-phase__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--label-2);
+}
+
+.task-phase__stats strong {
+  color: var(--label);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-phase__track {
+  height: 5px;
+  margin-top: 9px;
+  border-radius: var(--radius-pill);
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.task-phase__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--blue), color-mix(in srgb, var(--blue) 55%, var(--purple)));
+  transition: width 0.3s var(--ease);
 }
 
 @media (max-width: 700px) {

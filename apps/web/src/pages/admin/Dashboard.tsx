@@ -529,28 +529,42 @@ export function Dashboard() {
             <details className="task-phases">
               <summary className="caption">分批阶段设置（顺序 / 暂停）</summary>
               <div className="task-phase-list">
-                {tasks.data.phases.map((phase, index) => (
-                  <div className="task-phase" key={phase.id}>
-                    <div className="task-phase__order">{index + 1}</div>
-                    <div className="grow">
-                      <div className="row row--wrap" style={{ gap: 6 }}>
-                        <span className="task-phase__title">{phase.label}</span>
-                        <Badge tone={phase.paused ? 'orange' : 'blue'}>{phase.paused ? '已暂停' : '自动执行'}</Badge>
+                {tasks.data.phases.map((phase, index) => {
+                  const backlog = tasks.data!.phases.reduce((sum, item) => sum + item.count, 0);
+                  return (
+                    <div className="task-phase" key={phase.id}>
+                      <div className="task-phase__order">{index + 1}</div>
+                      <div className="grow">
+                        <div className="row row--wrap" style={{ gap: 6 }}>
+                          <span className="task-phase__title">{phase.label}</span>
+                          <Badge tone={phase.paused ? 'orange' : 'blue'}>{phase.paused ? '已暂停' : '自动执行'}</Badge>
+                        </div>
+                        <div className="caption" style={{ marginTop: 3 }}>{PHASE_DETAIL[phase.id] ?? phase.label}</div>
+                        <div className="task-phase__stats">
+                          <span><strong>{formatNumber(phase.count)}</strong> 条待处理</span>
+                          <span>预计 <strong>{phase.estimatedBatches}</strong> 批</span>
+                          <span>每批 <strong>{tasks.data!.batchSize}</strong> 条</span>
+                          <span>下次 {tasks.data!.schedules.probe.nextAt ? formatSnapshot(tasks.data!.schedules.probe.nextAt) : '待定'}</span>
+                        </div>
+                        <div className="task-phase__track">
+                          <div className="task-phase__fill" style={{ width: `${backlog > 0 ? Math.max(2, (phase.count / backlog) * 100) : 0}%` }} />
+                        </div>
                       </div>
-                      <div className="caption" style={{ marginTop: 3 }}>
-                        {PHASE_DETAIL[phase.id] ?? phase.label} · {formatNumber(phase.count)} 条待处理 · 预计 {phase.estimatedBatches} 批
+                      <div className="task-phase__actions">
+                        <Button size="sm" variant="glass" disabled={index === 0 || savePhasePlan.isPending} onClick={() => movePhase(index, -1)}>
+                          <ArrowUp size={14} /> 上移
+                        </Button>
+                        <Button size="sm" variant="glass" disabled={index === tasks.data!.phases.length - 1 || savePhasePlan.isPending} onClick={() => movePhase(index, 1)}>
+                          <ArrowDown size={14} /> 下移
+                        </Button>
+                        <Button size="sm" variant="glass" disabled={savePhasePlan.isPending} onClick={() => togglePhase(phase.id)}>
+                          {phase.paused ? <Play size={14} /> : <Pause size={14} />}
+                          {phase.paused ? '恢复' : '暂停'}
+                        </Button>
                       </div>
                     </div>
-                    <div className="task-phase__actions">
-                      <Button size="sm" variant="ghost" disabled={index === 0 || savePhasePlan.isPending} onClick={() => movePhase(index, -1)} title="提升阶段"><ArrowUp size={14} /></Button>
-                      <Button size="sm" variant="ghost" disabled={index === tasks.data!.phases.length - 1 || savePhasePlan.isPending} onClick={() => movePhase(index, 1)} title="延后阶段"><ArrowDown size={14} /></Button>
-                      <Button size="sm" variant="glass" disabled={savePhasePlan.isPending} onClick={() => togglePhase(phase.id)}>
-                        {phase.paused ? <Play size={14} /> : <Pause size={14} />}
-                        {phase.paused ? '恢复' : '暂停'}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </details>
           </>
