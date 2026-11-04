@@ -47,7 +47,7 @@ sourceRoutes.get('/', async (c) => {
   for (const line of state?.lines ?? []) {
     const item = progress.get(line.sourceId) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0 };
     item.total++;
-    if (line.lastProbeAt) item.tested++;
+    if (line.lastProbeAt || line.lastLivenessAt) item.tested++;
     const usable = validChannels.has(line.channelId) && !unprobeable.test(line.url);
     const livenessReady = !line.lastLivenessAt || now.getTime() - Date.parse(line.lastLivenessAt) >= 6 * 3_600_000;
     if (usable && !line.lastProbeAt && line.status === 'unknown') {
