@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Signal, Tv } from 'lucide-react';
+import { Search, Signal, Tv, LayoutGrid, List, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
 import type { ChannelsResponse } from '../lib/types';
@@ -9,7 +9,7 @@ import { formatResolution, formatSpeed } from '../lib/format';
 import { Badge, Button, Card, EmptyState, Pagination, Skeleton } from '../components/ui';
 import { ChannelLogo } from '../components/ChannelLogo';
 
-const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 12;
 
 export function Channels() {
   const [params, setParams] = useSearchParams();
@@ -20,6 +20,7 @@ export function Channels() {
   const pageSize = Math.min(50, Math.max(10, Number(params.get('size') ?? String(DEFAULT_PAGE_SIZE)) || DEFAULT_PAGE_SIZE));
   const [search, setSearch] = useState(params.get('q') ?? '');
   const [debounced, setDebounced] = useState(search);
+  const [view, setView] = useState<'grid' | 'list'>('grid');
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(search.trim()), 280);
@@ -62,51 +63,66 @@ export function Channels() {
 
   return (
     <div className="stack" style={{ marginTop: 6 }}>
-      <div className="row row--between">
+      <div className="portal-channels__hero">
         <div>
           <h1 className="large-title">频道</h1>
           <p className="subhead" style={{ marginTop: 4 }}>
             {query.data ? `${total} 个频道 · ${items.reduce((sum, item) => sum + item.alive, 0)} 条可用线路` : '正在读取频道索引'}
           </p>
         </div>
-        <Badge tone="blue">{group || '全部'}</Badge>
+        <div className="portal-channels__stats">
+          <div><strong>{total}</strong><span>频道</span></div>
+          <div><strong>{items.reduce((sum, item) => sum + item.alive, 0)}</strong><span>当前页可用</span></div>
+          <div><strong>{groups.length}</strong><span>分类</span></div>
+        </div>
       </div>
 
-      <div className="search">
-        <Search size={16} className="search__icon" />
-        <input
-          className="input"
-          placeholder="搜索频道、CCTV、卫视…"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          autoComplete="off"
-        />
-      </div>
+      <div className="portal-filter">
+        <div className="search">
+          <Search size={16} className="search__icon" />
+          <input
+            className="input"
+            placeholder="搜索频道、CCTV、卫视…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            autoComplete="off"
+          />
+        </div>
 
-      <div className="row row--wrap" style={{ gap: 6 }}>
-        <button className={clsx('chip', !group && 'chip--active')} onClick={() => updateGroup('')}>
-          全部
-        </button>
-        {groups.map((item) => (
-          <button
-            key={item.group}
-            className={clsx('chip', group === item.group && 'chip--active')}
-            onClick={() => updateGroup(item.group)}
-          >
-            {item.group}
-            <span style={{ opacity: 0.7 }}>{item.channels}</span>
-          </button>
-        ))}
-      </div>
+        <div className="portal-filter__row">
+          <span className="portal-filter__label">分类</span>
+          <div className="portal-filter__chips">
+            <button className={clsx('chip', !group && 'chip--active')} onClick={() => updateGroup('')}>
+              全部
+            </button>
+            {groups.map((item) => (
+              <button
+                key={item.group}
+                className={clsx('chip', group === item.group && 'chip--active')}
+                onClick={() => updateGroup(item.group)}
+              >
+                {item.group}
+                <span style={{ opacity: 0.7 }}>{item.channels}</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
-      <div className="row" style={{ gap: 6 }}>
-        <span className="caption" style={{ marginRight: 2 }}>排序</span>
-        <button className={clsx('chip', sort === 'availability' && 'chip--active')} onClick={() => updateSort('availability')}>
-          可用优先
-        </button>
-        <button className={clsx('chip', sort === 'name' && 'chip--active')} onClick={() => updateSort('name')}>
-          名称排序
-        </button>
+        <div className="portal-filter__row">
+          <span className="portal-filter__label">排序</span>
+          <div className="portal-filter__chips">
+            <button className={clsx('chip', sort === 'availability' && 'chip--active')} onClick={() => updateSort('availability')}>
+              可用优先
+            </button>
+            <button className={clsx('chip', sort === 'name' && 'chip--active')} onClick={() => updateSort('name')}>
+              名称排序
+            </button>
+          </div>
+          <div className="portal-view-toggle">
+            <button className={view === 'grid' ? 'is-active' : ''} onClick={() => setView('grid')}><LayoutGrid size={15} /> 网格</button>
+            <button className={view === 'list' ? 'is-active' : ''} onClick={() => setView('list')}><List size={15} /> 列表</button>
+          </div>
+        </div>
       </div>
 
       {query.isError ? (
@@ -123,21 +139,29 @@ export function Channels() {
           ))}
         </div>
       ) : items.length ? (
-        <div className="list">
+        <div className={`portal-channel-grid${view === 'list' ? ' portal-channel-grid--list' : ''}`}>
           {items.map((channel) => (
-            <button key={channel.id} className="list__row" onClick={() => navigate(`/channels/${encodeURIComponent(channel.id)}`)}>
-              <ChannelLogo src={channel.logo} name={channel.name} tvgId={channel.tvgId} />
-              <div className="grow">
-                <div className="row" style={{ gap: 6 }}>
-                  <span className="list__title truncate">{channel.name}</span>
-                  {channel.bestResolution ? <Badge tone="blue">{formatResolution(channel.bestResolution)}</Badge> : null}
+            <button key={channel.id} className="portal-channel-card" onClick={() => navigate(`/channels/${encodeURIComponent(channel.id)}`)}>
+              <div className="portal-channel-card__top">
+                <ChannelLogo src={channel.logo} name={channel.name} tvgId={channel.tvgId} />
+                <div className="grow" style={{ minWidth: 0 }}>
+                  <div className="portal-channel-card__name truncate">{channel.name}</div>
+                  <div className="caption">{channel.group}</div>
                 </div>
-                <div className="list__sub">
-                  {channel.group} · {channel.alive} 可用 / {channel.lines} 线路
-                  {channel.bestSpeedKbps ? ` · ${formatSpeed(channel.bestSpeedKbps)}` : ''}
-                </div>
+                {channel.bestResolution ? <Badge tone="blue">{formatResolution(channel.bestResolution)}</Badge> : null}
               </div>
-              <Signal size={16} color={channel.alive > 0 ? 'var(--green)' : 'var(--label-3)'} />
+              <div className="portal-channel-card__metrics">
+                <span className={channel.alive > 0 ? 'is-alive' : 'is-off'}><Signal size={13} /> {channel.alive} 可用</span>
+                <span>{channel.lines} 线路</span>
+                {channel.bestSpeedKbps ? <span>{formatSpeed(channel.bestSpeedKbps)}</span> : null}
+              </div>
+              <div className="portal-channel-card__bar">
+                <span style={{ width: `${channel.lines > 0 ? Math.max(3, (channel.alive / channel.lines) * 100) : 0}%` }} />
+              </div>
+              <div className="portal-channel-card__foot">
+                <span>进入频道</span>
+                <ChevronRight size={15} />
+              </div>
             </button>
           ))}
         </div>
@@ -161,10 +185,10 @@ export function Channels() {
         <label className="row" style={{ gap: 6 }}>
           <span className="caption">每页</span>
           <select className="input" style={{ width: 88 }} value={pageSize} onChange={(event) => updatePageSize(Number(event.target.value))}>
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-            <option value={30}>30</option>
-            <option value={50}>50</option>
+            <option value={12}>12</option>
+            <option value={24}>24</option>
+            <option value={36}>36</option>
+            <option value={48}>48</option>
           </select>
         </label>
       </div>
