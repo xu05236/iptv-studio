@@ -1,4 +1,5 @@
 import type { Env } from '../env.js';
+import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 import { dispatchWorkflow, listWorkflowRuns } from './github.js';
 
@@ -111,13 +112,15 @@ function ensureTaskState(env: Env): Promise<void> {
 }
 
 export async function loadTasks(env: Env): Promise<Task[]> {
-  await ensureTaskState(env);
-  const row = await env.DB.prepare('SELECT payload FROM task_state WHERE id = ?').bind('default').first<{ payload: string }>();
-  if (!row?.payload) return [];
   try {
+    await ensureTaskState(env);
+    const row = await env.DB.prepare('SELECT payload FROM task_state WHERE id = ?').bind('default').first<{ payload: string }>();
+    if (!row?.payload) return [];
     return JSON.parse(row.payload) as Task[];
   } catch {
-    return [];
+    // Tests and older deployments may not have D1 bindings; keep the legacy
+    // KV queue working as a fallback.
+    return (await getJson<Task[]>(env, KEY)) ?? [];
   }
 }
 
@@ -133,10 +136,14 @@ async function saveTasks(env: Env, tasks: Task[]): Promise<void> {
     .filter((task) => task.status === 'done' || task.status === 'failed' || task.status === 'cancelled')
     .sort((a, b) => (b.finishedAt ?? b.createdAt).localeCompare(a.finishedAt ?? a.createdAt))
     .slice(0, MAX_FINISHED);
-  await ensureTaskState(env);
-  await env.DB.prepare(
-    "INSERT INTO task_state (id, payload, updated_at) VALUES ('default', ?, datetime('now')) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = datetime('now')",
-  ).bind(JSON.stringify([...active, ...finished])).run();
+  try {
+    await ensureTaskState(env);
+    await env.DB.prepare(
+      "INSERT INTO task_state (id, payload, updated_at) VALUES ('default', ?, datetime('now')) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = datetime('now')",
+    ).bind(JSON.stringify([...active, ...finished])).run();
+  } catch {
+    await env.KV.put(KEY, JSON.stringify([...active, ...finished]));
+  }
 }
 
 async function createTaskCore(

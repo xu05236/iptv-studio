@@ -17,23 +17,37 @@ function ensure(env: Env): Promise<void> {
 
 /** Small runtime markers live in D1; large artifacts stay in KV. */
 export async function getRuntimeJson<T>(env: Env, key: string): Promise<T | null> {
-  await ensure(env);
-  const row = await env.DB.prepare('SELECT value FROM runtime_state WHERE key = ?').bind(key).first<{ value: string }>();
-  if (row?.value) {
-    try {
-      return JSON.parse(row.value) as T;
-    } catch {
-      return null;
+  try {
+    await ensure(env);
+    const row = await env.DB.prepare('SELECT value FROM runtime_state WHERE key = ?').bind(key).first<{ value: string }>();
+    if (row?.value) {
+      try {
+        return JSON.parse(row.value) as T;
+      } catch {
+        return null;
+      }
     }
+  } catch {
+    // Fall through to the legacy KV copy (tests / D1 unavailable).
   }
   const legacy = await getJson<T>(env, key);
-  if (legacy) await putRuntimeJson(env, key, legacy);
+  if (legacy) {
+    try {
+      await putRuntimeJson(env, key, legacy);
+    } catch {
+      // Keep serving the legacy value even if migration fails.
+    }
+  }
   return legacy;
 }
 
 export async function putRuntimeJson(env: Env, key: string, value: unknown): Promise<void> {
-  await ensure(env);
-  await env.DB.prepare(
-    "INSERT INTO runtime_state (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
-  ).bind(key, JSON.stringify(value)).run();
+  try {
+    await ensure(env);
+    await env.DB.prepare(
+      "INSERT INTO runtime_state (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
+    ).bind(key, JSON.stringify(value)).run();
+  } catch {
+    await env.KV.put(key, JSON.stringify(value));
+  }
 }
