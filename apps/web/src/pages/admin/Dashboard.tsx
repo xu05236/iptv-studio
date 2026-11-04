@@ -757,41 +757,39 @@ export function Dashboard() {
         </Card>
       </div>
 
-      <Card flush>
-        <div className="card__header">
-          <div className="title-3">最近运行</div>
-          <Link to="/admin/runs" className="caption">全部记录</Link>
+      <Card>
+        <div className="card__header" style={{ padding: '2px 2px 12px' }}>
+          <div>
+            <div className="title-3">最近运行</div>
+            <div className="caption">最近 {stats.runs.length} 次运行记录</div>
+          </div>
+          <Link to="/admin/runs" className="caption">全部记录 →</Link>
         </div>
-        <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
-          <table className="table table--cards">
-            <thead>
-              <tr><th>状态</th><th>任务</th><th>开始</th><th>频道</th><th>可用</th><th>已测</th><th>耗时</th></tr>
-            </thead>
-            <tbody>
-              {stats.runs.map((run) => (
-                <tr key={run.id}>
-                  <td data-label="状态">
-                    <Badge tone={run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange'}>
-                      {run.status === 'success' ? '成功' : run.status === 'partial' ? '部分' : run.status === 'running' ? '运行中' : '失败'}
-                    </Badge>
-                  </td>
-                  <td data-label="任务">
-                    <div>{run.task_label ?? (run.task_type ? TASK_TYPE_LABEL[run.task_type] ?? run.task_type : '—')}</div>
-                    {run.task_message ? <div className="caption">{run.task_message}</div> : null}
-                    {run.task_failure_reason ? <div className="caption" style={{ color: 'var(--red, #e5484d)' }}>{run.task_failure_reason}</div> : null}
-                  </td>
-                  <td data-label="开始" className="caption">{timeAgo(run.started_at)}</td>
-                  <td data-label="频道">{run.channels}</td>
-                  <td data-label="可用">{run.alive}</td>
-                  <td data-label="已测">{run.probed}</td>
-                  <td data-label="耗时" className="caption">{formatDuration(run.duration_ms)}</td>
-                </tr>
-              ))}
-              {!stats.runs.length ? (
-                <tr><td colSpan={7}><div className="caption" style={{ padding: 12 }}>还没有运行记录</div></td></tr>
-              ) : null}
-            </tbody>
-          </table>
+        <div className="run-list">
+          {stats.runs.map((run) => {
+            const tone = run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange';
+            const statusText = run.status === 'success' ? '成功' : run.status === 'partial' ? '部分' : run.status === 'running' ? '运行中' : '失败';
+            return (
+              <div className={`run-row run-row--${tone}`} key={run.id}>
+                <div className="run-row__status"><Badge tone={tone}>{statusText}</Badge></div>
+                <div className="grow">
+                  <div className="run-row__title">{run.task_label ?? (run.task_type ? TASK_TYPE_LABEL[run.task_type] ?? run.task_type : '运行记录')}</div>
+                  {run.task_message ? <div className="caption run-row__message">{run.task_message}</div> : null}
+                  {run.task_failure_reason ? <div className="caption task-failure">失败原因：{run.task_failure_reason}</div> : null}
+                </div>
+                <div className="run-row__metrics">
+                  <span><strong>{formatNumber(run.channels)}</strong> 频道</span>
+                  <span><strong>{formatNumber(run.alive)}</strong> 可用</span>
+                  <span><strong>{formatNumber(run.probed)}</strong> 已测</span>
+                </div>
+                <div className="run-row__time">
+                  <span>{timeAgo(run.started_at)}</span>
+                  <span className="caption">{formatDuration(run.duration_ms)}</span>
+                </div>
+              </div>
+            );
+          })}
+          {!stats.runs.length ? <div className="task-empty">还没有运行记录</div> : null}
         </div>
       </Card>
     </div>
