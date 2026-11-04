@@ -92,6 +92,15 @@ const PHASE_MESSAGE_KEY: Record<string, string> = {
   rejected: '待复活',
 };
 
+function describeScheduleResult(result: string): string {
+  if (result === 'idle: no due lines') return '暂无到期线路，本轮跳过';
+  if (result === 'skipped: running') return '有任务正在运行，本轮跳过';
+  if (result === 'skipped: quota') return 'KV 写入接近上限，本轮跳过';
+  if (result === 'queued') return '已派发';
+  if (result === 'fetch added pending') return '抓源新增待测线路，已提前唤醒';
+  return result;
+}
+
 interface TaskBoard {
   batchSize: number;
   intervalHours: number;
@@ -495,7 +504,7 @@ export function Dashboard() {
                           </div>
                           {task.payload.result && task.payload.result !== 'queued' ? (
                             <div className="caption" style={{ marginTop: 2, color: task.payload.result.startsWith('skipped') ? 'var(--orange)' : undefined }}>
-                              上次调度：{task.payload.result}
+                              上次调度：{describeScheduleResult(task.payload.result)}
                               {task.payload.lastRunAt ? ` · ${formatSnapshot(task.payload.lastRunAt)}` : ''}
                             </div>
                           ) : null}
