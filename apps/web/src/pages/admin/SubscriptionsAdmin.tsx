@@ -201,7 +201,7 @@ export function SubscriptionsAdmin() {
               <input className="input" inputMode="numeric" value={maxPerSource} onChange={(event) => setMaxPerSource(event.target.value)} />
             </Field>
           </div>
-          <div style={{ alignSelf: 'flex-end' }}>
+          <div style={{ alignSelf: 'center' }}>
             <Button variant="primary" loading={saveLimits.isPending} onClick={() => saveLimits.mutate()}>保存上限</Button>
           </div>
         </div>
@@ -245,7 +245,7 @@ export function SubscriptionsAdmin() {
 
             <div className="subscription-stats">
               <div><strong>{item.matchedChannels ?? 0}</strong><span>匹配频道</span></div>
-              <div><strong>{item.max_lines_per_channel}</strong><span>每频道线路</span></div>
+              <div><strong>{item.max_lines_per_channel > 0 ? item.max_lines_per_channel : '不限'}</strong><span>每频道线路</span></div>
               <div><strong>{item.includeEpg ? '含' : '不含'}</strong><span>EPG</span></div>
             </div>
 
