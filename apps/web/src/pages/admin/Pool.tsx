@@ -352,6 +352,21 @@ export function Pool() {
     resetPage();
   }
 
+  function clearFilters(): void {
+    setCountry('');
+    setGroup('');
+    setChannelId('');
+    setChannelQuery('');
+    setSubscriptionId('');
+    setSourceId('');
+    setPool('');
+    setResolution('');
+    setTransport('');
+    setMinSpeed('');
+    setSearch('');
+    resetPage();
+  }
+
   if (tree.isLoading) {
     return <div className="stack"><Skeleton height={34} width={220} /><Skeleton height={240} radius={16} /></div>;
   }
@@ -372,28 +387,51 @@ export function Pool() {
         }
       />
 
-      <div className="row row--wrap" style={{ gap: 6 }}>
-        {(tree.data?.countries ?? []).map((item) => (
-          <button key={item.country} className={country === item.country ? 'chip chip--active' : 'chip'} onClick={() => selectCountry(item.country)}>
-            {item.country} {item.total}
-          </button>
-        ))}
-      </div>
-
-      {groups.length ? (
-        <div className="row row--wrap" style={{ gap: 6 }}>
-          {groups.map((item) => (
-            <button key={item.group} className={group === item.group ? 'chip chip--active' : 'chip'} onClick={() => selectGroup(item.group)}>
-              {item.group} {item.total}
-            </button>
-          ))}
+      <Card className="pool-browse">
+        <div className="pool-browse__head">
+          <div>
+            <div className="title-3">浏览线路</div>
+            <div className="caption">按国家 / 地区或分组快速切换</div>
+          </div>
+          <Button size="sm" variant="ghost" onClick={clearFilters}>重置筛选</Button>
         </div>
-      ) : null}
+        <div className="pool-browse__row">
+          <span className="pool-browse__label">国家 / 地区</span>
+          <div className="pool-browse__chips">
+            <button className={!country ? 'chip chip--active' : 'chip'} onClick={() => selectCountry('')}>全部 <span>{(tree.data?.countries ?? []).reduce((sum, item) => sum + item.total, 0)}</span></button>
+            {(tree.data?.countries ?? []).map((item) => (
+              <button key={item.country} className={country === item.country ? 'chip chip--active' : 'chip'} onClick={() => selectCountry(item.country)}>
+                {item.country} <span>{item.total}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        {groups.length ? (
+          <div className="pool-browse__row">
+            <span className="pool-browse__label">分组</span>
+            <div className="pool-browse__chips">
+              <button className={!group ? 'chip chip--active' : 'chip'} onClick={() => selectGroup('')}>全部</button>
+              {groups.map((item) => (
+                <button key={item.group} className={group === item.group ? 'chip chip--active' : 'chip'} onClick={() => selectGroup(item.group)}>
+                  {item.group} <span>{item.total}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </Card>
 
-      <Card>
+      <Card className="pool-filters">
+        <div className="pool-filters__head">
+          <div>
+            <div className="title-3">筛选条件</div>
+            <div className="caption">频道、订阅、来源、池、分辨率、传输和速度</div>
+          </div>
+          <Button size="sm" variant="ghost" onClick={clearFilters}>清空条件</Button>
+        </div>
         <details open className="filter-details">
           <summary className="filter-summary">筛选条件</summary>
-        <div className="row row--wrap" style={{ gap: 8, alignItems: 'flex-end' }}>
+        <div className="pool-filter-grid">
           <label className="stack stack--tight grow">
             <span className="caption">频道</span>
             <input
@@ -471,7 +509,7 @@ export function Pool() {
         待测 = 从未探测；候选 = 测活通过但质量待确认；精品 = 默认导出；备用 = 精品不足时补位；待复测 = 上次探测失败；已淘汰 = 连续失败。
       </div>
 
-      <div className="row row--between">
+      <div className="row row--between pool-result-bar">
         <div className="caption"><Filter size={13} /> 共 {lines.data?.total ?? 0} 条线路</div>
         <label className="row" style={{ gap: 6 }}>
           <span className="caption">每页</span>
@@ -486,9 +524,9 @@ export function Pool() {
       </div>
 
       {selected.size ? (
-        <Card>
+        <Card className="pool-bulk">
           <div className="row row--wrap" style={{ gap: 8, alignItems: 'center' }}>
-            <span className="caption">已选 {selected.size} 条</span>
+            <Badge tone="blue">已选 {selected.size} 条</Badge>
             <select className="input" style={{ maxWidth: 150 }} value={bulkPool} onChange={(event) => setBulkPool(event.target.value)}>
               {POOLS.filter((item) => item.value).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
@@ -558,7 +596,7 @@ export function Pool() {
               </thead>
               <tbody>
                 {lines.data.items.map((line) => (
-                  <tr key={line.key}>
+                  <tr key={line.key} className={`pool-row pool-row--${statusTone(line.status)}`}>
                     <td data-label="选择">
                       <input
                         type="checkbox"
