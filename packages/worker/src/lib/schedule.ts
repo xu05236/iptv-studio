@@ -266,8 +266,17 @@ async function intervalGuard(env: Env): Promise<'quota' | 'running' | null> {
   const usage = await getRuntimeJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
   const writes = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
   if (writes >= 920) return 'quota';
-  const runs = (await workflowRunStatus(env)) as Array<{ status?: string }> | null;
-  if (Array.isArray(runs) && runs.some((run) => run.status === 'queued' || run.status === 'in_progress')) return 'running';
+  const runs = (await workflowRunStatus(env)) as Array<{ status?: string; createdAt?: string }> | null;
+  if (Array.isArray(runs)) {
+    const now = Date.now();
+    // A workflow stuck in_progress for hours must not block probing forever.
+    const active = runs.some((run) => {
+      if (run.status !== 'queued' && run.status !== 'in_progress') return false;
+      const createdAt = run.createdAt ? Date.parse(run.createdAt) : NaN;
+      return !Number.isFinite(createdAt) || now - createdAt < 45 * 60_000;
+    });
+    if (active) return 'running';
+  }
   return null;
 }
 

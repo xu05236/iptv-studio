@@ -459,6 +459,12 @@ export function Dashboard() {
                         <div className="caption">
                           {task.payload.nextAt ? `下次 ${formatSnapshot(task.payload.nextAt)}` : '等待新线路'}
                         </div>
+                        {task.payload.result && task.payload.result !== 'queued' ? (
+                          <div className="caption" style={{ marginTop: 2, color: task.payload.result.startsWith('skipped') ? 'var(--orange)' : undefined }}>
+                            上次调度：{task.payload.result}
+                            {task.payload.lastRunAt ? ` · ${formatSnapshot(task.payload.lastRunAt)}` : ''}
+                          </div>
+                        ) : null}
                       </div>
                       <Button size="sm" variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: task.type as 'probe-batch' | 'fetch' | 'publish' | 'epg' })}>
                         立即执行
