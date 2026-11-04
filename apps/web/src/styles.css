@@ -1168,6 +1168,7 @@ button {
 }
 
 .source-grid--list .source-card {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(240px, 1.2fr) minmax(320px, 1fr) auto;
   grid-template-areas:
@@ -1178,7 +1179,17 @@ button {
   align-items: center;
   column-gap: 18px;
   row-gap: 5px;
-  padding: 15px 18px;
+  padding: 15px 92px 15px 18px;
+}
+
+.source-grid--list .source-card__head { grid-area: head; align-items: center; }
+.source-grid--list .source-card__switch {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  flex-direction: column;
+  gap: 2px;
 }
 
 .source-grid--list .source-card__head { grid-area: head; }
@@ -1420,6 +1431,13 @@ button {
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
+    padding: 15px;
+  }
+
+  .source-grid--list .source-card__switch {
+    position: static;
+    transform: none;
+    flex-direction: row;
   }
 
   .source-grid--list .source-card__actions {
