@@ -67,6 +67,18 @@ export async function publishSubscriptions(
     );
     const channels = epg.channels.filter((channel) => ids.has(channel.id));
     const programmes = epg.programmes.filter((programme) => ids.has(programme.channelId));
+    // 4K/8K variants often have no separate XMLTV feed. Reuse the base
+    // channel's schedule under the variant id so players still show a guide.
+    const epgChannelById = new Map(epg.channels.map((channel) => [channel.id, channel]));
+    for (const id of ids) {
+      if (epgChannelById.has(id)) continue;
+      const baseId = id.replace(/-(?:4k|8k)$/i, '');
+      if (baseId === id) continue;
+      const base = epgChannelById.get(baseId);
+      if (!base) continue;
+      channels.push({ ...base, id });
+      programmes.push(...epg.programmes.filter((programme) => programme.channelId === baseId).map((programme) => ({ ...programme, channelId: id })));
+    }
     if (!channels.length) return false;
     const xml = buildXmltv(
       { channels, programmes },
