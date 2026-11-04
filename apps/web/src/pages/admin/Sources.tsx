@@ -289,7 +289,7 @@ export function Sources() {
             <Button size="sm" variant={view === 'grid' ? 'primary' : 'glass'} onClick={() => setView('grid')}><LayoutGrid size={14} /> 网格</Button>
             <Button size="sm" variant={view === 'list' ? 'primary' : 'glass'} onClick={() => setView('list')}><List size={14} /> 列表</Button>
           </div>
-          <Button size="sm" variant={healthSort ? 'primary' : 'glass'} onClick={() => setHealthSort((value) => !value)}>
+          <Button size="sm" variant={healthSort ? 'primary' : 'default'} onClick={() => setHealthSort((value) => !value)}>
             按 7 天健康排序
           </Button>
         </div>
@@ -384,6 +384,7 @@ export function Sources() {
                   <Button size="sm" variant="ghost" title={source.weight >= 2 ? '取消收藏' : '收藏'} onClick={() => favorite.mutate(source)}>
                     <Star size={15} fill={source.weight >= 2 ? 'currentColor' : 'none'} color={source.weight >= 2 ? 'var(--orange)' : undefined} />
                   </Button>
+                  <span className="caption">{source.enabled ? '启用' : '停用'}</span>
                   <Switch checked={source.enabled} onChange={() => toggle.mutate(source.id)} />
                 </div>
               </div>
