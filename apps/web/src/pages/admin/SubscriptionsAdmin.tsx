@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link2, Plus, RefreshCw, Trash2, Wand2, X } from 'lucide-react';
+import { Link2, Plus, RefreshCw, SlidersHorizontal, Trash2, Wand2, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { AdminChannel, SubscriptionItem } from '../../lib/types';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
@@ -177,8 +177,14 @@ export function SubscriptionsAdmin() {
         actions={<Button variant="primary" onClick={() => openEdit()}><Plus size={16} /> 新建订阅</Button>}
       />
 
-      <Card>
-        <div className="title-3">线路显示与导出上限</div>
+      <Card className="subscription-limits">
+        <div className="subscription-limits__head">
+          <span className="subscription-limits__icon"><SlidersHorizontal size={17} /></span>
+          <div>
+            <div className="title-3">线路显示与导出上限</div>
+            <div className="caption">控制每个频道写入播放器的线路数量</div>
+          </div>
+        </div>
         <div className="row row--wrap" style={{ marginTop: 10 }}>
           <div className="grow">
             <Field label="播放器导出行数" hint="每个频道最多写入订阅几条线路；0 = 不限制">
@@ -215,44 +221,56 @@ export function SubscriptionsAdmin() {
         />
       ) : null}
 
-      <div className="stack">
+      <div className="subscription-grid">
         {(data?.items ?? []).map((item) => (
-          <Card key={item.id}>
-            <div className="row row--between" style={{ alignItems: 'flex-start' }}>
+          <Card className="subscription-card" key={item.id}>
+            <div className="subscription-card__head">
+              <span className="subscription-card__icon"><Link2 size={17} /></span>
               <div className="grow" style={{ minWidth: 0 }}>
                 <div className="row row--wrap" style={{ gap: 6 }}>
-                  <span className="title-3">{item.name}</span>
+                  <span className="subscription-card__name">{item.name}</span>
                   <Badge tone="blue">{item.format.toUpperCase()}</Badge>
+                </div>
+                <div className="row row--wrap" style={{ gap: 5, marginTop: 6 }}>
                   {item.pool_mode === 'custom' ? <Badge>自定义线路</Badge> : item.pool_mode === 'premium_backup' ? <Badge tone="orange">精品 + 备用</Badge> : <Badge tone="green">精品池</Badge>}
                   {item.min_resolution !== 'any' ? <Badge>≥ {item.min_resolution}</Badge> : null}
                   {item.min_speed_kbps ? <Badge>≥ {item.min_speed_kbps} kbps</Badge> : null}
-                  {item.enabled ? <Badge tone="green">启用</Badge> : <Badge tone="red">停用</Badge>}
-                </div>
-                <div className="caption" style={{ marginTop: 4 }}>
-                  匹配 {item.matchedChannels ?? 0} 个频道 · 每组最多 {item.max_lines_per_channel} 条 · {item.includeEpg ? '含 EPG' : '不含 EPG'}
                 </div>
               </div>
-              <Switch checked={item.enabled} onChange={() => void api.patch(`/api/admin/subscriptions/${item.id}`, { enabled: !item.enabled }).then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] }))} />
+              <div className="subscription-card__switch">
+                <span className="caption">{item.enabled ? '启用' : '停用'}</span>
+                <Switch checked={item.enabled} onChange={() => void api.patch(`/api/admin/subscriptions/${item.id}`, { enabled: !item.enabled }).then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] }))} />
+              </div>
             </div>
 
-            <div className="stack stack--tight" style={{ marginTop: 12 }}>
+            <div className="subscription-stats">
+              <div><strong>{item.matchedChannels ?? 0}</strong><span>匹配频道</span></div>
+              <div><strong>{item.max_lines_per_channel}</strong><span>每频道线路</span></div>
+              <div><strong>{item.includeEpg ? '含' : '不含'}</strong><span>EPG</span></div>
+            </div>
+
+            <div className="subscription-links">
+              <div className="caption">主播放列表</div>
               <CopyField value={item.links.m3u} />
-              <div className="row row--wrap" style={{ gap: 6 }}>
-                {FORMATS.map((format) => (
-                  <Button key={format} size="sm" onClick={() => navigator.clipboard.writeText(item.links[format]).then(() => show(`已复制 ${format.toUpperCase()}`))}>
-                    {format.toUpperCase()}
-                  </Button>
-                ))}
-                <Button size="sm" onClick={() => navigator.clipboard.writeText(item.links.epg).then(() => show('已复制 EPG 地址'))}>EPG</Button>
-                <Button size="sm" onClick={() => navigator.clipboard.writeText(item.links.tvbox).then(() => show('已复制 TVBox 配置'))}>TVBox</Button>
+              <div className="subscription-format-row">
+                <span className="caption">复制格式</span>
+                <div className="row row--wrap" style={{ gap: 5 }}>
+                  {FORMATS.map((format) => (
+                    <Button key={format} size="sm" onClick={() => navigator.clipboard.writeText(item.links[format]).then(() => show(`已复制 ${format.toUpperCase()}`))}>
+                      {format.toUpperCase()}
+                    </Button>
+                  ))}
+                  <Button size="sm" onClick={() => navigator.clipboard.writeText(item.links.epg).then(() => show('已复制 EPG 地址'))}>EPG</Button>
+                  <Button size="sm" onClick={() => navigator.clipboard.writeText(item.links.tvbox).then(() => show('已复制 TVBox 配置'))}>TVBox</Button>
+                </div>
               </div>
             </div>
 
-            <div className="row row--wrap" style={{ marginTop: 12, gap: 6 }}>
+            <div className="subscription-actions">
               <Button size="sm" onClick={() => void loadPreview(item)}><Wand2 size={13} /> 预览</Button>
               <Button size="sm" onClick={() => openEdit(item)}>编辑</Button>
               <Button size="sm" onClick={() => rotate.mutate(item.id)}><RefreshCw size={13} /> 轮换令牌</Button>
-              <Button size="sm" variant="danger" onClick={() => { if (confirm('删除该订阅？')) remove.mutate(item.id); }}>
+              <Button size="sm" variant="ghost" onClick={() => { if (confirm('删除该订阅？')) remove.mutate(item.id); }}>
                 <Trash2 size={13} /> 删除
               </Button>
             </div>

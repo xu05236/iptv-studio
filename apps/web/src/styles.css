@@ -1777,6 +1777,134 @@ button {
   color: var(--label-3);
 }
 
+/* ---------------------------------------------------------- subscriptions */
+.subscription-limits__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.subscription-limits__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--purple) 12%, transparent);
+  color: var(--purple);
+}
+
+.subscription-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+  gap: 14px;
+}
+
+.subscription-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  min-width: 0;
+}
+
+.subscription-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.subscription-card__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+  color: var(--blue);
+}
+
+.subscription-card__name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  line-height: 1.35;
+}
+
+.subscription-card__switch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.subscription-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.subscription-stats > div {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--fill-2);
+}
+
+.subscription-stats strong {
+  display: block;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.subscription-stats span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--label-2);
+}
+
+.subscription-links {
+  padding: 11px;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--bg-elev) 66%, var(--fill-2));
+  border: 1px solid color-mix(in srgb, var(--sep) 75%, transparent);
+}
+
+.subscription-format-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+
+.subscription-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--sep);
+}
+
+@media (max-width: 700px) {
+  .subscription-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .subscription-card__switch {
+    flex-direction: row;
+    align-items: center;
+    gap: 5px;
+  }
+}
+
 @media (max-width: 700px) {
   .channel-browse__row {
     grid-template-columns: 1fr;
