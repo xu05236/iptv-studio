@@ -370,6 +370,12 @@ adminRoutes.post('/snapshots', async (c) => {
 
 adminRoutes.delete('/snapshots', async (c) => {
   const removed = await clearSnapshots(c.env);
+  await recordFinishedTask(c.env, {
+    type: 'snapshot',
+    source: 'manual',
+    message: `快照清理完成 · 删除 ${removed} 个`,
+    payload: { origin: 'clear' },
+  });
   await audit(c.env, c.get('actor'), 'snapshot.clear', 'all', { removed });
   return ok({ removed });
 });
@@ -390,6 +396,12 @@ adminRoutes.post('/snapshots/:id/restore', async (c) => {
   await putArtifact(c.env, 'out/catalog.json', JSON.stringify(catalog), json);
   if (pool) await putArtifact(c.env, 'state/pool.json', JSON.stringify(pool), json);
   if (guide) await putArtifact(c.env, 'state/guide.json', JSON.stringify(guide), json);
+  await recordFinishedTask(c.env, {
+    type: 'snapshot',
+    source: 'manual',
+    message: `快照回滚完成 · ${id}`,
+    payload: { origin: 'restore' },
+  });
   await audit(c.env, c.get('actor'), 'snapshot.restore', id);
   return ok({ ok: true });
 });
@@ -606,7 +618,9 @@ adminRoutes.get('/tasks', async (c) => {
     else if (task.type === 'cleanup-orphans') label = '孤儿线路清理';
     else if (task.type === 'snapshot') label = task.payload?.origin === 'publish'
       ? '快照 · 发布后自动'
-      : task.payload?.origin === 'schedule' ? '快照 · 定时' : '快照 · 手动';
+      : task.payload?.origin === 'schedule'
+        ? '快照 · 定时'
+        : task.payload?.origin === 'restore' ? '快照 · 回滚' : task.payload?.origin === 'clear' ? '快照 · 清理' : '快照 · 手动';
     const run = runByTask.get(task.id);
     return { ...task, label, failureReason: task.status === 'failed' ? run?.error ?? task.message ?? null : null };
   });
