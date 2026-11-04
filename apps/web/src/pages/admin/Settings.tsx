@@ -242,14 +242,7 @@ export function SettingsPage() {
               <span className="grow">探测后自动发布（关闭后只按每日时刻发布）</span>
               <Switch checked={form.autoPublishAfterProbeEnabled ?? false} onChange={(value) => set('autoPublishAfterProbeEnabled', value)} />
             </div>
-            <div className="list__row">
-              <span className="grow">每日固定刷新 EPG（独立于线路发布）</span>
-              <Switch checked={form.epgRefreshEnabled ?? true} onChange={(value) => set('epgRefreshEnabled', value)} />
-            </div>
           </div>
-          <Field label="EPG 每日刷新时刻（北京时间）" hint="节目单每天 0 点后已更新，建议 00:10；支持多个时刻，用逗号分隔">
-            <input className="input" value={form.epgRefreshTimes ?? '00:10'} onChange={(event) => set('epgRefreshTimes', event.target.value)} />
-          </Field>
         </div>
       </Card>
 
@@ -296,6 +289,15 @@ export function SettingsPage() {
               </div>
               <div className="caption">当前 {epgUrls.length} 个源；默认包含 fanmingming 与 epg.pw。</div>
             </div>
+          </Field>
+          <div className="list">
+            <div className="list__row">
+              <span className="grow">启用 EPG 独立定时抓取</span>
+              <Switch checked={form.epgRefreshEnabled ?? true} onChange={(value) => set('epgRefreshEnabled', value)} />
+            </div>
+          </div>
+          <Field label="EPG 抓取时刻（北京时间）" hint="节目单每天 0 点后已更新；支持多个时刻，用逗号分隔，例如 00:10, 12:10">
+            <input className="input" value={form.epgRefreshTimes ?? '00:10'} onChange={(event) => set('epgRefreshTimes', event.target.value)} />
           </Field>
           <div className="list">
             <div className="list__row"><span className="grow">Telegram 日报（需在 Actions 配置 Secret）</span><Switch checked={form.notifyTelegram} onChange={(value) => set('notifyTelegram', value)} /></div>
