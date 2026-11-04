@@ -553,12 +553,17 @@ const TASK_PHASE_LABEL: Record<string, string> = {
 adminRoutes.get('/tasks', async (c) => {
   const settings = await loadSettings(c.env);
   const taskItems = await loadTasks(c.env);
-  const [stats, probeState, fetchState, publishState] = await Promise.all([
+  const [stats, probeState, fetchState, publishState, epgState, sourceRows, recentRuns] = await Promise.all([
     getJson<Record<string, number>>(c.env, 'state/pool-stats.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/probe-schedule.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/fetch-schedule.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/publish-schedule.json'),
+    getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/epg-schedule.json'),
+    listSources(c.env),
+    listRuns(c.env, 100),
   ]);
+  const sourceNames = new Map(sourceRows.map((row) => [row.id, row.name]));
+  const runByTask = new Map(recentRuns.filter((row) => row.task_id).map((row) => [row.task_id, row]));
   const order = String(settings.probePhaseOrder ?? '')
     .split(/[\s,，]+/)
     .map((item) => item.trim())
@@ -583,22 +588,45 @@ adminRoutes.get('/tasks', async (c) => {
   });
   const nextPublish = nextAutoPublishAt(settings);
   const scheduledAt = new Date().toISOString();
+  const detailedTasks = taskItems.map((task) => {
+    const sourceId = String(task.payload?.source_id ?? '');
+    const sourceName = sourceNames.get(sourceId);
+    const phase = TASK_PHASE_LABEL[String(task.payload?.phase ?? '')];
+    const keyCount = String(task.payload?.line_keys ?? '').split(',').filter(Boolean).length;
+    let label = task.type;
+    if (task.type === 'fetch') label = `抓源 · ${sourceName ?? '全部启用源'}`;
+    else if (task.type === 'probe-batch') label = `分批探测 · ${phase ?? '自动阶段'}${sourceName ? ` · ${sourceName}` : ''}`;
+    else if (task.type === 'probe') label = `完整测速 · ${sourceName ?? '全部源'}`;
+    else if (task.type === 'probe-lines') label = `线路复测 · ${keyCount} 条`;
+    else if (task.type === 'publish') label = task.source === 'schedule'
+      ? (task.payload?.auto ? '线路发布 · 探测后自动' : '线路发布 · 定时')
+      : '线路发布 · 手动';
+    else if (task.type === 'epg') label = 'EPG 节目单刷新';
+    else if (task.type === 'collect') label = '完整采集 · 全部源';
+    else if (task.type === 'liveness') label = '存活检测';
+    else if (task.type === 'cleanup-orphans') label = '孤儿线路清理';
+    const run = runByTask.get(task.id);
+    return { ...task, label, failureReason: task.status === 'failed' ? run?.error ?? task.message ?? null : null };
+  });
   const scheduledItems: Array<Record<string, unknown>> = [];
   if (settings.autoFetchEnabled) {
-    scheduledItems.push({ id: 'scheduled-fetch', type: 'fetch', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: fetchState?.nextRunAt ?? '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
+    scheduledItems.push({ id: 'scheduled-fetch', type: 'fetch', label: '抓源 · 全部启用源', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: fetchState?.nextRunAt ?? '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
   }
   if (settings.autoPublishEnabled) {
-    scheduledItems.push({ id: 'scheduled-publish', type: 'publish', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: nextPublish ? new Date(nextPublish).toISOString() : '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
+    scheduledItems.push({ id: 'scheduled-publish', type: 'publish', label: '线路发布 · 定时', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: nextPublish ? new Date(nextPublish).toISOString() : '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
   }
   if (settings.autoProbeEnabled) {
-    scheduledItems.push({ id: 'scheduled-probe', type: 'probe-batch', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: probeState?.nextRunAt ?? '' }, progress: { done: 0, total: batchSize, unit: 'lines' }, createdAt: scheduledAt });
+    scheduledItems.push({ id: 'scheduled-probe', type: 'probe-batch', label: '分批探测 · 自动', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: probeState?.nextRunAt ?? '' }, progress: { done: 0, total: batchSize, unit: 'lines' }, createdAt: scheduledAt });
+  }
+  if (settings.epgRefreshEnabled) {
+    scheduledItems.push({ id: 'scheduled-epg', type: 'epg', label: 'EPG 节目单刷新', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: epgState?.nextRunAt ?? '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
   }
   return ok({
     batchSize,
     intervalHours: settings.autoProbeIntervalHours,
     phases,
     stats: stats ?? null,
-    items: [...taskItems, ...scheduledItems],
+    items: [...detailedTasks, ...scheduledItems],
     schedules: {
       probe: {
         enabled: settings.autoProbeEnabled,
@@ -619,6 +647,13 @@ adminRoutes.get('/tasks', async (c) => {
         nextAt: nextPublish ? new Date(nextPublish).toISOString() : null,
         lastRunAt: publishState?.lastRunAt ?? null,
         result: publishState?.result ?? null,
+      },
+      epg: {
+        enabled: settings.epgRefreshEnabled,
+        times: settings.epgRefreshTimes,
+        nextAt: epgState?.nextRunAt ?? null,
+        lastRunAt: epgState?.lastRunAt ?? null,
+        result: epgState?.result ?? null,
       },
     },
   });

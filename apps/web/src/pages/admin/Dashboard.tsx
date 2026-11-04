@@ -53,6 +53,8 @@ interface TaskItem {
   payload: Record<string, string>;
   progress: { done: number; total: number; unit: string };
   message?: string;
+  label?: string;
+  failureReason?: string;
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
@@ -72,9 +74,9 @@ const TASK_TYPE_LABEL: Record<string, string> = {
   'probe-batch': '分批探测',
   'probe-lines': '指定线路探测',
   publish: '发布',
+  epg: 'EPG 刷新',
   liveness: '池内测活',
   export: '重建导出',
-  epg: '更新 EPG',
 };
 
 interface TaskBoard {
@@ -142,7 +144,7 @@ export function Dashboard() {
   });
 
   const runTask = useMutation({
-    mutationFn: (body: { command: 'probe-batch' | 'fetch' | 'publish'; phase?: string }) =>
+    mutationFn: (body: { command: 'probe-batch' | 'fetch' | 'publish' | 'epg'; phase?: string }) =>
       api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', body),
     onSuccess: (result) => {
       show(result.message);
@@ -371,13 +373,13 @@ export function Dashboard() {
                   <div className="grow">
                     <div className="row" style={{ gap: 6 }}>
                       <Badge>定时</Badge>
-                      <span>{TASK_TYPE_LABEL[task.type] ?? task.type}</span>
+                      <span>{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</span>
                     </div>
                     <div className="caption">
                       {task.payload.nextAt ? `下次 ${formatSnapshot(task.payload.nextAt)}` : '等待新线路'}
                     </div>
                   </div>
-                  <Button size="sm" variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: task.type as 'probe-batch' | 'fetch' | 'publish' })}>
+                  <Button size="sm" variant="glass" loading={runTask.isPending} onClick={() => runTask.mutate({ command: task.type as 'probe-batch' | 'fetch' | 'publish' | 'epg' })}>
                     立即执行
                   </Button>
                 </div>
@@ -391,7 +393,7 @@ export function Dashboard() {
                   <div className="grow">
                     <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                       <Badge tone="blue">{TASK_SOURCE_LABEL[runningTask.source]}</Badge>
-                      <span style={{ fontWeight: 600 }}>{TASK_TYPE_LABEL[runningTask.type] ?? runningTask.type}</span>
+                      <span style={{ fontWeight: 600 }}>{runningTask.label ?? TASK_TYPE_LABEL[runningTask.type] ?? runningTask.type}</span>
                       <Badge tone="green">运行中</Badge>
                     </div>
                     <div className="caption" style={{ marginTop: 2 }}>
@@ -419,7 +421,7 @@ export function Dashboard() {
                       <Badge tone={task.source === 'manual' || task.source === 'detection' ? 'blue' : task.source === 'source' ? 'green' : 'default'}>
                         {TASK_SOURCE_LABEL[task.source]}
                       </Badge>
-                      <span style={{ fontWeight: 600 }}>{TASK_TYPE_LABEL[task.type] ?? task.type}</span>
+                      <span style={{ fontWeight: 600 }}>{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</span>
                       {task.status === 'paused' ? <Badge tone="orange">已暂停</Badge> : null}
                       {task.payload.phase ? <Badge>{task.payload.phase}</Badge> : null}
                     </div>
@@ -455,12 +457,17 @@ export function Dashboard() {
                       <div className="grow">
                         <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                           <Badge tone={task.source === 'manual' || task.source === 'detection' ? 'blue' : 'default'}>{TASK_SOURCE_LABEL[task.source]}</Badge>
-                          <span>{TASK_TYPE_LABEL[task.type] ?? task.type}</span>
+                          <span>{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</span>
                           <Badge tone={task.status === 'done' ? 'green' : task.status === 'failed' ? 'red' : 'default'}>
                             {task.status === 'done' ? '完成' : task.status === 'failed' ? '失败' : '取消'}
                           </Badge>
                         </div>
                         <div className="caption">{task.message ?? ''} · {task.finishedAt ? timeAgo(task.finishedAt) : ''}</div>
+                        {task.failureReason ? (
+                          <div className="caption" style={{ color: 'var(--red, #e5484d)', wordBreak: 'break-word' }}>
+                            失败原因：{task.failureReason}
+                          </div>
+                        ) : null}
                       </div>
                       {task.status === 'failed' || task.status === 'cancelled' ? (
                         <Button size="sm" variant="glass" onClick={() => taskAction.mutate({ id: task.id, action: 'retry' })}>重试</Button>
