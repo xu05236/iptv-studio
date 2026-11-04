@@ -227,42 +227,47 @@ export function ChannelsAdmin() {
         }
       />
 
-      <div className="search">
-        <Search size={16} className="search__icon" />
-        <input className="input" placeholder="搜索频道名称或 ID" value={search} onChange={(event) => setSearch(event.target.value)} />
-      </div>
-
-      <div className="row row--wrap" style={{ gap: 6, flexWrap: 'wrap' }}>
-        <button className={country ? 'chip' : 'chip chip--active'} onClick={() => { setCountry(''); setGroup(''); }}>
-          全部 {tree.data?.total ?? ''}
-        </button>
-        {(tree.data?.countries ?? []).map((item) => (
-          <button
-            key={item.country}
-            className={country === item.country ? 'chip chip--active' : 'chip'}
-            onClick={() => { setCountry(item.country); setGroup(''); }}
-          >
-            {item.country} {item.total}
-          </button>
-        ))}
-      </div>
-
-      {activeCountry ? (
-        <div className="row row--wrap" style={{ gap: 6, flexWrap: 'wrap' }}>
-          <button className={group ? 'chip' : 'chip chip--active'} onClick={() => setGroup('')}>全部分组</button>
-          {activeCountry.groups.map((item) => (
-            <button
-              key={item.group}
-              className={group === item.group ? 'chip chip--active' : 'chip'}
-              onClick={() => setGroup(item.group)}
-            >
-              {item.group} {item.count}
-            </button>
-          ))}
+      <Card className="channel-browse">
+        <div className="channel-browse__head">
+          <div>
+            <div className="title-3">频道浏览</div>
+            <div className="caption">按名称、国家 / 地区和分组筛选</div>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => { setSearch(''); setCountry(''); setGroup(''); setPage(1); }}>重置筛选</Button>
         </div>
-      ) : null}
+        <div className="search">
+          <Search size={16} className="search__icon" />
+          <input className="input" placeholder="搜索频道名称或 ID" value={search} onChange={(event) => setSearch(event.target.value)} />
+        </div>
+        <div className="channel-browse__row">
+          <span className="channel-browse__label">国家 / 地区</span>
+          <div className="channel-browse__chips">
+            <button className={country ? 'chip' : 'chip chip--active'} onClick={() => { setCountry(''); setGroup(''); }}>
+              全部 {tree.data?.total ?? ''}
+            </button>
+            {(tree.data?.countries ?? []).map((item) => (
+              <button key={item.country} className={country === item.country ? 'chip chip--active' : 'chip'} onClick={() => { setCountry(item.country); setGroup(''); }}>
+                {item.country} <span>{item.total}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        {activeCountry ? (
+          <div className="channel-browse__row">
+            <span className="channel-browse__label">分组</span>
+            <div className="channel-browse__chips">
+              <button className={group ? 'chip' : 'chip chip--active'} onClick={() => setGroup('')}>全部分组</button>
+              {activeCountry.groups.map((item) => (
+                <button key={item.group} className={group === item.group ? 'chip chip--active' : 'chip'} onClick={() => setGroup(item.group)}>
+                  {item.group} <span>{item.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </Card>
 
-      <div className="row row--between row--wrap">
+      <div className="row row--between row--wrap channel-result-bar">
         <div className="caption">共 {total} 个频道{country ? ` · ${country}` : ''}{group ? ` / ${group}` : ''}</div>
         <label className="caption" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input
@@ -282,9 +287,9 @@ export function ChannelsAdmin() {
       </div>
 
       {selected.size ? (
-        <Card>
+        <Card className="channel-bulk">
           <div className="row row--wrap" style={{ gap: 8, alignItems: 'center' }}>
-            <span className="caption">已选 {selected.size} 个频道</span>
+            <Badge tone="blue">已选 {selected.size} 个频道</Badge>
             <input className="input grow" value={bulkTarget} onChange={(event) => setBulkTarget(event.target.value)} placeholder="目标分组，例如：我的收藏" />
             <Button loading={bulkGroup.isPending} onClick={() => bulkGroup.mutate()}>移动分组</Button>
             <Button variant="ghost" onClick={() => setSelected(new Set())}>取消选择</Button>
@@ -303,52 +308,57 @@ export function ChannelsAdmin() {
         <Card><div className="caption">加载中…</div></Card>
       ) : null}
 
-      <div className="list">
-        {items.map((channel) => (
-          <div key={channel.id} className="list__row">
-            <input
-              type="checkbox"
-              checked={selected.has(channel.id)}
-              onChange={(event) => {
-                const next = new Set(selected);
-                if (event.target.checked) next.add(channel.id);
-                else next.delete(channel.id);
-                setSelected(next);
-              }}
-              style={{ marginTop: 4 }}
-            />
-            <div className="logo logo--fallback" style={{ fontSize: 13 }}>{channel.name.slice(0, 1)}</div>
-            <div className="grow" style={{ minWidth: 0 }}>
-              <div className="row" style={{ gap: 6 }}>
-                <span className="list__title truncate">{channel.name}</span>
-                {channel.bestResolution ? <Badge tone="blue">{formatResolution(channel.bestResolution)}</Badge> : null}
-              </div>
-              <div className="list__sub">
-                {channel.group} · {channel.alive}/{channel.lines} 可用 · {channel.sources} 个源
-                {channel.bestSpeedKbps ? ` · ${formatSpeed(channel.bestSpeedKbps)}` : ''}
-              </div>
-            </div>
-            <div className="row" style={{ gap: 4 }}>
-              <Button size="sm" variant="ghost" onClick={() => void openAliases(channel)} title="别名">
-                <Tag size={14} />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setEditing(channel);
-                  setForm({ name: channel.name, group: channel.group, tvgId: channel.tvgId ?? '', logo: channel.logo ?? '' });
+      <div className="channel-grid">
+        {items.map((channel) => {
+          const isSelected = selected.has(channel.id);
+          const tone = !channel.enabled ? 'orange' : channel.lines > 0 && channel.alive === 0 ? 'red' : channel.alive > 0 ? 'green' : 'default';
+          return (
+            <div key={channel.id} className={`channel-card channel-card--${tone}${isSelected ? ' is-selected' : ''}`}>
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={(event) => {
+                  const next = new Set(selected);
+                  if (event.target.checked) next.add(channel.id);
+                  else next.delete(channel.id);
+                  setSelected(next);
                 }}
-                title="编辑"
-              >
-                <Pencil size={14} />
-              </Button>
-              <Switch checked={channel.enabled} onChange={() => toggle.mutate(channel.id)} />
+              />
+              <div className="logo logo--fallback" style={{ fontSize: 13 }}>{channel.name.slice(0, 1)}</div>
+              <div className="grow" style={{ minWidth: 0 }}>
+                <div className="row" style={{ gap: 6 }}>
+                  <span className="channel-card__name truncate">{channel.name}</span>
+                  {channel.bestResolution ? <Badge tone="blue">{formatResolution(channel.bestResolution)}</Badge> : null}
+                </div>
+                <div className="caption" style={{ marginTop: 2 }}>{channel.group}</div>
+                <div className="channel-card__metrics">
+                  <span><strong>{channel.alive}</strong>/{channel.lines} 可用</span>
+                  <span><strong>{channel.sources}</strong> 个源</span>
+                  {channel.bestSpeedKbps ? <span>{formatSpeed(channel.bestSpeedKbps)}</span> : null}
+                </div>
+              </div>
+              <div className="channel-card__actions">
+                <Button size="sm" variant="ghost" onClick={() => void openAliases(channel)} title="别名">
+                  <Tag size={14} />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setEditing(channel);
+                    setForm({ name: channel.name, group: channel.group, tvgId: channel.tvgId ?? '', logo: channel.logo ?? '' });
+                  }}
+                  title="编辑"
+                >
+                  <Pencil size={14} />
+                </Button>
+                <Switch checked={channel.enabled} onChange={() => toggle.mutate(channel.id)} />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {!channels.isLoading && !channels.isError && !items.length ? (
-          <div className="caption" style={{ padding: 16 }}><Tv size={14} /> 没有匹配的频道。</div>
+          <div className="channel-card channel-card--default" style={{ justifyContent: 'center', color: 'var(--label-3)' }}><Tv size={15} /> 没有匹配的频道</div>
         ) : null}
       </div>
 

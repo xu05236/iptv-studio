@@ -1522,6 +1522,144 @@ button {
   padding: 2px 4px;
 }
 
+/* ---------------------------------------------------------- channels */
+.channel-browse {
+  padding: 16px;
+}
+
+.channel-browse__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.channel-browse .search {
+  margin-bottom: 4px;
+}
+
+.channel-browse__row {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--sep);
+  margin-top: 8px;
+}
+
+.channel-browse__label {
+  padding-top: 5px;
+  font-size: 11.5px;
+  color: var(--label-3);
+}
+
+.channel-browse__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.channel-browse__chips .chip span {
+  margin-left: 2px;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
+.channel-result-bar {
+  padding: 2px 4px;
+}
+
+.channel-bulk {
+  padding: 12px 14px;
+  border-color: color-mix(in srgb, var(--blue) 24%, var(--sep));
+  background: color-mix(in srgb, var(--blue) 5%, var(--bg-elev));
+}
+
+.channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 10px;
+}
+
+.channel-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 14px;
+  border-radius: 15px;
+  border: 1px solid color-mix(in srgb, var(--sep) 80%, transparent);
+  border-left-width: 3px;
+  background: var(--bg-elev);
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.channel-card:hover {
+  background: color-mix(in srgb, var(--bg-elev) 72%, var(--fill-2));
+}
+
+.channel-card.is-selected {
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--sep));
+  background: color-mix(in srgb, var(--blue) 5%, var(--bg-elev));
+}
+
+.channel-card--green { border-left-color: var(--green); }
+.channel-card--orange { border-left-color: var(--orange); }
+.channel-card--red { border-left-color: var(--red); }
+.channel-card--default { border-left-color: var(--sep); }
+
+.channel-card > input[type="checkbox"] {
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.channel-card__name {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+
+.channel-card__metrics {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 7px;
+  font-size: 11.5px;
+  color: var(--label-2);
+  flex-wrap: wrap;
+}
+
+.channel-card__metrics strong {
+  color: var(--label);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.channel-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .channel-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .channel-browse__row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .channel-browse__label {
+    padding-top: 0;
+  }
+}
+
 @media (max-width: 760px) {
   .probe-filter-row {
     flex-direction: column;
