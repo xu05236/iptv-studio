@@ -1384,6 +1384,95 @@ button {
 .pool-row--orange > td:first-child { box-shadow: inset 3px 0 var(--orange); }
 .pool-row--red > td:first-child { box-shadow: inset 3px 0 var(--red); }
 
+.pool-table {
+  table-layout: fixed;
+  min-width: 1140px;
+}
+
+.page--admin .pool-table thead th {
+  height: 42px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--fill-2) 72%, var(--bg-elev));
+  border-bottom: 1px solid color-mix(in srgb, var(--sep) 90%, transparent);
+  color: var(--label-2);
+  font-size: 11.5px;
+  font-weight: 650;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.pool-table thead th:first-child,
+.pool-table tbody td:first-child {
+  padding-left: 14px;
+}
+
+.pool-table th:nth-child(1) { width: 44px; }
+.pool-table th:nth-child(2) { width: 180px; }
+.pool-table th:nth-child(3) { width: 280px; }
+.pool-table th:nth-child(4) { width: 88px; }
+.pool-table th:nth-child(5) { width: 96px; }
+.pool-table th:nth-child(6) { width: 88px; }
+.pool-table th:nth-child(7) { width: 140px; }
+.pool-table th:nth-child(8) { width: 104px; }
+.pool-table th:nth-child(9) { width: 120px; }
+
+.pool-table tbody td {
+  padding: 11px 12px;
+  vertical-align: middle;
+  border-bottom: 1px solid color-mix(in srgb, var(--sep) 62%, transparent);
+}
+
+.pool-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.pool-table tbody tr {
+  transition: background 0.12s;
+}
+
+.pool-table tbody tr:hover {
+  background: color-mix(in srgb, var(--fill-2) 56%, transparent);
+}
+
+.pool-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.pool-sort__arrow {
+  color: var(--label-3);
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.pool-sort--active {
+  color: var(--label);
+}
+
+.pool-sort--active .pool-sort__arrow {
+  color: var(--blue);
+  opacity: 1;
+}
+
+.pool-table td[data-label="池"] select {
+  width: 100%;
+  max-width: 132px;
+}
+
+@media (max-width: 900px) {
+  .pool-table {
+    min-width: 0;
+    table-layout: auto;
+  }
+}
+
 @media (max-width: 700px) {
   .pool-browse__row {
     grid-template-columns: 1fr;

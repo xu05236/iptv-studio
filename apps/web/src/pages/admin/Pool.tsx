@@ -196,13 +196,17 @@ export function Pool() {
     }
     setPage(1);
   };
-  const sortHead = (field: string, label: string) => (
-    <th>
-      <button type="button" style={{ all: 'unset', cursor: 'pointer' }} onClick={() => toggleSort(field)}>
-        {label} {sortField === field ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
-      </button>
-    </th>
-  );
+  const sortHead = (field: string, label: string) => {
+    const active = sortField === field;
+    return (
+      <th>
+        <button type="button" className={active ? 'pool-sort pool-sort--active' : 'pool-sort'} onClick={() => toggleSort(field)}>
+          <span>{label}</span>
+          <span className="pool-sort__arrow">{active ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}</span>
+        </button>
+      </th>
+    );
+  };
 
   const override = useMutation({
     mutationFn: ({ keys, pool }: { keys: string[]; pool: string }) =>
@@ -571,7 +575,7 @@ export function Pool() {
       ) : lines.data?.items.length ? (
         <Card>
           <div className="table-wrap" style={{ border: 0 }}>
-            <table className="table table--cards">
+            <table className="table table--cards pool-table">
               <thead>
                 <tr>
                   <th>
@@ -614,7 +618,7 @@ export function Pool() {
                       <div className="caption">{line.country} · {line.group}</div>
                     </td>
                     <td data-label="来源">
-                      <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                      <div className="row" style={{ gap: 6, justifyContent: 'flex-start' }}>
                         <span className="truncate" style={{ maxWidth: 120 }}>{line.sourceName}</span>
                         <ReputationBadge score={line.sourceReputation} />
                       </div>
@@ -652,7 +656,7 @@ export function Pool() {
                       ) : null}
                     </td>
                     <td data-label="状态">
-                      <div className="row" style={{ justifyContent: 'flex-end', gap: 6 }}>
+                      <div className="row" style={{ justifyContent: 'flex-start', gap: 6 }}>
                         <Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge>
                         <Button
                           size="sm"
