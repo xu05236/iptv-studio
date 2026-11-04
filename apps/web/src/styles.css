@@ -2090,6 +2090,99 @@ button {
 }
 
 /* ---------------------------------------------------------- settings */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.settings-side {
+  position: sticky;
+  top: calc(var(--nav-h) + 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-side .settings-nav {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 7px;
+  background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.settings-side .settings-nav a {
+  padding: 8px 10px;
+  border-radius: 9px;
+}
+
+.settings-side__status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--sep) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 90%, transparent);
+}
+
+.settings-side__status > div:not(.caption) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--label-2);
+}
+
+.settings-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.settings-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-overview > div {
+  padding: 13px 14px;
+  border-radius: 15px;
+  border: 1px solid color-mix(in srgb, var(--sep) 78%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 90%, transparent);
+  min-width: 0;
+}
+
+.settings-overview span,
+.settings-overview em {
+  display: block;
+  font-size: 10.5px;
+  font-style: normal;
+  color: var(--label-3);
+}
+
+.settings-overview strong {
+  display: block;
+  margin: 3px 0 2px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-nav {
   position: sticky;
   top: calc(var(--nav-h) + 8px);
@@ -2160,15 +2253,43 @@ button {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
 }
 
-@media (max-width: 700px) {
-  .settings-nav {
-    top: calc(var(--nav-h) + 4px);
-    overflow-x: auto;
-    flex-wrap: nowrap;
+@media (max-width: 900px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
   }
 
-  .settings-nav a {
+  .settings-side {
+    position: static;
+  }
+
+  .settings-side .settings-nav {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .settings-side .settings-nav a {
     flex-shrink: 0;
+  }
+
+  .settings-side__status {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+
+  .settings-side__status > .caption {
+    display: none;
+  }
+
+  .settings-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .settings-side__status {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
