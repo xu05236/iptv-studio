@@ -310,7 +310,7 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
   if (!task) return;
   task.status = status;
   const taskMessage = status === 'done'
-    ? (message ?? (/抓取完成|分批探测完成/.test(task.message ?? '') ? task.message! : '完成'))
+    ? (message ?? (/抓取完成|分批探测完成|EPG 刷新完成|快照完成/.test(task.message ?? '') ? task.message! : '完成'))
     : (message ?? '失败');
   task.message = taskMessage;
   if (status === 'done' && task.progress.total > 0) task.progress.done = task.progress.total;

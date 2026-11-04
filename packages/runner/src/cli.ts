@@ -658,6 +658,21 @@ async function runFetchPhase(): Promise<void> {
     await syncSourceStats(api, remote, lines, collected, sourceId);
 
     const alive = lines.filter((line) => line.status === 'alive').length;
+    if (sourceId) {
+      const source = remote.sources.find((item) => item.id === sourceId);
+      const result = collected.find((item) => item.source.id === sourceId);
+      const raw = result?.entries.length ?? 0;
+      const stored = lines.filter((line) => line.sourceId === sourceId).length;
+      const filtered = Math.max(0, raw - stored);
+      const error = result?.error ? ` · 失败：${result.error}` : '';
+      await reportTaskProgress(api, 1, 1, `抓取完成 · ${source?.name ?? sourceId} · 原始 ${raw} 条 · 入库 ${stored} 条 · 过滤 ${filtered} 条 · 可用 ${alive}${error}`);
+    } else {
+      const failed = collected.filter((item) => item.error);
+      const detail = failed.length
+        ? ` · 失败源：${failed.slice(0, 4).map((item) => `${item.source.name}(${item.error})`).join('、')}`
+        : '';
+      await reportTaskProgress(api, 1, 1, `抓取完成 · 成功 ${collected.length - failed.length}/${collected.length} 源 · 入库 ${lines.length} 条 · 可用 ${alive}${detail}`);
+    }
     const logKey = await writeLog(store, runId, logger);
     report = {
       ...report,
@@ -839,7 +854,21 @@ async function runBatchProbe(): Promise<void> {
     });
     const ffprobeLimit = Math.max(0, envNumber('FFPROBE_LIMIT') ?? settings.ffprobeLimit ?? 150);
     if (ffprobeLimit > 0) await enrichResolutions(probeList, ffprobeLimit, logger);
-    await reportTaskProgress(api, selected.length, selected.length, `分批探测完成 · ${phaseLabel} · 测 ${probeList.length} 条 · 可用 ${summary.alive}`);
+    const sourceNames = new Map(remote.sources.map((source) => [source.id, source.name]));
+    const bySource = new Map<string, { tested: number; alive: number }>();
+    for (const line of probeList) {
+      const item = bySource.get(line.sourceId) ?? { tested: 0, alive: 0 };
+      item.tested++;
+      if (line.status === 'alive') item.alive++;
+      bySource.set(line.sourceId, item);
+    }
+    const sourceDetail = [...bySource.entries()]
+      .sort((a, b) => b[1].tested - a[1].tested)
+      .slice(0, 8)
+      .map(([id, item]) => `${sourceNames.get(id) ?? id} 测${item.tested}/可用${item.alive}`)
+      .join('、');
+    const sourceSuffix = sourceDetail ? ` · 来源：${sourceDetail}` : '';
+    await reportTaskProgress(api, selected.length, selected.length, `分批探测完成 · ${phaseLabel} · 测 ${probeList.length} 条 · 可用 ${summary.alive}${sourceSuffix}`);
     logger.info('分批探测完成', { phase, checked: selected.length, probed: summary.probed, alive: summary.alive, dead: summary.dead });
 
     const generatedAt = nowIso();
@@ -1311,6 +1340,8 @@ async function main(): Promise<void> {
     try {
       const remote = await loadRemoteConfig(api);
       const registry = buildRegistry(remote);
+      const previousGuide = await store.getJson<StoredGuide>('state/guide.json');
+      const previousIds = new Set(Object.keys(previousGuide?.channels ?? {}));
       const epg = await collectEpg(remote.settings.epgUrls, registry, logger);
       let bytes = 0;
       if (epg.xml) {
@@ -1333,6 +1364,10 @@ async function main(): Promise<void> {
       } else {
         logger.warn('没有生成任何节目单内容');
       }
+      const nextIds = new Set(epg.data.channels.map((channel) => channel.id));
+      const added = [...nextIds].filter((id) => !previousIds.has(id)).length;
+      const removed = [...previousIds].filter((id) => !nextIds.has(id)).length;
+      await reportTaskProgress(api, 1, 1, `EPG 刷新完成 · ${nextIds.size} 频道 · ${epg.programmes} 节目 · 新增 ${added} · 删除 ${removed}`);
       await finishRun(api, {
         id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
         sources: remote.sources.length, channels: remote.channels.length, lines: 0, alive: 0, dead: 0,
