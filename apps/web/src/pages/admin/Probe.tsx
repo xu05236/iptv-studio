@@ -6,7 +6,7 @@ import { api } from '../../lib/api';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import type { RunItem } from '../../lib/types';
 import { formatDuration, formatLatency, formatResolution, formatSpeed, statusLabel, statusTone, timeAgo } from '../../lib/format';
-import { Badge, Button, Card, Field, Pagination, Segmented, Sheet, Skeleton, Stat, useToast } from '../../components/ui';
+import { Badge, Button, Card, Field, Pagination, Segmented, Sheet, Skeleton, useToast } from '../../components/ui';
 import { ReputationBadge } from '../../components/ReputationBadge';
 
 interface ProbeLine {
@@ -181,63 +181,80 @@ export function Probe() {
         }
       />
 
-      <div className="grid">
-        <Stat value={summary?.total ?? '—'} label="已检测线路" />
-        <Stat value={summary?.alive ?? '—'} label={`可用 · ${summary ? Math.round((summary.alive / Math.max(1, summary.total)) * 100) : 0}%`} />
-        <Stat value={summary ? formatSpeed(summary.avgSpeedKbps) : '—'} label="平均速率" />
-        <Stat value={summary?.unknown ?? '—'} label="未测 / 待观察" />
+      <div className="dashboard-stats probe-stats">
+        <div className="dash-stat">
+          <span className="dash-stat__icon dash-stat__icon--blue"><Activity size={16} /></span>
+          <div><div className="dash-stat__value">{summary?.total?.toLocaleString('zh-CN') ?? '—'}</div><div className="dash-stat__label">已检测线路</div></div>
+        </div>
+        <div className="dash-stat">
+          <span className="dash-stat__icon dash-stat__icon--green"><Zap size={16} /></span>
+          <div><div className="dash-stat__value">{summary?.alive?.toLocaleString('zh-CN') ?? '—'}</div><div className="dash-stat__label">可用 · {summary ? Math.round((summary.alive / Math.max(1, summary.total)) * 100) : 0}%</div></div>
+        </div>
+        <div className="dash-stat">
+          <span className="dash-stat__icon dash-stat__icon--teal"><Gauge size={16} /></span>
+          <div><div className="dash-stat__value">{summary ? formatSpeed(summary.avgSpeedKbps) : '—'}</div><div className="dash-stat__label">平均速率</div></div>
+        </div>
+        <div className="dash-stat">
+          <span className="dash-stat__icon dash-stat__icon--orange"><RefreshCw size={16} /></span>
+          <div><div className="dash-stat__value">{summary?.unknown?.toLocaleString('zh-CN') ?? '—'}</div><div className="dash-stat__label">未测 / 待观察</div></div>
+        </div>
       </div>
 
-      {resolutions.length ? (
-        <div className="row row--wrap">
-          {resolutions.slice(0, 6).map(([label, count]) => (
-            <button
-              key={label}
-              className={clsx('chip', resolution === label && 'chip--active')}
-              onClick={() => setResolution(resolution === label ? '' : label)}
-            >
-              {label} <span style={{ opacity: 0.7 }}>{count}</span>
-            </button>
-          ))}
-          {resolution ? <Button size="sm" variant="ghost" onClick={() => setResolution('')}>清除</Button> : null}
+      <Card className="probe-filters">
+        <div className="probe-filters__head">
+          <div>
+            <div className="title-3">筛选与搜索</div>
+            <div className="caption">按状态、来源和分辨率筛选检测结果</div>
+          </div>
+          <Badge>{totalItems} 条结果</Badge>
         </div>
-      ) : null}
-
-      <details open className="filter-details">
-        <summary className="filter-summary">筛选条件</summary>
-      <div className="row row--wrap" style={{ gap: 8 }}>
-        <div className="search grow" style={{ minWidth: 220 }}>
-          <Search size={16} className="search__icon" />
-          <input className="input" placeholder="搜索频道 / 源 ID / 地址" value={search} onChange={(event) => setSearch(event.target.value)} />
+        <div className="probe-filter-row">
+          <div className="search grow" style={{ minWidth: 220 }}>
+            <Search size={16} className="search__icon" />
+            <input className="input" placeholder="搜索频道 / 源 ID / 地址" value={search} onChange={(event) => setSearch(event.target.value)} />
+          </div>
+          <Segmented
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: 'all', label: '全部' },
+              { value: 'alive', label: '可用' },
+              { value: 'suspect', label: '待观察' },
+              { value: 'dead', label: '失效' },
+            ]}
+          />
+          <select className="input" style={{ maxWidth: 220 }} value={sourceId} onChange={(event) => setSourceId(event.target.value)}>
+            <option value="">全部采集站</option>
+            {(sources.data?.items ?? []).map((source) => (
+              <option key={source.id} value={source.id}>{source.name}</option>
+            ))}
+          </select>
+          {sourceId ? (
+            <Button loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'collect', force: true, sourceId })}>
+              检测此源
+            </Button>
+          ) : null}
         </div>
-        <Segmented
-          value={status}
-          onChange={setStatus}
-          options={[
-            { value: 'all', label: '全部' },
-            { value: 'alive', label: '可用' },
-            { value: 'suspect', label: '待观察' },
-            { value: 'dead', label: '失效' },
-          ]}
-        />
-        <select className="input" style={{ maxWidth: 220 }} value={sourceId} onChange={(event) => setSourceId(event.target.value)}>
-          <option value="">全部采集站</option>
-          {(sources.data?.items ?? []).map((source) => (
-            <option key={source.id} value={source.id}>{source.name}</option>
-          ))}
-        </select>
-        {sourceId ? (
-          <Button
-            loading={dispatch.isPending}
-            onClick={() => dispatch.mutate({ command: 'collect', force: true, sourceId })}
-          >
-            检测此源
-          </Button>
+        {resolutions.length ? (
+          <div className="probe-resolutions">
+            <span className="probe-resolutions__label">分辨率</span>
+            <div className="row row--wrap" style={{ gap: 5 }}>
+              {resolutions.slice(0, 6).map(([label, count]) => (
+                <button
+                  key={label}
+                  className={clsx('chip', resolution === label && 'chip--active')}
+                  onClick={() => setResolution(resolution === label ? '' : label)}
+                >
+                  {label} <span className="probe-resolutions__count">{count}</span>
+                </button>
+              ))}
+              {resolution ? <Button size="sm" variant="ghost" onClick={() => setResolution('')}>清除</Button> : null}
+            </div>
+          </div>
         ) : null}
-      </div>
-      </details>
+      </Card>
 
-      <div className="row row--between row--wrap">
+      <div className="row row--between row--wrap probe-result-bar">
         <span className="caption">共 {totalItems} 条检测结果</span>
         <label className="row" style={{ gap: 6 }}>
           <span className="caption">每页</span>

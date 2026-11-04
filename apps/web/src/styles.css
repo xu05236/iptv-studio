@@ -1478,6 +1478,64 @@ button {
   min-width: 1080px;
 }
 
+.probe-filters {
+  padding: 16px;
+}
+
+.probe-filters__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.probe-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.probe-resolutions {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--sep);
+}
+
+.probe-resolutions__label {
+  padding-top: 5px;
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--label-3);
+}
+
+.probe-resolutions__count {
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.probe-result-bar {
+  padding: 2px 4px;
+}
+
+@media (max-width: 760px) {
+  .probe-filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .probe-filter-row .search,
+  .probe-filter-row > .input,
+  .probe-filter-row > .segmented {
+    width: 100%;
+    max-width: none;
+  }
+}
+
 .page--admin .probe-table thead th {
   height: 42px;
   padding: 0 12px;
