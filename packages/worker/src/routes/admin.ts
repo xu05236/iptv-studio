@@ -483,7 +483,7 @@ adminRoutes.put('/settings', async (c) => {
     'autoCollectEnabled', 'autoCollectTimes', 'autoLivenessEnabled', 'autoLivenessTimes',
     'autoProbeEnabled', 'probeBatchSize', 'autoProbeIntervalHours',
     'probePhaseOrder', 'probePausedPhases',
-    'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishTimes', 'autoPublishIntervalHours',
+    'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishTimes', 'autoPublishIntervalHours', 'autoPublishAfterProbeEnabled',
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback',
   ];
   const clean: Partial<AppSettings> = {};

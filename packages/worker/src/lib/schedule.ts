@@ -209,7 +209,7 @@ async function publishIsCurrent(env: Env): Promise<boolean> {
  * probes cannot exhaust the KV write budget.
  */
 async function runAutoPublishAfterProbe(env: Env, settings: AppSettings, now: number): Promise<boolean> {
-  if (!settings.autoPublishEnabled) return false;
+  if (!settings.autoPublishAfterProbeEnabled) return false;
   const [index, pool, last, tasks] = await Promise.all([
     getJson<{ generatedAt?: string }>(env, 'state/index.json'),
     getJson<{ generatedAt?: string }>(env, 'state/pool-stats.json'),

@@ -315,6 +315,8 @@ export interface AppSettings {
   autoPublishTimes: string;
   /** Minimum hours between automatic publish-after-probe runs. */
   autoPublishIntervalHours: number;
+  /** Publish automatically after a probe changes the pool. */
+  autoPublishAfterProbeEnabled: boolean;
   epgUrls: string[];
   regionSuffix: boolean;
   notifyTelegram: boolean;
@@ -370,6 +372,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoPublishEnabled: true,
   autoPublishTimes: '08:30',
   autoPublishIntervalHours: 6,
+  autoPublishAfterProbeEnabled: false,
   epgUrls: DEFAULT_EPG_URLS,
   regionSuffix: true,
   notifyTelegram: false,
