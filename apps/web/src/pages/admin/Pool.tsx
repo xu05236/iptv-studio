@@ -683,9 +683,11 @@ export function Pool() {
 
       <Sheet open={tombstonesOpen} onClose={() => setTombstonesOpen(false)} title="已墓碑线路" subtitle={`${tombstones.data?.items.length ?? 0} 条永久不再导入`}>
         <div className="stack">
+          <div className="sheet-section">墓碑记录</div>
           {tombstones.data?.items.length ? (
             tombstones.data.items.map((item) => (
-              <div key={item.url} className="list__row" style={{ alignItems: 'center', gap: 8 }}>
+              <div key={item.url} className="tombstone-item">
+                <span className="tombstone-item__icon"><Ban size={15} /></span>
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="truncate">{item.url}</div>
                   <div className="caption">{item.channel_id ?? '未知频道'} · {item.reason || '无原因'} · {item.created_at}</div>
@@ -696,7 +698,7 @@ export function Pool() {
               </div>
             ))
           ) : (
-            <div className="caption">还没有墓碑。</div>
+            <div className="task-empty">还没有墓碑记录</div>
           )}
         </div>
       </Sheet>

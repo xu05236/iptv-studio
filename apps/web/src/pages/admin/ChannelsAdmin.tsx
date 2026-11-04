@@ -426,9 +426,11 @@ export function ChannelsAdmin() {
         footer={<Button block variant="primary" loading={update.isPending} onClick={() => update.mutate()}>保存</Button>}
       >
         <div className="stack">
+          <div className="sheet-section">基础信息</div>
           <Field label="显示名称"><input className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field>
           <Field label="分组"><input className="input" value={form.group} onChange={(event) => setForm({ ...form, group: event.target.value })} /></Field>
           <div className="caption">分组决定国家归属：央视/卫视/港澳台/地方/国内其他归入中国；新闻/影视/付费/4K 等内容分组也归中国；其他分组名会单独成为一个国家或自定义分类。保存后下一轮发布进入对应分组。</div>
+          <div className="sheet-section">EPG 与台标</div>
           <Field label="TVG ID（EPG 匹配用）"><input className="input" value={form.tvgId} onChange={(event) => setForm({ ...form, tvgId: event.target.value })} /></Field>
           <Field label="台标 URL"><input className="input" value={form.logo} onChange={(event) => setForm({ ...form, logo: event.target.value })} /></Field>
           <div className="caption">别名用于把不同写法归并到同一频道，可在列表页的 Tag 图标中维护。</div>
@@ -490,6 +492,7 @@ export function ChannelsAdmin() {
 
       <Sheet open={Boolean(aliasChannel)} onClose={() => setAliasChannel(null)} title="频道别名" subtitle={aliasChannel?.name}>
         <div className="stack">
+          <div className="sheet-section">新增别名</div>
           <div className="row">
             <input className="input grow" placeholder="例如：CCTV1 / 中央一台" value={aliasInput} onChange={(event) => setAliasInput(event.target.value)} />
             <Button onClick={() => void addAlias()}>添加</Button>

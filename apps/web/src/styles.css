@@ -2741,11 +2741,12 @@ button {
 
 .sheet {
   width: 100%;
-  max-width: 640px;
+  max-width: 720px;
   max-height: 92dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--sep) 84%, transparent);
   border-radius: var(--radius-l) var(--radius-l) 0 0;
   box-shadow: var(--shadow-lg);
   animation: slide-up 0.3s var(--ease);
@@ -2779,23 +2780,104 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 20px 12px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--sep);
+  background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
   flex: none;
 }
 
+.sheet__header .title-2 {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.sheet__header .btn--icon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  background: var(--fill-2);
+}
+
 .sheet__body {
-  padding: 0 20px 20px;
+  padding: 18px 22px 24px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
+.sheet__body > .stack {
+  gap: 14px;
+}
+
+.sheet__body .field {
+  gap: 5px;
+}
+
+.sheet__body .field__label {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sheet__body .input,
+.sheet__body .textarea,
+.sheet__body select {
+  font-size: 13.5px;
+}
+
+.sheet__body > .stack > .title-3,
+.sheet__body .sheet-section {
+  margin-top: 4px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--sep);
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--label-2);
+}
+
 .sheet__footer {
   display: flex;
-  gap: 10px;
-  padding: 12px 20px calc(16px + var(--safe-b));
+  gap: 8px;
+  padding: 13px 22px calc(16px + var(--safe-b));
   border-top: 0.5px solid var(--sep);
-  background: var(--bg-elev);
+  background: color-mix(in srgb, var(--bg-elev) 96%, transparent);
   flex: none;
+}
+
+.sheet__footer > .btn {
+  flex: 1;
+}
+
+.sheet__footer > .row {
+  flex: 1;
+}
+
+.sheet__body .code {
+  margin: 0;
+  max-height: 60dvh;
+  overflow: auto;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.tombstone-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--sep) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 72%, var(--fill-2));
+}
+
+.tombstone-item__icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  color: var(--red);
 }
 
 @keyframes fade {

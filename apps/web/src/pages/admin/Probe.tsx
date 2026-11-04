@@ -377,11 +377,13 @@ export function Probe() {
         footer={<Button block variant="primary" loading={probe.isPending} onClick={() => probe.mutate()}>开始探测</Button>}
       >
         <div className="stack">
+          <div className="sheet-section">线路信息</div>
           <Field label="播放地址"><input className="input" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="http://example.com/live.m3u8" /></Field>
           <Field label="User-Agent（可选）"><input className="input" value={ua} onChange={(event) => setUa(event.target.value)} /></Field>
           <Field label="Referer（可选）"><input className="input" value={referer} onChange={(event) => setReferer(event.target.value)} /></Field>
           {result ? (
             <div className="stack stack--tight">
+              <div className="sheet-section">探测结果</div>
               <div className="row row--wrap">
                 <Badge tone={result.ok ? 'green' : 'red'}>{result.ok ? '可播放' : '失败'}</Badge>
                 <Badge>{result.protocol.toUpperCase()}</Badge>
@@ -419,6 +421,7 @@ export function Probe() {
         }
       >
         <div className="stack">
+          <div className="sheet-section">测活结果</div>
           <div className="caption">勾选要进入全量测速的线路；失败或无法测活的不默认勾选。</div>
           {livenessResults.map((item) => {
             const row = pagedItems.find((entry) => entry.key === item.key);

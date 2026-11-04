@@ -241,6 +241,7 @@ export function Rules() {
         footer={<Button block variant="primary" loading={save.isPending} disabled={!form.name.trim()} onClick={() => save.mutate()}>保存规则</Button>}
       >
         <div className="stack">
+          <div className="sheet-section">基础信息</div>
           <div className="row">
             <div className="grow"><Field label="规则名称"><input className="input" value={form.name} onChange={(event) => set('name', event.target.value)} /></Field></div>
             <div className="grow"><Field label="优先级" hint="数字越大越先执行"><input className="input" inputMode="numeric" value={form.priority} onChange={(event) => set('priority', Number(event.target.value))} /></Field></div>
@@ -249,7 +250,7 @@ export function Rules() {
             <div className="list__row"><span className="grow">启用规则</span><Switch checked={form.enabled} onChange={(value) => set('enabled', value)} /></div>
           </div>
 
-          <div className="title-3" style={{ fontSize: 14 }}>匹配条件</div>
+          <div className="sheet-section">匹配条件</div>
           <div className="row">
             <div className="grow"><Field label="分组" hint="逗号分隔，例如 央视,卫视"><input className="input" value={form.groups} onChange={(event) => set('groups', event.target.value)} /></Field></div>
             <div className="grow"><Field label="频道名包含" hint="支持正则表达式"><input className="input" value={form.namePattern} onChange={(event) => set('namePattern', event.target.value)} /></Field></div>
@@ -265,7 +266,7 @@ export function Rules() {
           <Field label="采集站 ID" hint="逗号分隔，留空表示所有源"><input className="input" value={form.sourceIds} onChange={(event) => set('sourceIds', event.target.value)} /></Field>
           <Field label="标签" hint="逗号分隔"><input className="input" value={form.tags} onChange={(event) => set('tags', event.target.value)} /></Field>
 
-          <div className="title-3" style={{ fontSize: 14 }}>执行动作</div>
+          <div className="sheet-section">执行动作</div>
           <div className="list">
             <div className="list__row"><span className="grow">排除匹配的线路</span><Switch checked={form.exclude} onChange={(value) => set('exclude', value)} /></div>
           </div>

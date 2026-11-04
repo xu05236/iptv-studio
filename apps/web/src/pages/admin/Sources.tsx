@@ -465,6 +465,7 @@ export function Sources() {
               { value: 'file', label: '上传文件' },
             ]}
           />
+          <div className="sheet-section">基础信息</div>
           <Field label="列表格式" hint="自动识别失败时可手动指定，尤其是 M3U / TXT 内容不规范时">
             <select className="input" value={kind} onChange={(event) => setKind(event.target.value)}>
               <option value="auto">自动识别</option>
@@ -516,7 +517,9 @@ export function Sources() {
             <div className="grow"><Field label="地区（可选）"><input className="input" value={region} onChange={(event) => setRegion(event.target.value)} placeholder="江苏" /></Field></div>
             <div className="grow"><Field label="运营商（可选）"><input className="input" value={operator} onChange={(event) => setOperator(event.target.value)} placeholder="电信" /></Field></div>
           </div>
+          <div className="sheet-section">线路过滤</div>
           <FilterFields form={filterForm} onChange={setFilterForm} />
+          <div className="sheet-section">抓取策略</div>
           <Field label="更新间隔（小时）" hint="未到间隔时跳过抓取，直接复用上一轮线路；0 表示每次都抓">
             <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="24" />
           </Field>
@@ -546,7 +549,9 @@ export function Sources() {
       >
         <div className="stack">
           <p className="caption">过滤在采集器解析后生效，不会删除已入库频道；清空后保存即恢复全量。</p>
+          <div className="sheet-section">过滤规则</div>
           <FilterFields form={filterForm} onChange={setFilterForm} />
+          <div className="sheet-section">更新策略</div>
           <Field label="更新间隔（小时）" hint="未到间隔时跳过抓取，直接复用上一轮线路；0 表示每次都抓">
             <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="24" />
           </Field>

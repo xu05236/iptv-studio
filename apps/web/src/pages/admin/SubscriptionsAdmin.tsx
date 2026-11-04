@@ -290,6 +290,7 @@ export function SubscriptionsAdmin() {
         footer={<Button block variant="primary" loading={save.isPending} onClick={() => save.mutate()}>{editing ? '保存' : '创建'}</Button>}
       >
         <div className="stack">
+          <div className="sheet-section">基础信息</div>
           <Field label="名称"><input className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field>
           <Field label="包含分组" hint="留空表示全部；多个分组用逗号分隔，例如：央视, 卫视">
             <input className="input" value={form.groups} onChange={(event) => setForm({ ...form, groups: event.target.value })} placeholder="央视, 卫视" />
@@ -297,6 +298,7 @@ export function SubscriptionsAdmin() {
           <Field label="排除分组">
             <input className="input" value={form.excludeGroups} onChange={(event) => setForm({ ...form, excludeGroups: event.target.value })} placeholder="付费, 地方" />
           </Field>
+          <div className="sheet-section">导出范围</div>
           <Field label="线路池模式" hint="精品池只导出精品线路；精品 + 备用在精品不足时用备用线路补位">
             <select className="select" value={form.poolMode} onChange={(event) => setForm({ ...form, poolMode: event.target.value })}>
               <option value="premium">精品池</option>
@@ -338,6 +340,7 @@ export function SubscriptionsAdmin() {
               {!filteredChannels.length ? <div className="caption" style={{ padding: 12 }}>没有匹配的频道</div> : null}
             </div>
           ) : null}
+          <div className="sheet-section">画质与数量</div>
           <div className="row">
             <div className="grow">
               <Field label="最低分辨率">
@@ -366,6 +369,7 @@ export function SubscriptionsAdmin() {
               </Field>
             </div>
           </div>
+          <div className="sheet-section">输出选项</div>
           <div className="list">
             <div className="list__row"><span className="grow">线路名带地区后缀</span><Switch checked={form.showRegionSuffix} onChange={(value) => setForm({ ...form, showRegionSuffix: value })} /></div>
             <div className="list__row"><span className="grow">M3U 头部写入 EPG 地址</span><Switch checked={form.includeEpg} onChange={(value) => setForm({ ...form, includeEpg: value })} /></div>
