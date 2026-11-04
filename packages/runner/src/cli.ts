@@ -1370,7 +1370,7 @@ async function main(): Promise<void> {
       await reportTaskProgress(api, 1, 1, `EPG 刷新完成 · ${nextIds.size} 频道 · ${epg.programmes} 节目 · 新增 ${added} · 删除 ${removed}`);
       await finishRun(api, {
         id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
-        sources: remote.sources.length, channels: remote.channels.length, lines: 0, alive: 0, dead: 0,
+        sources: remote.sources.length, channels: nextIds.size, lines: 0, alive: 0, dead: 0,
         probed: 0, bytes, durationMs: Date.now() - startedMs, warnings: [],
       });
     } catch (error) {
