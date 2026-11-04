@@ -31,7 +31,7 @@ import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask } from '../lib/tasks.js';
 import { registerTelegramWebhook } from '../lib/telegram.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
-import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, parseCollectTimes } from '../lib/schedule.js';
+import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, nextScheduledAt, parseCollectTimes } from '../lib/schedule.js';
 import { sourceMetaMap } from '../lib/source.js';
 
 export const adminRoutes = new Hono<AppEnv>();
@@ -587,6 +587,7 @@ adminRoutes.get('/tasks', async (c) => {
     };
   });
   const nextPublish = nextAutoPublishAt(settings);
+  const nextEpg = nextScheduledAt(parseCollectTimes(settings.epgRefreshTimes), Date.now());
   const scheduledAt = new Date().toISOString();
   const detailedTasks = taskItems.map((task) => {
     const sourceId = String(task.payload?.source_id ?? '');
@@ -619,7 +620,7 @@ adminRoutes.get('/tasks', async (c) => {
     scheduledItems.push({ id: 'scheduled-probe', type: 'probe-batch', label: '分批探测 · 自动', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: probeState?.nextRunAt ?? '' }, progress: { done: 0, total: batchSize, unit: 'lines' }, createdAt: scheduledAt });
   }
   if (settings.epgRefreshEnabled) {
-    scheduledItems.push({ id: 'scheduled-epg', type: 'epg', label: 'EPG 节目单刷新', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: epgState?.nextRunAt ?? '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
+    scheduledItems.push({ id: 'scheduled-epg', type: 'epg', label: 'EPG 节目单刷新', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: nextEpg ? new Date(nextEpg).toISOString() : '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
   }
   return ok({
     batchSize,
@@ -651,7 +652,7 @@ adminRoutes.get('/tasks', async (c) => {
       epg: {
         enabled: settings.epgRefreshEnabled,
         times: settings.epgRefreshTimes,
-        nextAt: epgState?.nextRunAt ?? null,
+        nextAt: nextEpg ? new Date(nextEpg).toISOString() : null,
         lastRunAt: epgState?.lastRunAt ?? null,
         result: epgState?.result ?? null,
       },
