@@ -246,6 +246,11 @@ export function Sources() {
     return [...base].sort((a, b) => favorite(b) - favorite(a) || added(b) - added(a) || (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
   }, [data, healthSort, health.data]);
   const sites = useMemo(() => [...new Set(items.map(sourceSite))], [items]);
+  const siteCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const source of items) counts.set(sourceSite(source), (counts.get(sourceSite(source)) ?? 0) + 1);
+    return counts;
+  }, [items]);
   const healthSummary = useMemo(() => {
     if (!health.data?.items.length) return null;
     let alive = 0;
@@ -279,19 +284,27 @@ export function Sources() {
 
       {sites.length ? (
         <div className="source-toolbar">
-          <div className="grow">
-            <div className="caption">当前采集站</div>
-            <div className="row row--wrap" style={{ gap: 6, marginTop: 5 }}>
-              {sites.map((site) => <Badge key={site} tone="blue">{site}</Badge>)}
+          <div className="source-toolbar__summary">
+            <span className="source-toolbar__icon"><RadioTower size={17} /></span>
+            <div>
+              <div className="source-toolbar__title">当前采集站</div>
+              <div className="caption">{sites.length} 个站点 · {items.length} 个源 · {items.filter((source) => source.enabled).length} 个启用</div>
             </div>
           </div>
-          <div className="row" style={{ gap: 4 }}>
-            <Button size="sm" variant={view === 'grid' ? 'primary' : 'default'} onClick={() => setView('grid')}><LayoutGrid size={14} /> 网格</Button>
-            <Button size="sm" variant={view === 'list' ? 'primary' : 'default'} onClick={() => setView('list')}><List size={14} /> 列表</Button>
+          <div className="source-toolbar__sites">
+            {sites.map((site) => (
+              <Badge key={site} tone="blue">{site} <span className="source-toolbar__count">{siteCounts.get(site) ?? 0}</span></Badge>
+            ))}
           </div>
-          <Button size="sm" variant={healthSort ? 'primary' : 'default'} onClick={() => setHealthSort((value) => !value)}>
-            按 7 天健康排序
-          </Button>
+          <div className="source-toolbar__actions">
+            <div className="source-view-toggle">
+              <Button size="sm" variant={view === 'grid' ? 'primary' : 'ghost'} onClick={() => setView('grid')}><LayoutGrid size={14} /> 网格</Button>
+              <Button size="sm" variant={view === 'list' ? 'primary' : 'ghost'} onClick={() => setView('list')}><List size={14} /> 列表</Button>
+            </div>
+            <Button size="sm" variant={healthSort ? 'primary' : 'default'} onClick={() => setHealthSort((value) => !value)}>
+              按 7 天健康排序
+            </Button>
+          </div>
         </div>
       ) : null}
 
