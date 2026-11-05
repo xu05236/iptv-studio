@@ -140,6 +140,15 @@ export function SubscriptionsAdmin() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] }),
   });
 
+  const restoreAllLines = useMutation({
+    mutationFn: (id: string) => api.patch(`/api/admin/subscriptions/${id}`, { maxLinesPerChannel: 0 }),
+    onSuccess: () => {
+      show('已恢复每频道全部线路，请重新导入播放器');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   async function loadPreview(item: SubscriptionItem): Promise<void> {
     try {
       const result = await api.get<{ preview: string; format: string }>(`/api/admin/subscriptions/${item.id}/preview?format=${item.format}`);
@@ -255,7 +264,12 @@ export function SubscriptionsAdmin() {
             </div>
             {item.max_lines_per_channel === 0 ? (
               <div className="subscription-warning">当前每频道输出全部线路。相同频道名下播放器会作为多线路频道处理，可在播放器内切换线路。</div>
-            ) : null}
+            ) : (
+              <div className="subscription-warning">
+                <span>当前每频道最多只导出 {item.max_lines_per_channel} 条线路，实际导出会少于可用线路。</span>
+                <Button size="sm" variant="ghost" loading={restoreAllLines.isPending} onClick={() => restoreAllLines.mutate(item.id)}>恢复全部线路</Button>
+              </div>
+            )}
 
             <div className="subscription-links">
               <div className="caption">主播放列表</div>
