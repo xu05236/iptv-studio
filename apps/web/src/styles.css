@@ -4987,3 +4987,23 @@ button {
   font-size: 11.5px;
   line-height: 1.5;
 }
+
+.subscription-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--label-2);
+}
+
+.subscription-filters span {
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: var(--fill-2);
+}
+
+.subscription-meta {
+  font-size: 10.5px;
+  color: var(--label-3);
+}

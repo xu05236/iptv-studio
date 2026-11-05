@@ -4,6 +4,7 @@ import { Link2, Plus, RefreshCw, SlidersHorizontal, Trash2, Wand2, X } from 'luc
 import { api } from '../../lib/api';
 import type { AdminChannel, SubscriptionItem } from '../../lib/types';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
+import { formatDateTime } from '../../lib/format';
 import { Badge, Button, Card, CopyField, EmptyState, Field, Sheet, Switch, useToast } from '../../components/ui';
 
 const FORMATS = ['m3u', 'txt', 'json', 'diyp'];
@@ -258,6 +259,13 @@ export function SubscriptionsAdmin() {
               </div>
             </div>
 
+            <div className="subscription-filters">
+              <span>分组：{item.groups.length ? item.groups.join(' / ') : '全部'}</span>
+              {item.excludeGroups.length ? <span>排除：{item.excludeGroups.join(' / ')}</span> : null}
+              {item.channelIds.length ? <span>指定频道：{item.channelIds.length} 个</span> : null}
+              {item.protocols.length ? <span>协议：{item.protocols.join(' / ')}</span> : null}
+            </div>
+
             <div className="subscription-stats">
               <div><strong>{item.matchedChannels ?? 0}</strong><span>匹配频道</span></div>
               <div><strong>{displayLineLimit(item.max_lines_per_channel)}</strong><span>每频道线路</span></div>
@@ -271,6 +279,9 @@ export function SubscriptionsAdmin() {
                 <Button size="sm" variant="ghost" loading={restoreAllLines.isPending} onClick={() => restoreAllLines.mutate(item.id)}>恢复全部线路</Button>
               </div>
             )}
+            <div className="subscription-meta">
+              更新于 {item.updated_at ? formatDateTime(item.updated_at) : '—'} · 令牌尾号 {item.token.slice(-6)}
+            </div>
 
             <div className="subscription-links">
               <div className="caption">主播放列表</div>

@@ -133,6 +133,7 @@ export interface SubscriptionItem {
   format: string;
   pool_mode?: string;
   matchedChannels?: number;
+  updated_at?: string;
   links: Record<string, string>;
 }
 
