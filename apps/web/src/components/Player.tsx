@@ -56,7 +56,7 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
       setError(message);
       hlsRef.current?.destroy();
       hlsRef.current = null;
-    }, 12_000);
+    }, 20_000);
   }, [clearWatchdog]);
 
   const requestDirect = useCallback(async () => {
@@ -87,6 +87,11 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
     /m3u8|\/hls\//i.test(effectiveUrl ?? '') ||
     mode === 'relay' ||
     (/^https?:/i.test(effectiveUrl ?? '') && !looksLikeFile);
+  // Allow a direct attempt whenever the admin enabled it, even if the relay
+  // probe has not succeeded yet. Conversely, always expose relay for supported
+  // protocols so a failed probe is not a dead end.
+  const canDirect = Boolean(url) ? !mixed : directAvailable && Boolean(lineKey) && directKind !== 'http' && directKind !== 'unsupported';
+  const canRelay = Boolean(lineKey);
 
   const play = useCallback(() => {
     const video = videoRef.current;
@@ -127,6 +132,14 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
         if (mode === 'relay' && (status === 403 || status === 502) && directAvailable && directKind === 'https') {
           setError(null);
           void requestDirect();
+          return;
+        }
+        // Direct playback often fails because of CORS / mixed content; try the
+        // Worker relay automatically before showing an error.
+        if (mode === 'direct' && lineKey && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          setError(null);
+          setMode('relay');
+          setStarted(true);
           return;
         }
         setError(
@@ -218,15 +231,30 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
               <span style={{ maxWidth: 340 }}>可以经由 Worker 中继播放；中继会消耗少量流量，且受源站限速影响。</span>
             </>
           ) : (
-            <span style={{ fontSize: 12, opacity: 0.8 }}>点下方按钮开始试播</span>
+            <>
+              <strong>选择播放方式</strong>
+              <span style={{ fontSize: 12, opacity: 0.8 }}>直连使用你的网络，中继经过 Cloudflare；哪条通用哪条。</span>
+            </>
           )}
           <div className="row" style={{ gap: 8 }}>
-            {directAvailable && lineKey && !url && !mixed && directKind !== 'http' ? (
-              <Button variant="glass" size="lg" loading={loading} onClick={() => void requestDirect()}>
+            {canDirect ? (
+              <Button
+                variant="glass"
+                size="lg"
+                loading={loading}
+                onClick={() => {
+                  if (url) {
+                    setMode('direct');
+                    setStarted(true);
+                  } else {
+                    void requestDirect();
+                  }
+                }}
+              >
                 <Play size={18} /> 直连试播
               </Button>
             ) : null}
-            {relayAvailable && lineKey && (mixed || mode === 'direct') ? (
+            {canRelay ? (
               <Button
                 variant="glass"
                 size="lg"
@@ -238,20 +266,12 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
                 <Play size={18} /> 中继试播
               </Button>
             ) : null}
-            {!mixed && url ? (
-              <Button
-                variant="glass"
-                size="lg"
-                onClick={() => {
-                  setMode('direct');
-                  setStarted(true);
-                }}
-              >                <Play size={18} /> 在线试播
-              </Button>
-            ) : null}
           </div>
-          {!relayAvailable && mixed ? <span style={{ fontSize: 12, opacity: 0.8 }}>管理员可在「设置 → 高级」开启中继</span> : null}
-          {!url && !relayAvailable ? <span style={{ fontSize: 12, opacity: 0.8 }}>真实地址已隐藏；请在播放器中使用订阅地址</span> : null}
+          {!canDirect && !canRelay ? (
+            <span style={{ fontSize: 12, opacity: 0.8 }}>当前线路没有可用的试播入口，请使用订阅地址在 VLC / 盒子播放。</span>
+          ) : null}
+          {!canDirect ? <span style={{ fontSize: 12, opacity: 0.8 }}>直连不可用：可能被管理员关闭、线路为 HTTP 或需要中继。</span> : null}
+          {!canRelay && !url ? <span style={{ fontSize: 12, opacity: 0.8 }}>真实地址已隐藏，请在播放器中使用订阅地址。</span> : null}
         </div>
       ) : null}
       {started && loading ? (
@@ -264,7 +284,7 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
           <TriangleAlert size={22} />
           <span style={{ maxWidth: 360 }}>{error}</span>
           <div className="row" style={{ gap: 8 }}>
-            {relayAvailable && lineKey && mode === 'direct' ? (
+            {canRelay && mode === 'direct' ? (
               <Button
                 variant="glass"
                 size="sm"
@@ -274,6 +294,22 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
                 }}
               >
                 改用中继
+              </Button>
+            ) : null}
+            {canDirect && mode === 'relay' ? (
+              <Button
+                variant="glass"
+                size="sm"
+                onClick={() => {
+                  if (url) {
+                    setMode('direct');
+                    setStarted(true);
+                  } else {
+                    void requestDirect();
+                  }
+                }}
+              >
+                改用直连
               </Button>
             ) : null}
             <Button variant="glass" size="sm" onClick={() => setStarted(false)}>
