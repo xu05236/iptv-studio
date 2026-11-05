@@ -86,8 +86,35 @@ describe('subscription rendering', () => {
     expect(one).toContain('run-1');
   });
 
-  it('drops tombstoned URLs from pool rendering', () => {
-    const poolLine = line('http://a/1.m3u8', 90);
+  it('orders premium before backup and labels source, resolution and pool', () => {
+    const premium = line('http://premium/1.m3u8', 40);
+    const backup = line('http://backup/1.m3u8', 95);
+    const snapshot: PoolSnapshot = {
+      generatedAt: '2026-10-30T00:00:00Z',
+      channels: {
+        cctv1: {
+          channel: { id: 'cctv1', name: 'CCTV-1 综合', group: '央视', tvgId: 'CCTV1' },
+          premium: [premium],
+          backup: [backup],
+          candidate: [],
+        },
+      },
+    };
+    const config: SubscriptionConfig = {
+      id: 'sub-test', name: 'test', token: 'token', enabled: true,
+      groups: [], excludeGroups: [], channelIds: [], minResolution: 'any', minSpeedKbps: 0,
+      protocols: [], maxLinesPerChannel: 2, showRegionSuffix: false, includeEpg: false,
+      format: 'm3u', poolMode: 'premium_backup',
+    };
+    const body = buildFromPool(snapshot, [], config, { sourceNames: new Map([['s1', '测试源']]) }).body;
+    expect(body.indexOf('http://premium/1.m3u8')).toBeLessThan(body.indexOf('http://backup/1.m3u8'));
+    expect(body).toContain('1080');
+    expect(body).toContain('测试源');
+    expect(body).toContain('精品');
+    expect(body).toContain('备用');
+  });
+
+  it('drops tombstoned URLs from pool rendering', () => {    const poolLine = line('http://a/1.m3u8', 90);
     const snapshot: PoolSnapshot = {
       generatedAt: '2026-10-30T00:00:00Z',
       channels: {

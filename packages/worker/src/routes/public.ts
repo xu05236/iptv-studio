@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from '../env.js';
 import { fail, hashIp, intParam, ok, randomId, readJson } from '../lib/http.js';
-import { loadChannelShard, loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
+import { loadChannelShard, loadCatalog, loadGuide, loadIndex, loadPoolSnapshot } from '../lib/catalog.js';
 import { getJson } from '../lib/store.js';
 import { countOpenFeedback, getChannel, insertFeedback, listRuns, listSources, loadSettings } from '../db.js';
 import { loadTasks } from '../lib/tasks.js';
@@ -278,14 +278,21 @@ publicRoutes.get('/channels/:id', async (c) => {
   if (shard) {
     // Never expose the real line URL or request headers to the public browser:
     // preview goes through /relay/line/<key>, admin APIs keep the full record.
-    const sources = await listSources(c.env);
+    const [sources, pool] = await Promise.all([listSources(c.env), loadPoolSnapshot(c.env)]);
     const meta = sourceMetaMap(sources);
+    const poolByKey = new Map<string, string>();
+    for (const entry of Object.values(pool?.channels ?? {})) {
+      for (const line of entry.premium) poolByKey.set(line.key, 'premium');
+      for (const line of entry.backup) poolByKey.set(line.key, 'backup');
+      for (const line of entry.candidate) poolByKey.set(line.key, 'candidate');
+    }
     const safeLines = shard.lines.map(({ url, headers: _headers, ...rest }) => ({
       ...rest,
       speedKbps: Math.min(rest.speedKbps ?? 0, 50_000),
       resolution: rest.resolution ?? inferResolution(`${rest.name} ${url}`),
       sourceName: meta.get(rest.sourceId)?.name ?? rest.sourceId,
       sourceSite: meta.get(rest.sourceId)?.site ?? '未知来源',
+      pool: poolByKey.get(rest.key) ?? null,
     }));
     return ok(
       {

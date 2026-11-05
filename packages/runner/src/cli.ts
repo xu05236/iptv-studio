@@ -805,6 +805,7 @@ async function runBatchProbe(): Promise<void> {
     const lines = previous?.lines ?? [];
     if (!lines.length) throw new Error('没有线路状态，请先运行 fetch');
     const channelIds = new Set(remote.channels.map((channel) => channel.id));
+    const poolChannels = new Set(lines.map((line) => line.channelId)).size;
     const now = Date.now();
     const forcedPhase = (process.env.PROBE_PHASE ?? '').trim() as 'pending' | 'quarantine' | 'rejected' | '';
     const paused = new Set(parsePhaseList(settings.probePausedPhases));
@@ -818,7 +819,7 @@ async function runBatchProbe(): Promise<void> {
       logger.info('分批探测空闲：没有待测线路');
       await writePoolStats(store, remote, lines);
   await syncSourceCounts(api, remote, lines);
-      report = { ...report, status: 'success', finishedAt: nowIso(), channels: remote.channels.length, lines: lines.length, durationMs: Date.now() - startedMs };
+      report = { ...report, status: 'success', finishedAt: nowIso(), channels: poolChannels, lines: lines.length, durationMs: Date.now() - startedMs };
       await finishRun(api, report);
       return;
     }

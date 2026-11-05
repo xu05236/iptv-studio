@@ -27,11 +27,13 @@ export interface SelectOptions {
   keepSuspect: boolean;
   /** Drop lines far below the best quality/speed in the same channel. */
   relativeFloor?: boolean;
+  /** Keep caller order (e.g. pool tier) instead of re-sorting by score. */
+  preserveOrder?: boolean;
 }
 
 /** Choose the lines that go into a playlist for one channel. */
 export function selectLines(lines: LineEntry[], options: SelectOptions): LineEntry[] {
-  const sorted = [...lines].sort(compareLines);
+  const sorted = options.preserveOrder ? [...lines] : [...lines].sort(compareLines);
   const aliveCount = sorted.filter((line) => line.status === 'alive').length;
   const eligible = sorted.filter((line) => shouldExport(line, aliveCount, options));
 

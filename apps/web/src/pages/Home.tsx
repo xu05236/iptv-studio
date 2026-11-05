@@ -130,6 +130,11 @@ export function Home() {
       {data?.lastRun ? (() => {
         const run = data.lastRun;
         const isEpg = run.task_type === 'epg';
+        const isProbe = run.task_type === 'probe-batch' || run.task_type === 'probe-lines' || run.task_type === 'liveness';
+        const channelLabel = isEpg ? 'EPG 频道' : isProbe ? '池内频道' : run.task_type === 'publish' ? '发布频道' : '抓取频道';
+        const lineLabel = isEpg ? '线路' : isProbe ? '池内线路' : '线路';
+        const aliveLabel = isProbe ? '池内可用' : '可用';
+        const probedLabel = isProbe ? '本批已测' : '已测';
         return (
           <>
             <div className="section-title">
@@ -149,12 +154,12 @@ export function Home() {
               </div>
               <div className="divider" />
               <div className="row row--between" style={{ textAlign: 'center' }}>
-                <div><div className="title-3">{formatNumber(run.channels)}</div><div className="caption">{isEpg ? 'EPG 频道' : '频道'}</div></div>
-                <div><div className="title-3">{isEpg ? formatBytes(run.bytes) : run.lines > 0 ? formatNumber(run.lines) : '—'}</div><div className="caption">{isEpg ? '文件大小' : '线路'}</div></div>
-                <div><div className="title-3">{!isEpg && run.probed > 0 ? formatNumber(run.alive) : '—'}</div><div className="caption">{isEpg ? '线路' : '可用'}</div></div>
+                <div><div className="title-3">{formatNumber(run.channels)}</div><div className="caption">{channelLabel}</div></div>
+                <div><div className="title-3">{isEpg ? formatBytes(run.bytes) : run.lines > 0 ? formatNumber(run.lines) : '—'}</div><div className="caption">{lineLabel}</div></div>
+                <div><div className="title-3">{!isEpg && run.probed > 0 ? formatNumber(run.alive) : '—'}</div><div className="caption">{isEpg ? '线路' : aliveLabel}</div></div>
                 <div>
                   <div className="title-3">{!isEpg && run.probed > 0 ? formatNumber(run.probed) : '—'}</div>
-                  <div className="caption">{!isEpg && run.probed > 0 ? '已测' : '本次未测速'}</div>
+                  <div className="caption">{!isEpg && run.probed > 0 ? probedLabel : '本次未测速'}</div>
                 </div>
               </div>
               {run.task_message ? <div className="last-run-message">{run.task_message}</div> : null}

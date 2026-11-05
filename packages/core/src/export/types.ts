@@ -1,6 +1,11 @@
 import type { RequestHeaders } from '../types.js';
 
 export interface ExportLine {
+  key?: string;
+  sourceId?: string;
+  sourceName?: string;
+  pool?: 'premium' | 'backup' | 'candidate' | 'pending' | 'quarantine' | 'rejected';
+  favorite?: boolean;
   url: string;
   name?: string;
   headers?: RequestHeaders;
@@ -44,9 +49,12 @@ export function lineDisplayName(channel: ExportChannel, line: ExportLine, option
   const base = channel.name || line.name || channel.id;
   let name = base;
   if (options.showRegionSuffix !== false) name += regionTag(line);
-  if (options.debugNames) {
-    const bits = [line.resolution, line.speedKbps ? `${Math.round(line.speedKbps)}kbps` : ''].filter(Boolean);
-    if (bits.length) name += ` [${bits.join(' ')}]`;
+  const detailsEnabled = options.debugNames !== false;
+  if (detailsEnabled) {
+    const speed = line.speedKbps ? `${(line.speedKbps / 1000).toFixed(line.speedKbps >= 10_000 ? 0 : 1)}Mbps` : '';
+    const pool = line.pool === 'premium' ? '精品' : line.pool === 'backup' ? '备用' : line.pool === 'candidate' ? '候选' : '';
+    const bits = [line.resolution, speed, line.sourceName, pool].filter(Boolean);
+    if (bits.length) name += ` [${bits.join(' · ')}]`;
   }
   return name;
 }

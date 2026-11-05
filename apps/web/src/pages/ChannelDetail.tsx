@@ -37,6 +37,10 @@ export function ChannelDetail() {
   const [shotOk, setShotOk] = useState(true);
   const [linePage, setLinePage] = useState(1);
   const [linePageSize, setLinePageSize] = useState<'10' | '20' | 'all'>('10');
+  const [lineFilter, setLineFilter] = useState<'all' | 'direct' | 'favorite'>('all');
+  const [linePool, setLinePool] = useState<'all' | 'premium' | 'backup' | 'candidate'>('all');
+  const [lineSource, setLineSource] = useState('');
+  const [lineSort, setLineSort] = useState<'default' | 'speed' | 'source' | 'pool'>('default');
 
   useEffect(() => {
     setLinePage(1);
@@ -99,7 +103,22 @@ export function ChannelDetail() {
       (b.score ?? 0) - (a.score ?? 0),
   );
   const frontLimit = query.data.features?.frontLineLimit ?? 0;
-  const paginatedLines = frontLimit > 0 ? orderedLines.slice(0, frontLimit) : orderedLines;
+  const sourceOptions = [...new Set(orderedLines.map((line) => line.sourceName ?? line.sourceId))].sort((a, b) => a.localeCompare(b));
+  const poolRank = (line: (typeof lines)[number]): number => (line.pool === 'premium' ? 0 : line.pool === 'backup' ? 1 : line.pool === 'candidate' ? 2 : 3);
+  const filteredLines = orderedLines.filter((line) => {
+    if (lineFilter === 'direct' && !(directPlayback && relayChecks.get(line.key)?.direct === 'https')) return false;
+    if (lineFilter === 'favorite' && !line.favorite) return false;
+    if (linePool !== 'all' && line.pool !== linePool) return false;
+    if (lineSource && (line.sourceName ?? line.sourceId) !== lineSource) return false;
+    return true;
+  });
+  const displayLines = [...filteredLines].sort((a, b) => {
+    if (lineSort === 'speed') return (b.speedKbps ?? 0) - (a.speedKbps ?? 0);
+    if (lineSort === 'source') return (a.sourceName ?? a.sourceId).localeCompare(b.sourceName ?? b.sourceId);
+    if (lineSort === 'pool') return poolRank(a) - poolRank(b) || (b.score ?? 0) - (a.score ?? 0);
+    return 0;
+  });
+  const paginatedLines = frontLimit > 0 ? displayLines.slice(0, frontLimit) : displayLines;
   const pageSize = linePageSize === 'all' ? paginatedLines.length || 1 : Number(linePageSize);
   const pageCount = Math.max(1, Math.ceil(paginatedLines.length / pageSize));
   const currentPage = Math.min(linePage, pageCount);
@@ -211,6 +230,41 @@ export function ChannelDetail() {
                   </select>
                 </label>
               </div>
+              <div className="line-filter-grid">
+                <label>
+                  <span className="caption">线路</span>
+                  <select className="input" value={lineFilter} onChange={(event) => { setLineFilter(event.target.value as 'all' | 'direct' | 'favorite'); setLinePage(1); }}>
+                    <option value="all">全部</option>
+                    <option value="direct">仅直连可用</option>
+                    <option value="favorite">仅收藏</option>
+                  </select>
+                </label>
+                <label>
+                  <span className="caption">线路池</span>
+                  <select className="input" value={linePool} onChange={(event) => { setLinePool(event.target.value as 'all' | 'premium' | 'backup' | 'candidate'); setLinePage(1); }}>
+                    <option value="all">全部</option>
+                    <option value="premium">精品池</option>
+                    <option value="backup">备用池</option>
+                    <option value="candidate">候选池</option>
+                  </select>
+                </label>
+                <label>
+                  <span className="caption">订阅源</span>
+                  <select className="input" value={lineSource} onChange={(event) => { setLineSource(event.target.value); setLinePage(1); }}>
+                    <option value="">全部来源</option>
+                    {sourceOptions.map((source) => <option key={source} value={source}>{source}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span className="caption">排序</span>
+                  <select className="input" value={lineSort} onChange={(event) => { setLineSort(event.target.value as 'default' | 'speed' | 'source' | 'pool'); setLinePage(1); }}>
+                    <option value="default">默认顺序</option>
+                    <option value="speed">速度优先</option>
+                    <option value="source">按订阅源</option>
+                    <option value="pool">按线路池</option>
+                  </select>
+                </label>
+              </div>
             </Card>
 
             {visibleLines.map((line, index) => {
@@ -222,6 +276,8 @@ export function ChannelDetail() {
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="row row--wrap" style={{ gap: 5 }}>
                       <Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge>
+                      {line.favorite ? <Badge tone="orange">收藏</Badge> : null}
+                      {line.pool ? <Badge tone={line.pool === 'premium' ? 'green' : line.pool === 'backup' ? 'blue' : 'default'}>{line.pool === 'premium' ? '精品池' : line.pool === 'backup' ? '备用池' : '候选池'}</Badge> : null}
                       {check ? (
                         <Badge tone={check.ok ? 'green' : 'red'}>
                           {check.ok ? '中继可播' : `中继不可用${check.status ? ` ${check.status}` : ''}`}

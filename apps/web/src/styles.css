@@ -4866,3 +4866,30 @@ button {
   color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
 }
+
+.line-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--sep);
+}
+
+.line-filter-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.line-filter-grid .input {
+  height: 34px;
+  font-size: 11.5px;
+}
+
+@media (max-width: 700px) {
+  .line-filter-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
