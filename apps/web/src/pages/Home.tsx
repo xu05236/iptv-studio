@@ -1,10 +1,31 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Activity, ArrowRight, Clock3, RadioTower, RefreshCw, Tv, Wifi } from 'lucide-react';
+import { Activity, ArrowRight, BookOpen, Clapperboard, Clock3, CreditCard, Globe, Layers, MapPin, Music, Newspaper, RadioTower, RefreshCw, Trophy, Tv, Wifi } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Overview } from '../lib/types';
 import { formatBytes, formatNumber, timeAgo } from '../lib/format';
 import { Badge, Card, EmptyState, Skeleton } from '../components/ui';
+
+function CategoryIcon({ group }: { group: string }) {
+  const map: Array<{ match: string; icon: typeof Tv; tone: string }> = [
+    { match: '央视', icon: Tv, tone: 'blue' },
+    { match: '卫视', icon: RadioTower, tone: 'teal' },
+    { match: '地方', icon: MapPin, tone: 'orange' },
+    { match: '港澳台', icon: MapPin, tone: 'purple' },
+    { match: '国际', icon: Globe, tone: 'blue' },
+    { match: '4K', icon: Tv, tone: 'purple' },
+    { match: '影视', icon: Clapperboard, tone: 'pink' },
+    { match: '体育', icon: Trophy, tone: 'orange' },
+    { match: '少儿', icon: Layers, tone: 'green' },
+    { match: '纪录', icon: BookOpen, tone: 'teal' },
+    { match: '新闻', icon: Newspaper, tone: 'blue' },
+    { match: '音乐', icon: Music, tone: 'pink' },
+    { match: '付费', icon: CreditCard, tone: 'orange' },
+  ];
+  const entry = map.find((item) => group.includes(item.match)) ?? { icon: Layers, tone: 'default' };
+  const Icon = entry.icon;
+  return <span className={`category-icon category-icon--${entry.tone}`}><Icon size={18} /></span>;
+}
 
 export function Home() {
   const { data, isLoading } = useQuery({
@@ -114,8 +135,8 @@ export function Home() {
           </div>
           <div className="grid grid--wide">
             {data.groups.slice(0, 6).map((group) => (
-              <Link key={group.group} to={`/channels?group=${encodeURIComponent(group.group)}`} className="list__row" style={{ borderRadius: 16, border: '0.5px solid var(--sep)', background: 'var(--bg-elev)' }}>
-                <div className="logo logo--fallback" style={{ fontSize: 14 }}>{group.group.slice(0, 1)}</div>
+              <Link key={group.group} to={`/channels?group=${encodeURIComponent(group.group)}`} className="category-card">
+                <CategoryIcon group={group.group} />
                 <div className="grow">
                   <div className="list__title">{group.group}</div>
                   <div className="list__sub">{group.channels} 个频道 · {group.alive} 条可用线路</div>
