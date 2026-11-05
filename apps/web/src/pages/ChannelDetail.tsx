@@ -103,6 +103,7 @@ export function ChannelDetail() {
       (b.score ?? 0) - (a.score ?? 0),
   );
   const frontLimit = query.data.features?.frontLineLimit ?? 0;
+  const directPlayback = query.data.features?.directPlayback ?? false;
   const sourceOptions = [...new Set(orderedLines.map((line) => line.sourceName ?? line.sourceId))].sort((a, b) => a.localeCompare(b));
   const poolRank = (line: (typeof lines)[number]): number => (line.pool === 'premium' ? 0 : line.pool === 'backup' ? 1 : line.pool === 'candidate' ? 2 : 3);
   const filteredLines = orderedLines.filter((line) => {
@@ -127,7 +128,6 @@ export function ChannelDetail() {
     : paginatedLines.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const checkedLines = lines.filter((line) => relayChecks.has(line.key));
   const relayBlocked = checkedLines.length > 0 && checkedLines.every((line) => !relayChecks.get(line.key)?.ok);
-  const directPlayback = query.data.features?.directPlayback ?? false;
   const bestSpeed = Math.max(0, ...alive.map((line) => line.speedKbps ?? 0));
 
   return (
