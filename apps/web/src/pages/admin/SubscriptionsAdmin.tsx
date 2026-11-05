@@ -140,6 +140,15 @@ export function SubscriptionsAdmin() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] }),
   });
 
+  const oneLine = useMutation({
+    mutationFn: (id: string) => api.patch(`/api/admin/subscriptions/${id}`, { maxLinesPerChannel: 1 }),
+    onSuccess: () => {
+      show('已改为每频道 1 条线路，请重新导入播放器');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   async function loadPreview(item: SubscriptionItem): Promise<void> {
     try {
       const result = await api.get<{ preview: string; format: string }>(`/api/admin/subscriptions/${item.id}/preview?format=${item.format}`);
@@ -254,7 +263,10 @@ export function SubscriptionsAdmin() {
               <div><strong>{item.includeEpg ? '含' : '不含'}</strong><span>EPG</span></div>
             </div>
             {item.max_lines_per_channel === 0 ? (
-              <div className="subscription-warning">当前每频道输出全部线路，播放器会显示多条同名频道。想让播放器只显示一个频道，请把每频道线路数改为 1。</div>
+              <div className="subscription-warning">
+                <span>当前每频道输出全部线路，播放器会显示多条同名频道。想让播放器只显示一个频道，请把每频道线路数改为 1。</span>
+                <Button size="sm" variant="ghost" loading={oneLine.isPending} onClick={() => oneLine.mutate(item.id)}>改为每频道 1 条</Button>
+              </div>
             ) : null}
 
             <div className="subscription-links">
