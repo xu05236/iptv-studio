@@ -28,9 +28,6 @@ export function toExportChannels(
     logo: channelLogo(channel, options.logoBaseUrl, options.logoProxyBase),
     number: channel.number,
     lines: lines.map<ExportLine>((line) => ({
-      key: line.key,
-      sourceId: line.sourceId,
-      favorite: line.favorite,
       url: line.url,
       name: line.name,
       headers: line.headers,
