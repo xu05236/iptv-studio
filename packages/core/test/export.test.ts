@@ -34,12 +34,14 @@ describe('M3U export', () => {
     expect(text).toContain('catchup="append"');
     expect(text).toContain('catchup-days="7"');
     expect(text).toContain('#EXTVLCOPT:http-user-agent=VLC/3.0');
-    expect(text).toContain('CCTV-1 综合（-江苏电信）');
+    expect(text.match(/,CCTV-1 综合/g)).toHaveLength(2);
+    expect(text).not.toContain('（-江苏电信）');
     expect(text).toContain('http://a/1.m3u8');
   });
 
-  it('can disable the region suffix', () => {
-    const text = buildM3U(channels, { showRegionSuffix: false });
+  it('keeps the same display name for every line of a channel', () => {
+    const text = buildM3U(channels, { showRegionSuffix: true });
+    expect(text.match(/,CCTV-1 综合/g)).toHaveLength(2);
     expect(text).not.toContain('（-江苏电信）');
   });
 });
@@ -50,7 +52,7 @@ describe('TXT export', () => {
     expect(text).toContain('央视,#genre#');
     expect(text).toContain('卫视,#genre#');
     expect(text.split('央视,#genre#')).toHaveLength(2);
-    expect(text).toContain('CCTV-1 综合（-江苏电信）,http://a/1.m3u8');
+    expect(text).toContain('CCTV-1 综合,http://a/1.m3u8');
   });
 });
 

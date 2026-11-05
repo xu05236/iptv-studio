@@ -49,6 +49,20 @@ describe('buildPoolSnapshot', () => {
     expect(channel.premium.every((item) => item.status === 'alive')).toBe(true);
   });
 
+  it('keeps unknown quality as candidate even when the pool is unlimited', () => {
+    const snapshot = buildPoolSnapshot({
+      lines: [
+        line({ url: 'a', key: 'a', score: 90 }),
+        line({ url: 'd', key: 'd', resolution: undefined, height: undefined, score: 95 }),
+      ],
+      channels: [{ id: 'cctv1', name: 'CCTV-1', group: '央视', tvgId: 'CCTV1' }],
+      maxLinesPerChannel: 0,
+      generatedAt: '2026-10-30T00:00:00Z',
+    });
+    expect(snapshot.channels.cctv1.premium.map((item) => item.key)).toEqual(['a']);
+    expect(snapshot.channels.cctv1.candidate.map((item) => item.key)).toEqual(['d']);
+  });
+
   it('drops lines whose channel no longer exists', () => {
     const snapshot = buildPoolSnapshot({
       lines: [line({ url: 'a', channelId: 'removed' })],

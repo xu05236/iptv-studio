@@ -43,7 +43,8 @@ export function regionTag(line: Pick<ExportLine, 'region' | 'operator'>): string
 export function lineDisplayName(channel: ExportChannel, line: ExportLine, options: PlaylistOptions): string {
   const base = channel.name || line.name || channel.id;
   let name = base;
-  if (options.showRegionSuffix !== false) name += regionTag(line);
+  // Players group streams by display name. Region/quality suffixes make one
+  // channel look like several channels, so never add them here.
   if (options.debugNames) {
     const bits = [line.resolution, line.speedKbps ? `${Math.round(line.speedKbps)}kbps` : ''].filter(Boolean);
     if (bits.length) name += ` [${bits.join(' ')}]`;

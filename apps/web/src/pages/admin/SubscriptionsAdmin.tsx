@@ -248,7 +248,7 @@ export function SubscriptionsAdmin() {
                   <Badge tone="blue">{item.format.toUpperCase()}</Badge>
                 </div>
                 <div className="row row--wrap" style={{ gap: 5, marginTop: 6 }}>
-                  {item.pool_mode === 'custom' ? <Badge>自定义线路</Badge> : item.pool_mode === 'premium_backup' ? <Badge tone="orange">精品 + 备用</Badge> : <Badge tone="green">精品池</Badge>}
+                  {item.pool_mode === 'custom' ? <Badge>自定义线路</Badge> : item.pool_mode === 'all' ? <Badge tone="blue">全部可用</Badge> : item.pool_mode === 'premium_backup' ? <Badge tone="orange">精品 + 备用</Badge> : <Badge tone="green">精品池</Badge>}
                   {item.min_resolution !== 'any' ? <Badge>≥ {item.min_resolution}</Badge> : null}
                   {item.min_speed_kbps ? <Badge>≥ {item.min_speed_kbps} kbps</Badge> : null}
                 </div>
@@ -331,8 +331,9 @@ export function SubscriptionsAdmin() {
           <div className="sheet-section">导出范围</div>
           <Field label="线路池模式" hint="精品池只导出精品线路；精品 + 备用在精品不足时用备用线路补位">
             <select className="select" value={form.poolMode} onChange={(event) => setForm({ ...form, poolMode: event.target.value })}>
-              <option value="premium">精品池</option>
+              <option value="premium">精品池（仅质量确认）</option>
               <option value="premium_backup">精品 + 备用兜底</option>
+              <option value="all">全部可用（含未确认分辨率）</option>
               {form.poolMode === 'custom' ? <option value="custom">自定义线路（来自线路池）</option> : null}
             </select>
           </Field>

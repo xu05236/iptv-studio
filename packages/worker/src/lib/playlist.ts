@@ -131,17 +131,21 @@ export function buildFromPool(
 
     const premium: LineEntry[] = [];
     const backup: LineEntry[] = [];
+    const candidate: LineEntry[] = [];
     const add = (line: LineEntry, autoPool: 'premium' | 'backup' | 'candidate'): void => {
       if (tombstoned.has(canonicalPoolUrl(line.url))) return;
       const pool = overrideMap.get(line.key) ?? autoPool;
       if (pool === 'premium') premium.push(line);
       else if (pool === 'backup') backup.push(line);
+      else if (pool === 'candidate') candidate.push(line);
     };
     for (const line of entry.premium) add(line, 'premium');
     for (const line of entry.backup) add(line, 'backup');
     for (const line of entry.candidate) add(line, 'candidate');
 
-    const candidates = config.poolMode === 'premium_backup' ? [...premium, ...backup] : premium;
+    const candidates = config.poolMode === 'all'
+      ? [...premium, ...backup, ...candidate]
+      : config.poolMode === 'premium_backup' ? [...premium, ...backup] : premium;
     if (!candidates.length) continue;
     candidates.sort(compareLines);
     const unlimited = config.maxLinesPerChannel <= 0;
