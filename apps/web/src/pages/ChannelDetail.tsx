@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Play, Radio, TriangleAlert } from 'lucide-react';
@@ -41,6 +41,8 @@ export function ChannelDetail() {
   const [linePool, setLinePool] = useState<'all' | 'premium' | 'backup' | 'candidate'>('all');
   const [lineSource, setLineSource] = useState('');
   const [lineSort, setLineSort] = useState<'default' | 'speed' | 'source' | 'pool'>('default');
+  const failedKeys = useRef<Set<string>>(new Set());
+  const autoSwitches = useRef(0);
 
   useEffect(() => {
     setLinePage(1);
@@ -129,6 +131,35 @@ export function ChannelDetail() {
   const checkedLines = lines.filter((line) => relayChecks.has(line.key));
   const relayBlocked = checkedLines.length > 0 && checkedLines.every((line) => !relayChecks.get(line.key)?.ok);
   const bestSpeed = Math.max(0, ...alive.map((line) => line.speedKbps ?? 0));
+
+  function openPreview(line: ChannelDetailResponse['lines'][number]): void {
+    failedKeys.current = new Set();
+    autoSwitches.current = 0;
+    setPlaying(line);
+  }
+
+  function switchLine(auto: boolean): void {
+    if (!playing) return;
+    failedKeys.current.add(playing.key);
+    if (auto && autoSwitches.current >= 2) {
+      show('已连续尝试多条线路仍未成功，请手动换线或使用订阅地址');
+      return;
+    }
+    const next = orderedLines.find((line) => line.key !== playing.key && !failedKeys.current.has(line.key) && line.status === 'alive')
+      ?? orderedLines.find((line) => line.key !== playing.key && !failedKeys.current.has(line.key));
+    if (!next) {
+      show('没有更多可切换的线路');
+      return;
+    }
+    if (auto) autoSwitches.current += 1;
+    else autoSwitches.current = 0;
+    setPlaying(next);
+    show(`${auto ? '当前线路播放失败，已自动切换' : '已切换线路'}：${next.sourceName ?? next.name}`);
+  }
+
+  function handlePlayerFatal(): void {
+    switchLine(true);
+  }
 
   return (
     <div className="stack" style={{ marginTop: 2 }}>
@@ -301,7 +332,7 @@ export function ChannelDetail() {
                       <Button
                         size="sm"
                         variant={line.status === 'alive' ? 'primary' : 'default'}
-                        onClick={() => setPlaying(line)}
+                        onClick={() => openPreview(line)}
                       >
                         <Play size={13} /> 试播
                       </Button>
@@ -384,6 +415,7 @@ export function ChannelDetail() {
         footer={
           <div className="preview-footer">
             <Button variant="ghost" onClick={() => setPlaying(null)}>关闭</Button>
+            {playing ? <Button variant="ghost" onClick={() => switchLine(false)}>换一条</Button> : null}
             {playing ? (
               <Button
                 variant="danger"
@@ -425,11 +457,12 @@ export function ChannelDetail() {
                 directAvailable={query.data?.features?.directPlayback ?? false}
                 directKind={relayChecks.get(playing.key)?.direct}
                 autoPlay
+                onFatal={handlePlayerFatal}
               />
             </Suspense>
 
             <div className="preview-tip">
-              试播依赖浏览器和源站策略，失败不代表线路失效。真实线路地址不会在页面展示，订阅地址在 VLC / 盒子中仍可正常播放。
+              试播依赖浏览器和源站策略，失败不代表线路失效。直连失败会自动尝试中继，仍失败会自动切换下一条可用线路；真实线路地址不会展示，订阅地址在 VLC / 盒子中仍可正常播放。
             </div>
           </div>
         ) : null}

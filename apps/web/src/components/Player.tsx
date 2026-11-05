@@ -12,6 +12,7 @@ interface PlayerProps {
   directAvailable?: boolean;
   directKind?: 'https' | 'http' | 'unsupported';
   autoPlay?: boolean;
+  onFatal?: (message: string) => void;
 }
 
 /**
@@ -24,7 +25,7 @@ interface PlayerProps {
  *  - HLS without CORS: hls.js network error.
  * The optional line relay fixes the last two by proxying through the Worker.
  */
-export function Player({ url, protocol, lineKey, codecs, relayAvailable = false, directAvailable = false, directKind, autoPlay = false }: PlayerProps) {
+export function Player({ url, protocol, lineKey, codecs, relayAvailable = false, directAvailable = false, directKind, autoPlay = false, onFatal }: PlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const watchdogRef = useRef<number | null>(null);
@@ -34,6 +35,15 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
   const [started, setStarted] = useState(autoPlay && Boolean(url));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fatalRef = useRef(onFatal);
+
+  useEffect(() => {
+    fatalRef.current = onFatal;
+  }, [onFatal]);
+
+  useEffect(() => {
+    if (error) fatalRef.current?.(error);
+  }, [error]);
 
   useEffect(() => {
     loadingRef.current = loading;
@@ -113,7 +123,18 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
     }
 
     if (isHls && Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true, lowLatencyMode: false, maxBufferLength: 20 });
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        manifestLoadingTimeOut: 20_000,
+        manifestLoadingMaxRetry: 3,
+        levelLoadingTimeOut: 20_000,
+        levelLoadingMaxRetry: 3,
+        fragLoadingTimeOut: 30_000,
+        fragLoadingMaxRetry: 5,
+      });
       hlsRef.current = hls;
       hls.loadSource(source);
       hls.attachMedia(video);
