@@ -135,6 +135,7 @@ export function Home() {
         const lineLabel = isEpg ? '线路' : isProbe ? '池内线路' : '线路';
         const aliveLabel = isProbe ? '池内可用' : '可用';
         const probedLabel = isProbe ? '本批已测' : '已测';
+        const hasProbe = !isEpg && run.probed > 0;
         return (
           <>
             <div className="section-title">
@@ -153,15 +154,22 @@ export function Home() {
                 <span className="caption">耗时 {Math.round((run.duration_ms ?? 0) / 1000)}s</span>
               </div>
               <div className="divider" />
-              <div className="row row--between" style={{ textAlign: 'center' }}>
+              <div className="last-run-stats">
                 <div><div className="title-3">{formatNumber(run.channels)}</div><div className="caption">{channelLabel}</div></div>
-                <div><div className="title-3">{isEpg ? formatBytes(run.bytes) : run.lines > 0 ? formatNumber(run.lines) : '—'}</div><div className="caption">{lineLabel}</div></div>
-                <div><div className="title-3">{!isEpg && run.probed > 0 ? formatNumber(run.alive) : '—'}</div><div className="caption">{isEpg ? '线路' : aliveLabel}</div></div>
-                <div>
-                  <div className="title-3">{!isEpg && run.probed > 0 ? formatNumber(run.probed) : '—'}</div>
-                  <div className="caption">{!isEpg && run.probed > 0 ? probedLabel : '本次未测速'}</div>
-                </div>
+                {isEpg ? (
+                  <div><div className="title-3">{formatBytes(run.bytes)}</div><div className="caption">文件大小</div></div>
+                ) : null}
+                {!isEpg && run.lines > 0 ? (
+                  <div><div className="title-3">{formatNumber(run.lines)}</div><div className="caption">{lineLabel}</div></div>
+                ) : null}
+                {hasProbe ? (
+                  <>
+                    <div><div className="title-3">{formatNumber(run.alive)}</div><div className="caption">{aliveLabel}</div></div>
+                    <div><div className="title-3">{formatNumber(run.probed)}</div><div className="caption">{probedLabel}</div></div>
+                  </>
+                ) : null}
               </div>
+              {!isEpg && !hasProbe ? <div className="last-run-note">本次运行只执行抓取 / 发布，没有进行测速。</div> : null}
               {run.task_message ? <div className="last-run-message">{run.task_message}</div> : null}
             </Card>
           </>
