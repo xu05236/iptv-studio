@@ -35,7 +35,7 @@ const EMPTY_FORM: FormState = {
   poolMode: 'premium',
   minResolution: 'any',
   minSpeedKbps: '0',
-  maxLines: '0',
+  maxLines: '1',
   format: 'm3u',
   showRegionSuffix: true,
   includeEpg: true,
@@ -253,6 +253,9 @@ export function SubscriptionsAdmin() {
               <div><strong>{displayLineLimit(item.max_lines_per_channel)}</strong><span>每频道线路</span></div>
               <div><strong>{item.includeEpg ? '含' : '不含'}</strong><span>EPG</span></div>
             </div>
+            {item.max_lines_per_channel === 0 ? (
+              <div className="subscription-warning">当前每频道输出全部线路，播放器会显示多条同名频道。想让播放器只显示一个频道，请把每频道线路数改为 1。</div>
+            ) : null}
 
             <div className="subscription-links">
               <div className="caption">主播放列表</div>
@@ -353,7 +356,7 @@ export function SubscriptionsAdmin() {
             </Field>
           </div>
           <div className="form-grid">
-            <Field label="每频道线路数" hint="0 = 导出全部可用线路">
+            <Field label="每频道线路数" hint="0 = 全部线路（播放器会出现多个同名频道）；一般填 1，需要备用线路再调大">
               <input className="input" inputMode="numeric" value={form.maxLines} onChange={(event) => setForm({ ...form, maxLines: event.target.value })} />
             </Field>
             <Field label="导出格式">

@@ -4978,3 +4978,12 @@ button {
 .category-icon--pink { background: color-mix(in srgb, #e85d9a 12%, transparent); color: #d94a86; }
 .category-icon--green { background: color-mix(in srgb, var(--green) 12%, transparent); color: var(--green); }
 .category-icon--default { background: var(--fill-2); color: var(--label-2); }
+
+.subscription-warning {
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--orange) 8%, transparent);
+  color: var(--orange);
+  font-size: 11.5px;
+  line-height: 1.5;
+}

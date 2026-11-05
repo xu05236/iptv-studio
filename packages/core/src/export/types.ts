@@ -45,16 +45,23 @@ export function regionTag(line: Pick<ExportLine, 'region' | 'operator'>): string
   return parts.length ? `（-${parts.join('')}）` : '';
 }
 
+function shortResolution(value?: string): string {
+  if (!value) return '';
+  const dimensions = /^\d{3,4}x(\d{3,4})$/i.exec(value);
+  if (dimensions) return `${dimensions[1]}P`;
+  return /^\d{3,4}[pi]$/i.test(value) ? value.toUpperCase() : value;
+}
+
 export function lineDisplayName(channel: ExportChannel, line: ExportLine, options: PlaylistOptions): string {
   const base = channel.name || line.name || channel.id;
   let name = base;
   if (options.showRegionSuffix !== false) name += regionTag(line);
   const detailsEnabled = options.debugNames !== false;
   if (detailsEnabled) {
-    const speed = line.speedKbps ? `${(line.speedKbps / 1000).toFixed(line.speedKbps >= 10_000 ? 0 : 1)}Mbps` : '';
+    const speed = line.speedKbps ? `${Math.round(line.speedKbps / 1000)}M` : '';
     const pool = line.pool === 'premium' ? '精品' : line.pool === 'backup' ? '备用' : line.pool === 'candidate' ? '候选' : '';
-    const bits = [line.resolution, speed, line.sourceName, pool].filter(Boolean);
-    if (bits.length) name += ` [${bits.join(' · ')}]`;
+    const bits = [line.sourceName, pool, shortResolution(line.resolution), speed].filter(Boolean);
+    if (bits.length) name += ` · ${bits.join(' · ')}`;
   }
   return name;
 }

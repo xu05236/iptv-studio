@@ -110,8 +110,8 @@ describe('subscription rendering', () => {
     expect(body.indexOf('http://premium/1.m3u8')).toBeLessThan(body.indexOf('http://backup/1.m3u8'));
     expect(body).toContain('1080');
     expect(body).toContain('测试源');
-    expect(body).toContain('精品');
-    expect(body).toContain('备用');
+    expect(body).toContain('测试源 · 精品');
+    expect(body).toContain('测试源 · 备用');
   });
 
   it('drops tombstoned URLs from pool rendering', () => {    const poolLine = line('http://a/1.m3u8', 90);
