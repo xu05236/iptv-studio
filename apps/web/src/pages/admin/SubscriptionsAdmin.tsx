@@ -50,7 +50,7 @@ export function SubscriptionsAdmin() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [channelIds, setChannelIds] = useState<string[]>([]);
   const [channelSearch, setChannelSearch] = useState('');
-  const [preview, setPreview] = useState<{ name: string; body: string; format: string } | null>(null);
+  const [preview, setPreview] = useState<{ name: string; body: string; format: string; channels?: number; lines?: number } | null>(null);
   const [exportLimit, setExportLimit] = useState('0');
   const [frontLimit, setFrontLimit] = useState('0');
   const [maxPerSource, setMaxPerSource] = useState('0');
@@ -151,8 +151,9 @@ export function SubscriptionsAdmin() {
 
   async function loadPreview(item: SubscriptionItem): Promise<void> {
     try {
-      const result = await api.get<{ preview: string; format: string }>(`/api/admin/subscriptions/${item.id}/preview?format=${item.format}`);
-      setPreview({ name: item.name, body: result.preview, format: result.format });
+      const result = await api.get<{ preview: string; format: string; channels?: number; lines?: number }>(`/api/admin/subscriptions/${item.id}/preview?format=${item.format}`);
+      setPreview({ name: item.name, body: result.preview, format: result.format, channels: result.channels, lines: result.lines });
+      show(`实际导出：${result.channels ?? '—'} 个频道 · ${result.lines ?? '—'} 条线路`);
     } catch (error) {
       show(error instanceof Error ? error.message : '预览失败', 'error');
     }
@@ -387,7 +388,7 @@ export function SubscriptionsAdmin() {
         </div>
       </Sheet>
 
-      <Sheet open={Boolean(preview)} onClose={() => setPreview(null)} title={`预览 · ${preview?.name ?? ''}`} subtitle={`${preview?.format?.toUpperCase()} · 前 4 万字符`}>
+      <Sheet open={Boolean(preview)} onClose={() => setPreview(null)} title={`预览 · ${preview?.name ?? ''}`} subtitle={`${preview?.format?.toUpperCase()} · ${preview?.channels ?? '—'} 频道 · ${preview?.lines ?? '—'} 线路 · 前 4 万字符`}>
         <pre className="code">{preview?.body}</pre>
       </Sheet>
     </div>
