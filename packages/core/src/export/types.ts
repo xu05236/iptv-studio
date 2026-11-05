@@ -56,8 +56,9 @@ export function lineDisplayName(channel: ExportChannel, line: ExportLine, option
   const base = channel.name || line.name || channel.id;
   let name = base;
   if (options.showRegionSuffix !== false) name += regionTag(line);
-  const detailsEnabled = options.debugNames !== false;
-  if (detailsEnabled) {
+  // M3U players group streams by the display name. Adding per-line metadata
+  // here splits one channel into several entries, so details stay opt-in.
+  if (options.debugNames) {
     const speed = line.speedKbps ? `${Math.round(line.speedKbps / 1000)}M` : '';
     const pool = line.pool === 'premium' ? '精品' : line.pool === 'backup' ? '备用' : line.pool === 'candidate' ? '候选' : '';
     const bits = [line.sourceName, pool, shortResolution(line.resolution), speed].filter(Boolean);

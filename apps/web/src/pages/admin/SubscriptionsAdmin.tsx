@@ -35,7 +35,7 @@ const EMPTY_FORM: FormState = {
   poolMode: 'premium',
   minResolution: 'any',
   minSpeedKbps: '0',
-  maxLines: '1',
+  maxLines: '0',
   format: 'm3u',
   showRegionSuffix: true,
   includeEpg: true,
@@ -138,15 +138,6 @@ export function SubscriptionsAdmin() {
   const remove = useMutation({
     mutationFn: (id: string) => api.del(`/api/admin/subscriptions/${id}`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] }),
-  });
-
-  const oneLine = useMutation({
-    mutationFn: (id: string) => api.patch(`/api/admin/subscriptions/${id}`, { maxLinesPerChannel: 1 }),
-    onSuccess: () => {
-      show('已改为每频道 1 条线路，请重新导入播放器');
-      void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
-    },
-    onError: (error: Error) => show(error.message, 'error'),
   });
 
   async function loadPreview(item: SubscriptionItem): Promise<void> {
@@ -263,10 +254,7 @@ export function SubscriptionsAdmin() {
               <div><strong>{item.includeEpg ? '含' : '不含'}</strong><span>EPG</span></div>
             </div>
             {item.max_lines_per_channel === 0 ? (
-              <div className="subscription-warning">
-                <span>当前每频道输出全部线路，播放器会显示多条同名频道。想让播放器只显示一个频道，请把每频道线路数改为 1。</span>
-                <Button size="sm" variant="ghost" loading={oneLine.isPending} onClick={() => oneLine.mutate(item.id)}>改为每频道 1 条</Button>
-              </div>
+              <div className="subscription-warning">当前每频道输出全部线路。相同频道名下播放器会作为多线路频道处理，可在播放器内切换线路。</div>
             ) : null}
 
             <div className="subscription-links">
@@ -368,7 +356,7 @@ export function SubscriptionsAdmin() {
             </Field>
           </div>
           <div className="form-grid">
-            <Field label="每频道线路数" hint="0 = 全部线路（播放器会出现多个同名频道）；一般填 1，需要备用线路再调大">
+            <Field label="每频道线路数" hint="0 = 导出全部线路；名称保持同名，播放器会作为多线路频道处理">
               <input className="input" inputMode="numeric" value={form.maxLines} onChange={(event) => setForm({ ...form, maxLines: event.target.value })} />
             </Field>
             <Field label="导出格式">

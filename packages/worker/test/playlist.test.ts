@@ -86,7 +86,7 @@ describe('subscription rendering', () => {
     expect(one).toContain('run-1');
   });
 
-  it('orders premium before backup and labels source, resolution and pool', () => {
+  it('orders premium before backup and keeps the same display name for grouping', () => {
     const premium = line('http://premium/1.m3u8', 40);
     const backup = line('http://backup/1.m3u8', 95);
     const snapshot: PoolSnapshot = {
@@ -108,10 +108,7 @@ describe('subscription rendering', () => {
     };
     const body = buildFromPool(snapshot, [], config, { sourceNames: new Map([['s1', '测试源']]) }).body;
     expect(body.indexOf('http://premium/1.m3u8')).toBeLessThan(body.indexOf('http://backup/1.m3u8'));
-    expect(body).toContain('1080');
-    expect(body).toContain('测试源');
-    expect(body).toContain('测试源 · 精品');
-    expect(body).toContain('测试源 · 备用');
+    expect(body.match(/,CCTV-1 综合/g)).toHaveLength(2);
   });
 
   it('drops tombstoned URLs from pool rendering', () => {    const poolLine = line('http://a/1.m3u8', 90);
