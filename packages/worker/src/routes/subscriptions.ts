@@ -6,14 +6,13 @@ import {
   getSubscription,
   listSubscriptions,
   updateSubscription,
-  loadSettings,
   audit,
   type SubscriptionRow,
 } from '../db.js';
 import { fail, ok, randomId, randomToken, readJson, toStringList } from '../lib/http.js';
-import { buildFromCatalog, channelMatches, playlistEtag, subscriptionFromRow, type SubscriptionConfig } from '../lib/playlist.js';
+import { channelMatches, renderSubscription, subscriptionFromRow, type SubscriptionConfig } from '../lib/playlist.js';
 import { loadCatalog } from '../lib/catalog.js';
-import { buildPlaylist, selectLines, toExportChannels, extensionFor } from '@iptv/core';
+import { extensionFor } from '@iptv/core';
 
 export const subscriptionRoutes = new Hono<AppEnv>();
 
@@ -127,42 +126,22 @@ subscriptionRoutes.get('/:id/preview', async (c) => {
   const row = await getSubscription(c.env, id);
   if (!row) return fail('订阅不存在', 404);
 
-  const catalog = await loadCatalog(c.env);
-  if (!catalog) return fail('尚未生成频道数据，请先运行采集任务', 409);
-
   const config = subscriptionFromRow(row);
   const format = (c.req.query('format') as SubscriptionConfig['format']) ?? config.format;
-  const settings = await loadSettings(c.env);
+  config.format = format;
 
-  const rows = catalog.items.filter((item) => item.channel.enabled !== false && channelMatches(item.channel, config));
-  const selected = rows.map((item) => ({
-    channel: item.channel,
-    lines: selectLines(item.lines, {
-      maxLines: config.maxLinesPerChannel,
-      maxPerSource: 3,
-      minQuality: config.minResolution,
-      minSpeedKbps: config.minSpeedKbps,
-      protocols: config.protocols.length ? config.protocols : undefined,
-      compensate: true,
-      keepSuspect: true,
-    }),
-  })).filter((item) => item.lines.length > 0);
-
-  const exportChannels = toExportChannels(selected, {
-    logoBaseUrl: settings.logoBaseUrl,
-    showRegionSuffix: config.showRegionSuffix,
-  });
-  const body = buildPlaylist(exportChannels, format, {
-    epgUrl: config.includeEpg ? `${baseUrl(c)}/epg/${row.token}.xml` : undefined,
-    showRegionSuffix: config.showRegionSuffix,
-  });
+  // Preview must use the exact same renderer as the live subscription URL.
+  // The old preview used catalog + a hardcoded per-source cap, so it reported
+  // far fewer lines than the real M3U.
+  const rendered = await renderSubscription(c.env, config, baseUrl(c));
+  if (!rendered) return fail('尚未生成频道数据，请先运行采集任务', 409);
 
   return ok({
     format,
-    etag: playlistEtag(catalog, config),
-    channels: exportChannels.length,
-    lines: exportChannels.reduce((sum, channel) => sum + channel.lines.length, 0),
-    matched: rows.length,
-    preview: body.slice(0, 40_000),
+    etag: rendered.etag,
+    channels: rendered.channels,
+    lines: rendered.lines,
+    matched: rendered.channels,
+    preview: rendered.body.slice(0, 40_000),
   });
 });
