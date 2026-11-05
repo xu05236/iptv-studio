@@ -4801,3 +4801,68 @@ button {
     border-radius: 14px;
   }
 }
+
+.last-run-label {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.last-run-message {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--fill-2);
+  color: var(--label-2);
+  font-size: 11.5px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.route-loading {
+  display: grid;
+  place-items: center;
+  min-height: 40vh;
+  color: var(--label-3);
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------- mobile polish */
+@media (max-width: 600px) {
+  .sheet__header {
+    padding: 15px 16px 12px;
+  }
+
+  .sheet__body {
+    padding: 15px 16px 20px;
+  }
+
+  .sheet__footer {
+    padding: 11px 16px calc(13px + var(--safe-b));
+  }
+
+  .channel-hero__stats {
+    gap: 6px;
+  }
+
+  .settings-overview strong {
+    font-size: 18px;
+  }
+
+  .settings-status {
+    gap: 7px 12px;
+    padding: 9px 11px;
+  }
+
+  .source-toolbar {
+    padding: 12px;
+  }
+
+  .line-card__actions .btn {
+    flex: 1;
+  }
+}
+
+.player--loading {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}

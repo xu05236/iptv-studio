@@ -5,11 +5,29 @@ import { workflowRunStatus } from './github.js';
 import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 import { createSnapshot } from './snapshots.js';
-import { createTask, dispatchNext, loadTasks, recordFinishedTask, type Task } from './tasks.js';
+import { createTask, dispatchNext, loadTasks, mutateTask, recordFinishedTask, type Task } from './tasks.js';
 
 /** Beijing is UTC+8 with no DST; the scheduler stores local HH:mm and matches in UTC. */
 const BEIJING_OFFSET_MS = 8 * 3_600_000;
 const RUN_WINDOW_MS = 15 * 60_000;
+const STUCK_TASK_MS = 90 * 60_000;
+
+/** A running task with no progress for 90 minutes is considered dead. */
+export function isStuckTask(task: Pick<Task, 'status' | 'startedAt' | 'lastHeartbeatAt' | 'createdAt'>, now = Date.now()): boolean {
+  if (task.status !== 'running') return false;
+  const last = Date.parse(task.lastHeartbeatAt ?? task.startedAt ?? task.createdAt);
+  return Number.isFinite(last) && now - last > STUCK_TASK_MS;
+}
+
+async function recoverStuckTasks(env: Env, now: number): Promise<number> {
+  const tasks = await loadTasks(env);
+  const stuck = tasks.filter((task) => isStuckTask(task, now));
+  for (const task of stuck) {
+    await mutateTask(env, task.id, 'auto-fail');
+  }
+  if (stuck.length) await dispatchNext(env);
+  return stuck.length;
+}
 
 export interface CollectTime {
   hour: number;
@@ -130,6 +148,7 @@ interface DueSlot {
 export async function runScheduler(env: Env): Promise<void> {
   const settings = await loadSettings(env);
   const now = Date.now();
+  await recoverStuckTasks(env, now);
   const due: DueSlot[] = [];
 
   for (const config of schedulerConfigs(settings)) {

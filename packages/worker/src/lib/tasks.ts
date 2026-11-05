@@ -453,6 +453,11 @@ async function mutateTaskCore(env: Env, id: string, action: string): Promise<str
     task.status = 'cancelled';
     task.finishedAt = new Date().toISOString();
     task.message = '已取消';
+  } else if (action === 'auto-fail') {
+    if (task.status !== 'running') return '只有运行中的任务可以自动结束';
+    task.status = 'failed';
+    task.finishedAt = new Date().toISOString();
+    task.message = '自动结束：运行超过 90 分钟无进展';
   } else if (action === 'force-fail') {
     if (task.status !== 'running') return '只有运行中的任务可以强制结束';
     task.status = 'failed';

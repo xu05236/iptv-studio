@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Activity, ArrowRight, Clock3, RadioTower, RefreshCw, Tv, Wifi } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Overview } from '../lib/types';
-import { formatNumber, timeAgo } from '../lib/format';
+import { formatBytes, formatNumber, timeAgo } from '../lib/format';
 import { Badge, Card, EmptyState, Skeleton } from '../components/ui';
 
 export function Home() {
@@ -127,35 +127,41 @@ export function Home() {
         </>
       ) : null}
 
-      {data?.lastRun ? (
-        <>
-          <div className="section-title">
-            <h2>最近一次运行</h2>
-            <Link to="/admin/runs">全部记录</Link>
-          </div>
-          <Card>
-            <div className="row row--between row--wrap">
-              <div className="row">
-                <Badge tone={data.lastRun.status === 'success' ? 'green' : data.lastRun.status === 'partial' ? 'orange' : 'red'}>
-                  {data.lastRun.status === 'success' ? '成功' : data.lastRun.status === 'partial' ? '部分成功' : data.lastRun.status}
-                </Badge>
-                <span className="caption">{timeAgo(data.lastRun.started_at)}</span>
-              </div>
-              <span className="caption">耗时 {Math.round((data.lastRun.duration_ms ?? 0) / 1000)}s</span>
+      {data?.lastRun ? (() => {
+        const run = data.lastRun;
+        const isEpg = run.task_type === 'epg';
+        return (
+          <>
+            <div className="section-title">
+              <h2>最近一次运行</h2>
+              <Link to="/admin/runs">全部记录</Link>
             </div>
-            <div className="divider" />
-            <div className="row row--between" style={{ textAlign: 'center' }}>
-              <div><div className="title-3">{data.lastRun.channels.toLocaleString('zh-CN')}</div><div className="caption">频道</div></div>
-              <div><div className="title-3">{data.lastRun.lines > 0 ? data.lastRun.lines.toLocaleString('zh-CN') : '—'}</div><div className="caption">线路</div></div>
-              <div><div className="title-3">{data.lastRun.probed > 0 ? data.lastRun.alive.toLocaleString('zh-CN') : '—'}</div><div className="caption">可用</div></div>
-              <div>
-                <div className="title-3">{data.lastRun.probed > 0 ? data.lastRun.probed.toLocaleString('zh-CN') : '—'}</div>
-                <div className="caption">{data.lastRun.probed > 0 ? '已测' : '本次未测速'}</div>
+            <Card>
+              <div className="row row--between row--wrap">
+                <div className="row row--wrap" style={{ gap: 8 }}>
+                  <Badge tone={run.status === 'success' ? 'green' : run.status === 'partial' ? 'orange' : 'red'}>
+                    {run.status === 'success' ? '成功' : run.status === 'partial' ? '部分成功' : run.status}
+                  </Badge>
+                  <span className="last-run-label">{run.task_label ?? '运行记录'}</span>
+                  <span className="caption">{timeAgo(run.started_at)}</span>
+                </div>
+                <span className="caption">耗时 {Math.round((run.duration_ms ?? 0) / 1000)}s</span>
               </div>
-            </div>
-          </Card>
-        </>
-      ) : null}
+              <div className="divider" />
+              <div className="row row--between" style={{ textAlign: 'center' }}>
+                <div><div className="title-3">{formatNumber(run.channels)}</div><div className="caption">{isEpg ? 'EPG 频道' : '频道'}</div></div>
+                <div><div className="title-3">{isEpg ? formatBytes(run.bytes) : run.lines > 0 ? formatNumber(run.lines) : '—'}</div><div className="caption">{isEpg ? '文件大小' : '线路'}</div></div>
+                <div><div className="title-3">{!isEpg && run.probed > 0 ? formatNumber(run.alive) : '—'}</div><div className="caption">{isEpg ? '线路' : '可用'}</div></div>
+                <div>
+                  <div className="title-3">{!isEpg && run.probed > 0 ? formatNumber(run.probed) : '—'}</div>
+                  <div className="caption">{!isEpg && run.probed > 0 ? '已测' : '本次未测速'}</div>
+                </div>
+              </div>
+              {run.task_message ? <div className="last-run-message">{run.task_message}</div> : null}
+            </Card>
+          </>
+        );
+      })() : null}
 
       <Link to="/admin" className="btn btn--primary btn--block">
         进入管理后台 <ArrowRight size={15} />

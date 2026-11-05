@@ -8,10 +8,11 @@ import { Badge, Button, Card, CopyField, EmptyState, Field, Sheet, Switch, useTo
 
 const FORMATS = ['m3u', 'txt', 'json', 'diyp'];
 
-function displayLineLimit(subscriptionLimit: number, globalLimit: number): string {
-  const value = subscriptionLimit > 0 ? subscriptionLimit : globalLimit;
-  return value > 0 ? String(value) : '不限';
-}const RESOLUTIONS = ['any', '720p', '1080p', '1440p', '2160p'];
+function displayLineLimit(subscriptionLimit: number): string {
+  return subscriptionLimit > 0 ? String(subscriptionLimit) : '不限';
+}
+
+const RESOLUTIONS = ['any', '720p', '1080p', '1440p', '2160p'];
 
 interface FormState {
   name: string;
@@ -210,7 +211,7 @@ export function SubscriptionsAdmin() {
           </div>
         </div>
         <div className="caption" style={{ marginTop: 8 }}>
-          当前 {settingsQuery.data ? `播放器 ${displayLineLimit(settingsQuery.data.settings.maxLinesPerChannel, 0)} / 前台 ${displayLineLimit(settingsQuery.data.settings.frontLineLimit, 0)} / 单源 ${displayLineLimit(settingsQuery.data.settings.maxLinesPerSource, 0)}` : '加载中'}。0 表示不限制；修改后需要重新发布订阅生效。
+          当前 {settingsQuery.data ? `播放器 ${displayLineLimit(settingsQuery.data.settings.maxLinesPerChannel)} / 前台 ${displayLineLimit(settingsQuery.data.settings.frontLineLimit)} / 单源 ${displayLineLimit(settingsQuery.data.settings.maxLinesPerSource)}` : '加载中'}。0 表示不限制；修改后需要重新发布订阅生效。
         </div>
       </Card>
 
@@ -249,7 +250,7 @@ export function SubscriptionsAdmin() {
 
             <div className="subscription-stats">
               <div><strong>{item.matchedChannels ?? 0}</strong><span>匹配频道</span></div>
-              <div><strong>{displayLineLimit(item.max_lines_per_channel, settingsQuery.data?.settings.maxLinesPerChannel ?? 0)}</strong><span>每频道线路</span></div>
+              <div><strong>{displayLineLimit(item.max_lines_per_channel)}</strong><span>每频道线路</span></div>
               <div><strong>{item.includeEpg ? '含' : '不含'}</strong><span>EPG</span></div>
             </div>
 

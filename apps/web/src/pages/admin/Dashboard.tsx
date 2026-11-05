@@ -105,6 +105,7 @@ interface TaskBoard {
   batchSize: number;
   intervalHours: number;
   phases: TaskPhase[];
+  statsGeneratedAt?: string | null;
   items?: TaskItem[];
   schedules: {
     probe: { enabled: boolean; nextAt: string | null; lastRunAt: string | null; result: string | null };
@@ -605,7 +606,10 @@ export function Dashboard() {
 
             <details className="task-phases">
               <summary className="caption">分批阶段设置（到期可测 / 顺序 / 暂停）</summary>
-              <div className="caption" style={{ marginBottom: 8 }}>这里的数量只统计已到期可测的线路；可用线路未到复测时间时不会出现在待测/待复测里。</div>
+              <div className="caption" style={{ marginBottom: 8 }}>
+                这里的数量只统计已到期可测的线路；可用线路未到复测时间时不会出现在待测/待复测里。
+                {tasks.data.statsGeneratedAt ? ` 统计更新于 ${formatSnapshot(tasks.data.statsGeneratedAt)}。` : ' 暂无到期统计。'}
+              </div>
               <div className="task-phase-list">
                 {tasks.data.phases.map((phase, index) => {
                   const backlog = tasks.data!.phases.reduce((sum, item) => sum + item.count, 0);

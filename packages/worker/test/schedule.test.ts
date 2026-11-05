@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '@iptv/core';
-import { mostRecentScheduledAt, nextAutoLivenessAt, nextScheduledAt, parseCollectTimes } from '../src/lib/schedule.js';
+import { isStuckTask, mostRecentScheduledAt, nextAutoLivenessAt, nextScheduledAt, parseCollectTimes } from '../src/lib/schedule.js';
 
 describe('parseCollectTimes', () => {
   it('parses, de-duplicates and sorts Beijing-local times', () => {
@@ -8,6 +8,32 @@ describe('parseCollectTimes', () => {
       { hour: 8, minute: 30 },
       { hour: 20, minute: 5 },
     ]);
+  });
+});
+
+describe('stuck task recovery', () => {
+  const now = Date.parse('2026-11-05T08:00:00Z');
+  const base = {
+    status: 'running' as const,
+    createdAt: new Date(now - 2 * 3_600_000).toISOString(),
+    startedAt: new Date(now - 89 * 60_000).toISOString(),
+    lastHeartbeatAt: undefined,
+  };
+
+  it('does not recover a task that is still within the timeout', () => {
+    expect(isStuckTask(base, now)).toBe(false);
+  });
+
+  it('recovers a running task with no progress for more than 90 minutes', () => {
+    expect(isStuckTask({ ...base, startedAt: new Date(now - 91 * 60_000).toISOString() }, now)).toBe(true);
+  });
+
+  it('uses a fresh heartbeat to keep a long task alive', () => {
+    expect(isStuckTask({ ...base, startedAt: new Date(now - 3 * 3_600_000).toISOString(), lastHeartbeatAt: new Date(now - 5 * 60_000).toISOString() }, now)).toBe(false);
+  });
+
+  it('never recovers queued tasks', () => {
+    expect(isStuckTask({ ...base, status: 'queued' }, now)).toBe(false);
   });
 });
 

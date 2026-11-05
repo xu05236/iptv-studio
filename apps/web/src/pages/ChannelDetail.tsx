@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Play, Radio, TriangleAlert } from 'lucide-react';
@@ -7,7 +7,8 @@ import type { ChannelDetailResponse } from '../lib/types';
 import { formatClock, formatLatency, formatResolution, formatSpeed, statusLabel, statusTone } from '../lib/format';
 import { Badge, Button, Card, EmptyState, Segmented, Sheet, Skeleton, useToast } from '../components/ui';
 import { ChannelLogo } from '../components/ChannelLogo';
-import { Player } from '../components/Player';
+
+const Player = lazy(() => import('../components/Player').then((module) => ({ default: module.Player })));
 
 function probeAge(value?: string | null): string {
   if (!value) return '';
@@ -358,16 +359,18 @@ export function ChannelDetail() {
               </div>
             </div>
 
-            <Player
-              url={playing.url}
-              protocol={playing.protocol}
-              lineKey={playing.key}
-              codecs={relayChecks.get(playing.key)?.codecs ?? playing.codecs}
-              relayAvailable={Boolean(relayChecks.get(playing.key)?.ok)}
-              directAvailable={query.data?.features?.directPlayback ?? false}
-              directKind={relayChecks.get(playing.key)?.direct}
-              autoPlay
-            />
+            <Suspense fallback={<div className="player player--loading"><span>正在加载播放器…</span></div>}>
+              <Player
+                url={playing.url}
+                protocol={playing.protocol}
+                lineKey={playing.key}
+                codecs={relayChecks.get(playing.key)?.codecs ?? playing.codecs}
+                relayAvailable={Boolean(relayChecks.get(playing.key)?.ok)}
+                directAvailable={query.data?.features?.directPlayback ?? false}
+                directKind={relayChecks.get(playing.key)?.direct}
+                autoPlay
+              />
+            </Suspense>
 
             <div className="preview-tip">
               试播依赖浏览器和源站策略，失败不代表线路失效。真实线路地址不会在页面展示，订阅地址在 VLC / 盒子中仍可正常播放。

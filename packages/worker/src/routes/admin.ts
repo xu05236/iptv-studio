@@ -622,7 +622,7 @@ adminRoutes.get('/tasks', async (c) => {
   const settings = await loadSettings(c.env);
   const taskItems = await loadTasks(c.env);
   const [stats, probeState, fetchState, publishState, epgState, sourceRows, recentRuns] = await Promise.all([
-    getJson<Record<string, number>>(c.env, 'state/pool-stats.json'),
+    getJson<{ generatedAt?: string; pending?: number; quarantine?: number; rejected?: number }>(c.env, 'state/pool-stats.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/probe-schedule.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/fetch-schedule.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/publish-schedule.json'),
@@ -690,6 +690,7 @@ adminRoutes.get('/tasks', async (c) => {
     intervalHours: settings.autoProbeIntervalHours,
     phases,
     stats: stats ?? null,
+    statsGeneratedAt: stats?.generatedAt ?? null,
     items: [...detailedTasks, ...scheduledItems],
     schedules: {
       probe: {
