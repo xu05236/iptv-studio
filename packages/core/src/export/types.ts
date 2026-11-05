@@ -55,9 +55,8 @@ function shortResolution(value?: string): string {
 export function lineDisplayName(channel: ExportChannel, line: ExportLine, options: PlaylistOptions): string {
   const base = channel.name || line.name || channel.id;
   let name = base;
-  if (options.showRegionSuffix !== false) name += regionTag(line);
-  // M3U players group streams by the display name. Adding per-line metadata
-  // here splits one channel into several entries, so details stay opt-in.
+  // Never add region/line details here: players group streams by display name,
+  // and any per-line suffix turns one channel into many duplicate entries.
   if (options.debugNames) {
     const speed = line.speedKbps ? `${Math.round(line.speedKbps / 1000)}M` : '';
     const pool = line.pool === 'premium' ? '精品' : line.pool === 'backup' ? '备用' : line.pool === 'candidate' ? '候选' : '';

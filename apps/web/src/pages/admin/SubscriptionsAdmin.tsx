@@ -367,7 +367,6 @@ export function SubscriptionsAdmin() {
           </div>
           <div className="sheet-section">输出选项</div>
           <div className="list">
-            <div className="list__row"><span className="grow">线路名带地区后缀</span><Switch checked={form.showRegionSuffix} onChange={(value) => setForm({ ...form, showRegionSuffix: value })} /></div>
             <div className="list__row"><span className="grow">M3U 头部写入 EPG 地址</span><Switch checked={form.includeEpg} onChange={(value) => setForm({ ...form, includeEpg: value })} /></div>
             <div className="list__row"><span className="grow">启用订阅</span><Switch checked={form.enabled} onChange={(value) => setForm({ ...form, enabled: value })} /></div>
           </div>
