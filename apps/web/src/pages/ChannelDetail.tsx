@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Play, Radio, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Play, Radio, RefreshCw, TriangleAlert } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ChannelDetailResponse } from '../lib/types';
 import { formatClock, formatLatency, formatResolution, formatSpeed, statusLabel, statusTone } from '../lib/format';
@@ -41,6 +41,7 @@ export function ChannelDetail() {
   const [linePool, setLinePool] = useState<'all' | 'premium' | 'backup' | 'candidate'>('all');
   const [lineSource, setLineSource] = useState('');
   const [lineSort, setLineSort] = useState<'default' | 'speed' | 'source' | 'pool'>('default');
+  const [switchNotice, setSwitchNotice] = useState<string | null>(null);
   const failedKeys = useRef<Set<string>>(new Set());
   const autoSwitches = useRef(0);
 
@@ -135,6 +136,7 @@ export function ChannelDetail() {
   function openPreview(line: ChannelDetailResponse['lines'][number]): void {
     failedKeys.current = new Set();
     autoSwitches.current = 0;
+    setSwitchNotice(null);
     setPlaying(line);
   }
 
@@ -154,6 +156,7 @@ export function ChannelDetail() {
     if (auto) autoSwitches.current += 1;
     else autoSwitches.current = 0;
     setPlaying(next);
+    setSwitchNotice(`${auto ? '播放失败，已自动切换到' : '已切换到'}：${next.sourceName ?? next.name}${next.pool ? ` · ${next.pool === 'premium' ? '精品池' : next.pool === 'backup' ? '备用池' : '候选池'}` : ''}${next.resolution ? ` · ${formatResolution(next.resolution)}` : ''}${next.speedKbps ? ` · ${formatSpeed(next.speedKbps)}` : ''}`);
     show(`${auto ? '当前线路播放失败，已自动切换' : '已切换线路'}：${next.sourceName ?? next.name}`);
   }
 
@@ -432,6 +435,12 @@ export function ChannelDetail() {
       >
         {playing ? (
           <div className="preview-sheet">
+            {switchNotice ? (
+              <div className="preview-switch-notice">
+                <RefreshCw size={15} />
+                <span>{switchNotice}</span>
+              </div>
+            ) : null}
             <div className="preview-meta">
               <div className="preview-meta__head">
                 <Badge tone={statusTone(playing.status)}>{statusLabel(playing.status)}</Badge>
