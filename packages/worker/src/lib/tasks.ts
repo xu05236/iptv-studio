@@ -1,7 +1,10 @@
+import type { AppSettings } from '@iptv/core';
+import { DEFAULT_SETTINGS } from '@iptv/core';
 import type { Env } from '../env.js';
 import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 import { dispatchWorkflow, listWorkflowRuns } from './github.js';
+import { loadSettings } from '../db.js';
 
 export type TaskSource = 'schedule' | 'manual' | 'detection' | 'source' | 'cli';
 export type TaskStatus = 'scheduled' | 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
@@ -408,9 +411,19 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
     return { task: next, message: `D1 今日已写入 ${d1Writes}/100000 行，任务保持排队` };
   }
   const ghMinutes = usage?.github?.month?.startsWith(month) ? Number(usage.github.minutes ?? 0) : 0;
-  if (ghMinutes >= 1_600 && next.source !== 'manual') {
+  let settings: AppSettings = DEFAULT_SETTINGS;
+  try {
+    settings = await loadSettings(env);
+  } catch {
+    // A settings read failure must not break the queue; fall back to defaults.
+    settings = DEFAULT_SETTINGS;
+  }
+  const budgetMinutes = Math.max(0, Number(settings.actionsMonthlyBudgetMinutes ?? 2_000));
+  const reserveMinutes = Math.max(0, Number(settings.actionsReserveMinutes ?? 300));
+  const autoBudget = Math.max(0, budgetMinutes - reserveMinutes);
+  if (ghMinutes >= autoBudget && next.source !== 'manual') {
     if (changed) await saveTasks(env, tasks);
-    return { task: next, message: `GitHub Actions 本月已用 ${ghMinutes}/2000 分钟，自动任务保持排队（可手动触发）` };
+    return { task: next, message: `GitHub Actions 本月已用 ${ghMinutes}/${budgetMinutes} 分钟（保留 ${reserveMinutes} 分钟手动额度），自动任务保持排队（可手动触发）` };
   }
   const scheduledToday = tasks.filter(
     (task) => task.source === 'schedule' && (task.createdAt ?? '').slice(0, 10) === today,

@@ -184,6 +184,7 @@ export async function runScheduler(env: Env): Promise<void> {
   const today = new Date(now).toISOString().slice(0, 10);
   const usage = await getRuntimeJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
   const writes = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
+  const allowance = await loadActionsAllowance(env, settings);
 
   let running = false;
   if (writes < 920) {
@@ -212,6 +213,10 @@ export async function runScheduler(env: Env): Promise<void> {
     }
     if (running) {
       await record(config, scheduledAt, 'skipped: workflow running');
+      continue;
+    }
+    if (allowance.blocked) {
+      await record(config, scheduledAt, `skipped: Actions budget (${allowance.used}/${allowance.budget} min, ${allowance.autoRunsToday}/${allowance.allowedAutoRuns} today)`);
       continue;
     }
     const budget = Math.max(1, Number(settings.probeBudget) || 1200);
@@ -258,6 +263,7 @@ async function publishIsCurrent(env: Env): Promise<boolean> {
  */
 async function runAutoPublishAfterProbe(env: Env, settings: AppSettings, now: number): Promise<boolean> {
   if (!settings.autoPublishAfterProbeEnabled) return false;
+  if ((await loadActionsAllowance(env, settings)).blocked) return false;
   const [index, pool, last, tasks] = await Promise.all([
     getJson<{ generatedAt?: string }>(env, 'state/index.json'),
     getJson<{ generatedAt?: string }>(env, 'state/pool-stats.json'),
@@ -280,7 +286,79 @@ interface IntervalState {
   result?: string;
 }
 
-async function intervalGuard(env: Env): Promise<'quota' | 'running' | null> {
+export interface ActionsAllowance {
+  used: number;
+  budget: number;
+  reserve: number;
+  remaining: number;
+  daysLeft: number;
+  runCost: number;
+  autoRunsToday: number;
+  allowedAutoRuns: number;
+  blocked: boolean;
+}
+
+/**
+ * How many automatic workflow runs may still start today so the monthly
+ * Actions budget is spread evenly instead of being exhausted in the first
+ * week. `blocked` also covers the hard floor (budget minus manual reserve).
+ */
+export function actionsAllowance(input: {
+  used: number;
+  budget: number;
+  reserve: number;
+  runCost: number;
+  now: number;
+  autoRunsToday: number;
+}): ActionsAllowance {
+  const used = Math.max(0, Math.floor(input.used));
+  const budget = Math.max(1, Math.floor(input.budget));
+  const reserve = Math.max(0, Math.min(budget, Math.floor(input.reserve)));
+  const runCost = Math.max(1, Math.ceil(input.runCost));
+  const remaining = Math.max(0, budget - reserve - used);
+  const date = new Date(input.now);
+  const daysInMonth = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+  const daysLeft = Math.max(1, daysInMonth - date.getUTCDate() + 1);
+  const allowedAutoRuns = Math.floor(remaining / daysLeft / runCost);
+  const autoRunsToday = Math.max(0, Math.floor(input.autoRunsToday));
+  return {
+    used,
+    budget,
+    reserve,
+    remaining,
+    daysLeft,
+    runCost,
+    autoRunsToday,
+    allowedAutoRuns,
+    blocked: remaining <= 0 || autoRunsToday >= allowedAutoRuns,
+  };
+}
+
+async function loadActionsAllowance(env: Env, settings: AppSettings): Promise<ActionsAllowance> {
+  const now = new Date();
+  const month = now.toISOString().slice(0, 7);
+  const today = now.toISOString().slice(0, 10);
+  const [usage, tasks] = await Promise.all([
+    getRuntimeJson<{ github?: { month?: string; minutes?: number } }>(env, 'state/usage.json'),
+    loadTasks(env),
+  ]);
+  const used = usage?.github?.month?.startsWith(month) ? Number(usage.github.minutes ?? 0) : 0;
+  const autoRunsToday = tasks.filter(
+    (task: Task) => task.source === 'schedule' && (task.createdAt ?? '').slice(0, 10) === today,
+  ).length;
+  return actionsAllowance({
+    used,
+    budget: Number(settings.actionsMonthlyBudgetMinutes ?? 2_000),
+    reserve: Number(settings.actionsReserveMinutes ?? 300),
+    runCost: Number(settings.actionsRunCostMinutes ?? 6),
+    now: now.getTime(),
+    autoRunsToday,
+  });
+}
+
+async function intervalGuard(env: Env, settings: AppSettings): Promise<'quota' | 'running' | 'actions' | null> {
+  const allowance = await loadActionsAllowance(env, settings);
+  if (allowance.blocked) return 'actions';
   const today = new Date().toISOString().slice(0, 10);
   const usage = await getRuntimeJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
   const writes = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
@@ -320,9 +398,10 @@ async function runFetchWatch(env: Env, settings: AppSettings, now: number): Prom
   const state = await getRuntimeJson<IntervalState>(env, 'state/fetch-schedule.json');
   if (state?.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
   const intervalMs = Math.max(1, Number(settings.fetchIntervalDays) || 7) * 86_400_000;
-  const guard = await intervalGuard(env);
+  const guard = await intervalGuard(env, settings);
   if (guard) {
-    await recordInterval(env, 'state/fetch-schedule.json', now, now + 30 * 60_000, `skipped: ${guard}`);
+    const delay = guard === 'actions' ? 6 * 3_600_000 : 30 * 60_000;
+    await recordInterval(env, 'state/fetch-schedule.json', now, now + delay, `skipped: ${guard}`);
     return false;
   }
   const task = await createTask(env, { type: 'fetch', source: 'schedule', priority: 50, payload: {} });
@@ -345,9 +424,10 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
     return false;
   }
 
-  const guard = await intervalGuard(env);
+  const guard = await intervalGuard(env, settings);
   if (guard) {
-    await recordInterval(env, 'state/probe-schedule.json', now, now + 15 * 60_000, `skipped: ${guard}`);
+    const delay = guard === 'actions' ? 6 * 3_600_000 : 15 * 60_000;
+    await recordInterval(env, 'state/probe-schedule.json', now, now + delay, `skipped: ${guard}`);
     return false;
   }
   const task = await createTask(env, {

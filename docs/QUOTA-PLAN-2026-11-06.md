@@ -10,8 +10,9 @@
    自 2026-09-01 起，**D1 超限会让查询直接报错**（站点功能挂掉，不是降级）；KV 超限则是写入失败。
 2. **本项目已经贴过顶**：历史峰值日 KV 写 882/1000、D1 写 89,015/100,000
    （`docs/HANDOFF.md:203`，含一次清理尖峰）。KV 侧已有 920 硬护栏，**D1 侧没有任何护栏**。
-3. Actions（私有仓库 2,000 分钟/月）当前不紧张（132/2000），但"每天 12 次定时探测"一旦跑满，
-   按每次 10–25 分钟算就是 3,600–9,000 分钟/月——所以 Actions 也要有护栏。
+3. **Actions 已经是第二危险项**：2026-11-06（月第 6 天）已用 **753/2,000 分钟**。按每次 4–7 分钟
+   的固定开销（checkout + `npm ci` + ffmpeg 安装 + 用量快照）和每天 20+ 次自动运行，月底会到 4,000+。
+   根因是生产 `autoProbeIntervalHours = 1`（每小时一批探测），已实装预算节流（见 §2.1）。
 4. 因此本次升级按 **写额度优先** 设计：`D1 行写 > KV 写 > KV list/delete > Actions 分钟 > Worker 请求/CPU`。
    与这条冲突的功能，改设计或不做。
 
@@ -28,7 +29,7 @@
 | D1 行写 | 100,000/天 | **查询报错** | **峰值 89,015** | **90,000（待加）** | 频道/别名同步、任务进度、runtime_state（每 5 分钟 1 行）、source_stats、清理删除 |
 | D1 行读 | 5,000,000/天 | 查询报错 | 未单独统计，估计 < 1M | 4,000,000 | 页面查询、任务队列、调度器（每 5 分钟一轮） |
 | D1 存储 | 5GB | 写入失败 | 未统计 | — | 频道、别名、任务、审计、报障 |
-| Actions 分钟 | 2,000/月（私有仓库） | 排队/超额计费 | 132/2000 | 1,600 | 每次运行 10–25 分钟（`docs/DEPLOY.md:173`）；定时探测最多 12 次/天 |
+| Actions 分钟 | 2,000/月（私有仓库） | 排队/超额计费 | **753/2000（11-06，月第 6 天）** | 自动 ≤ 预算 − 300，按天摊平 | 每次运行 4–7 分钟；生产定时探测曾为 1 次/小时 |
 | Actions 存储 | 500MB | — | 失败日志 | — | 失败时上传 runner-log |
 
 > 「当前观测」取自交接文档 2026-10-29 的用量快照，不是今天实时值；
@@ -56,6 +57,18 @@
 4. relay 每 token 配额（F2 之后必需）。
 5. 订阅自助写回（`artifacts.ts:92-96` 的 self-heal）没有冷却：prebuilt 缺失时每个请求都可能写一次同键。
 6. D1 写入归因：89k 是哪些路由写的，现在没人知道（`meta.rows_written` 每个查询都返回，可以顺手记）。
+
+### 2.1 Actions 预算治理（2026-11-06 实装）
+
+- 新增设置：`actionsMonthlyBudgetMinutes`（默认 2000）、`actionsReserveMinutes`（默认 300，留给手动操作）、`actionsRunCostMinutes`（默认 6）。
+- 调度器节流：`lib/schedule.ts` 的 `actionsAllowance()` 按 `(预算 − 预留 − 已用) ÷ 剩余天数 ÷ 单次成本`
+  算出当天还能跑几次自动任务；探测、抓取、到期定时槽、自动发布在超限时只记 `skipped: actions budget`，不再 dispatch。
+- 派发护栏：`lib/tasks.ts` 用设置里的预算替换硬编码 1,600 分钟；D1 设置读取失败时回落默认值，不阻塞队列。
+- 生产参数（部署后 PUT）：`autoProbeIntervalHours 1 → 8`、`epgRefreshTimes 00:10,17:10 → 00:10`、`probeBatchSize 1600 → 1200`。
+- 每次运行降本：`collect.yml` 只在 collect/probe/probe-batch/probe-lines 安装 ffmpeg，其余命令省 30–60 秒。
+- 预算测算：探测 3 次/天 × 7 分钟 + 发布 2 × 5 + EPG 1 × 5 + 测活 1 × 5 ≈ 41 分钟/天；从 11-06 起剩余 24 天
+  ≈ 984 分钟，加已用 753 ≈ 1,737，低于 2,000，但高于"预留 300"后的 1,700——节流器会在超速时自动少跑。
+  要更宽松可把 `actionsReserveMinutes` 调到 100，或把发布降到 1 次/天。
 
 ## 3. 逐任务额度影响
 
@@ -118,10 +131,10 @@
 
 | # | 优化 | 省什么 | 估算 |
 | --- | --- | --- | --- |
-| 1 | `ci.yml` 去掉 `push` 触发（`deploy.yml` 已跑 typecheck+test+build） | Actions 分钟 | 每次 push 省 4–6 分钟，30 次 push ≈ 120–180 分钟/月 |
-| 2 | 定时 epg 并入每日 collect/publish（同一 job 跑两条命令） | Actions 分钟 | 1 次/天 × ~5 分钟 ≈ 150 分钟/月 |
-| 3 | `autoPublishIntervalHours` 6 → 12（池更新后发布） | Actions 分钟 | 2 次/天 × ~5 分钟 ≈ 300 分钟/月 |
-| 4 | 探测按「到期线路数」门控（< 阈值不 dispatch）+ 批量 1200 → 2400 | Actions 分钟 | 视到期曲线，通常砍 30–50% 探测运行 |
+| 1 | ✅ `ci.yml` 去掉 `push` 触发（`deploy.yml` 已跑 typecheck+test+build） | Actions 分钟 | 每次 push 省 4–6 分钟，30 次 push ≈ 120–180 分钟/月 |
+| 2 | ✅ 定时 EPG 2 次/天 → 1 次/天（生产 `epgRefreshTimes 00:10`） | Actions 分钟 | 1 次/天 × ~5 分钟 ≈ 150 分钟/月 |
+| 3 | ✅ 定时探测 1 次/小时 → 8 次/天（生产 `autoProbeIntervalHours 8`）+ 预算节流 | Actions 分钟 | 少 ~16 次/天 × 7 分钟 ≈ 3,300 分钟/月 |
+| 4 | ◐ 探测按「到期线路数」门控（预算节流已覆盖大头；到期数门控留 Batch 2） | Actions 分钟 | — |
 | 5 | E5 订阅 EPG 去重 | KV 写/存储 | N 个订阅每发布省 N 次写 |
 | 6 | 统一 8 桶 | KV 写 | 相对 16 桶每发布省 8 次 |
 | 7 | `deletePrefix`/prune 已带分页上限，无需改 | KV list/delete | 保持 |
@@ -134,8 +147,11 @@
 1) D1 写护栏（复用 usage 上报的 state/usage.json）
    d1.rowsWritten >= 90_000 → dispatch 与 scheduler 一律拒绝，429 +「D1 今日写入接近上限，UTC 00:00 重置」
 
-2) Actions 分钟护栏
-   github.minutes >= 1_600（当月）→ 只允许 manual dispatch；定时 probe/publish 自动跳过并记录原因
+2) Actions 预算护栏（已实装）
+   设置 actionsMonthlyBudgetMinutes(2000) / actionsReserveMinutes(300) / actionsRunCostMinutes(6)
+   → lib/schedule.ts actionsAllowance() 按「剩余预算 ÷ 剩余天数 ÷ 单次成本」摊平到每天
+   → 探测/抓取/到期槽/自动发布超限时只记 skipped，不再 dispatch
+   → lib/tasks.ts dispatchNext 同样用预算，不再硬编码 1_600
 
 3) 每日 dispatch 上限
    state/dispatch.json 记当日次数；>= 20 → 拒绝并提示（防手动+自动叠加）

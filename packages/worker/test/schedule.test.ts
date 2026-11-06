@@ -1,6 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '@iptv/core';
-import { isStuckTask, mostRecentScheduledAt, nextAutoLivenessAt, nextScheduledAt, parseCollectTimes } from '../src/lib/schedule.js';
+import { actionsAllowance, isStuckTask, mostRecentScheduledAt, nextAutoLivenessAt, nextScheduledAt, parseCollectTimes } from '../src/lib/schedule.js';
+
+describe('actions allowance pacing', () => {
+  const now = Date.parse('2026-11-06T02:00:00Z');
+
+  it('spreads the remaining monthly budget across the remaining days', () => {
+    const allowance = actionsAllowance({ used: 753, budget: 2000, reserve: 300, runCost: 6, now, autoRunsToday: 0 });
+    expect(allowance.remaining).toBe(947);
+    expect(allowance.daysLeft).toBe(25);
+    expect(allowance.allowedAutoRuns).toBe(6);
+    expect(allowance.blocked).toBe(false);
+  });
+
+  it('blocks once today uses more runs than the paced allowance', () => {
+    const allowance = actionsAllowance({ used: 753, budget: 2000, reserve: 300, runCost: 6, now, autoRunsToday: 6 });
+    expect(allowance.blocked).toBe(true);
+  });
+
+  it('blocks when budget minus manual reserve is exhausted', () => {
+    const allowance = actionsAllowance({ used: 1800, budget: 2000, reserve: 300, runCost: 6, now, autoRunsToday: 0 });
+    expect(allowance.remaining).toBe(0);
+    expect(allowance.blocked).toBe(true);
+  });
+
+  it('allows a full daily share at the start of a month', () => {
+    const allowance = actionsAllowance({ used: 0, budget: 2000, reserve: 300, runCost: 6, now: Date.parse('2026-11-01T02:00:00Z'), autoRunsToday: 0 });
+    expect(allowance.allowedAutoRuns).toBe(9);
+    expect(allowance.blocked).toBe(false);
+  });
+});
 
 describe('parseCollectTimes', () => {
   it('parses, de-duplicates and sorts Beijing-local times', () => {

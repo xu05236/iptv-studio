@@ -60,6 +60,7 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Ensure ffmpeg/ffprobe
+        if: ${{ contains(fromJSON('["collect","probe","probe-batch","probe-lines"]'), github.event.inputs.command || 'collect') }}
         run: |
           if ! command -v ffprobe >/dev/null 2>&1; then
             sudo apt-get update

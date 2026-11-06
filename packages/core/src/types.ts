@@ -303,6 +303,12 @@ export interface AppSettings {
   autoProbeEnabled: boolean;
   probeBatchSize: number;
   autoProbeIntervalHours: number;
+  /** Monthly GitHub Actions minute budget (private repo free plan: 2000). */
+  actionsMonthlyBudgetMinutes: number;
+  /** Minutes kept free for manual/emergency runs. */
+  actionsReserveMinutes: number;
+  /** Conservative billed minutes for one workflow run, used for pacing. */
+  actionsRunCostMinutes: number;
   /** Phase priority for batched probing, e.g. pending,quarantine,rejected. */
   probePhaseOrder: string;
   /** Phases temporarily skipped by the batch scheduler. */
@@ -372,7 +378,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoLivenessTimes: '20:30',
   autoProbeEnabled: true,
   probeBatchSize: 1200,
-  autoProbeIntervalHours: 2,
+  autoProbeIntervalHours: 6,
+  actionsMonthlyBudgetMinutes: 2000,
+  actionsReserveMinutes: 300,
+  actionsRunCostMinutes: 6,
   probePhaseOrder: 'pending,quarantine,rejected',
   probePausedPhases: '',
   autoFetchEnabled: true,

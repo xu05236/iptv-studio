@@ -523,6 +523,7 @@ adminRoutes.put('/settings', async (c) => {
     'ffprobeLimit', 'probePrefilterEnabled', 'probePrefilterBudget', 'lineRetentionDays', 'epgUrls', 'regionSuffix',
     'autoCollectEnabled', 'autoCollectTimes', 'autoLivenessEnabled', 'autoLivenessTimes',
     'autoProbeEnabled', 'probeBatchSize', 'autoProbeIntervalHours',
+    'actionsMonthlyBudgetMinutes', 'actionsReserveMinutes', 'actionsRunCostMinutes',
     'probePhaseOrder', 'probePausedPhases',
     'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishTimes', 'autoPublishIntervalHours', 'autoPublishAfterProbeEnabled', 'epgRefreshEnabled', 'epgRefreshTimes',
     'snapshotOnPublishEnabled', 'snapshotScheduleEnabled', 'snapshotScheduleTimes',
@@ -558,7 +559,10 @@ adminRoutes.put('/settings', async (c) => {
     clean.snapshotScheduleTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
   }
   if (clean.probeBatchSize !== undefined) clean.probeBatchSize = Math.max(1, Number(clean.probeBatchSize) || 1200);
-  if (clean.autoProbeIntervalHours !== undefined) clean.autoProbeIntervalHours = Math.max(1, Number(clean.autoProbeIntervalHours) || 2);
+  if (clean.autoProbeIntervalHours !== undefined) clean.autoProbeIntervalHours = Math.max(1, Number(clean.autoProbeIntervalHours) || 6);
+  if (clean.actionsMonthlyBudgetMinutes !== undefined) clean.actionsMonthlyBudgetMinutes = Math.max(300, Math.min(100_000, Number(clean.actionsMonthlyBudgetMinutes) || 2_000));
+  if (clean.actionsReserveMinutes !== undefined) clean.actionsReserveMinutes = Math.max(0, Math.min(50_000, Number(clean.actionsReserveMinutes) || 0));
+  if (clean.actionsRunCostMinutes !== undefined) clean.actionsRunCostMinutes = Math.max(1, Math.min(120, Number(clean.actionsRunCostMinutes) || 6));
   if (clean.fetchIntervalDays !== undefined) clean.fetchIntervalDays = Math.max(1, Number(clean.fetchIntervalDays) || 7);
   const settings = await saveSettings(c.env, clean);
   return ok({ settings });
