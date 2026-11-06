@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../env.js';
-import { getSubscriptionByToken } from '../db.js';
+import { getSubscriptionByToken, resolveSubscriptionByToken, touchSubscriptionToken } from '../db.js';
 import { fail } from '../lib/http.js';
 import { getRuntimeJson } from '../lib/runtime-state.js';
 import { extensionFor, contentTypeFor, hashId, type PlaylistFormat } from '@iptv/core';
@@ -48,8 +48,16 @@ artifactRoutes.get('/sub/:file', async (c) => {
   const file = c.req.param('file');
   const tvbox = /^([a-z0-9]{8,64})\.tvbox$/i.exec(file);
   if (tvbox) {
-    const row = await getSubscriptionByToken(c.env, tvbox[1]!);
-    if (!row || row.enabled !== 1) return fail('订阅不存在或已停用', 404);
+    const resolved = await resolveSubscriptionByToken(c.env, tvbox[1]!);
+    if (!resolved) return fail('订阅不存在或已停用', 404);
+    const { row } = resolved;
+    if (resolved.tokenRow) {
+      try {
+        c.executionCtx.waitUntil(touchSubscriptionToken(c.env, tvbox[1]!, Date.now()));
+      } catch {
+        /* 本地无 executionCtx 时跳过 last_seen 写 */
+      }
+    }
     const prebuilt = `out/sub-${row.id}.tvbox`;
     const response = await serveArtifact(c, prebuilt, {
       contentType: 'application/json; charset=utf-8',
@@ -67,8 +75,16 @@ artifactRoutes.get('/sub/:file', async (c) => {
   const parsed = parseFile(file);
   if (!parsed) return fail('订阅地址格式不正确', 404);
 
-  const row = await getSubscriptionByToken(c.env, parsed.token);
-  if (!row || row.enabled !== 1) return fail('订阅不存在或已停用', 404);
+  const resolved = await resolveSubscriptionByToken(c.env, parsed.token);
+  if (!resolved) return fail('订阅不存在或已停用', 404);
+  const { row } = resolved;
+  if (resolved.tokenRow) {
+    try {
+      c.executionCtx.waitUntil(touchSubscriptionToken(c.env, parsed.token, Date.now()));
+    } catch {
+      /* 本地无 executionCtx 时跳过 last_seen 写 */
+    }
+  }
 
   const config = subscriptionFromRow(row);
   const queryFormat = c.req.query('format');
@@ -153,8 +169,16 @@ artifactRoutes.get('/epg/:file', async (c) => {
   const file = c.req.param('file');
   const match = /^([a-z0-9]{8,64})\.xml$/i.exec(file);
   if (!match) return fail('节目单地址格式不正确', 404);
-  const row = await getSubscriptionByToken(c.env, match[1]!);
-  if (!row || row.enabled !== 1) return fail('订阅不存在或已停用', 404);
+  const resolved = await resolveSubscriptionByToken(c.env, match[1]!);
+  if (!resolved) return fail('订阅不存在或已停用', 404);
+  const { row } = resolved;
+  if (resolved.tokenRow) {
+    try {
+      c.executionCtx.waitUntil(touchSubscriptionToken(c.env, match[1]!, Date.now()));
+    } catch {
+      /* 本地无 executionCtx 时跳过 last_seen 写 */
+    }
+  }
 
   // Serve the raw XML and let Cloudflare compress it at the edge. Returning a
   // pre-gzipped body with Content-Encoding: gzip double-compresses it: the

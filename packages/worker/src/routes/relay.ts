@@ -50,8 +50,13 @@ async function subscriptionActive(env: Env, token: string): Promise<boolean> {
   const now = Date.now();
   const hit = subscriptionCache.get(token);
   if (hit && now - hit.at < 10_000) return hit.active;
-  const row = await getSubscriptionByToken(env, token);
-  const active = Boolean(row && row.enabled === 1);
+  const device = await env.DB.prepare(
+    `SELECT t.enabled AS token_enabled, s.enabled AS sub_enabled
+     FROM subscription_tokens t JOIN subscriptions s ON s.id = t.subscription_id
+     WHERE t.token = ?`,
+  ).bind(token).first<{ token_enabled: number; sub_enabled: number }>();
+  const row = device ? null : await getSubscriptionByToken(env, token);
+  const active = device ? device.token_enabled === 1 && device.sub_enabled === 1 : Boolean(row && row.enabled === 1);
   if (subscriptionCache.size > 5_000) subscriptionCache.clear();
   subscriptionCache.set(token, { active, at: now });
   return active;

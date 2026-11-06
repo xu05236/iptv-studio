@@ -45,6 +45,14 @@ const EMPTY_FORM: FormState = {
   enabled: true,
 };
 
+interface DeviceToken {
+  token: string;
+  label: string;
+  enabled: number;
+  last_seen_at: string | null;
+  created_at: string;
+}
+
 export function SubscriptionsAdmin() {
   const queryClient = useQueryClient();
   const { show } = useToast();
@@ -57,6 +65,8 @@ export function SubscriptionsAdmin() {
   const [exportLimit, setExportLimit] = useState('0');
   const [frontLimit, setFrontLimit] = useState('0');
   const [maxPerSource, setMaxPerSource] = useState('0');
+  const [devices, setDevices] = useState<DeviceToken[]>([]);
+  const [deviceLabel, setDeviceLabel] = useState('');
 
   const settingsQuery = useQuery({
     queryKey: ['admin', 'settings'],
@@ -69,6 +79,24 @@ export function SubscriptionsAdmin() {
     setFrontLimit(String(settingsQuery.data.settings.frontLineLimit ?? 0));
     setMaxPerSource(String(settingsQuery.data.settings.maxLinesPerSource ?? 0));
   }, [settingsQuery.data]);
+
+  const reloadDevices = async (id: string) => {
+    try {
+      const result = await api.get<{ items: DeviceToken[] }>(`/api/admin/subscriptions/${id}/tokens`);
+      setDevices(result.items);
+    } catch {
+      setDevices([]);
+    }
+  };
+
+  useEffect(() => {
+    if (!editing?.id) {
+      setDevices([]);
+      return;
+    }
+    void reloadDevices(editing.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id]);
 
   const saveLimits = useMutation({
     mutationFn: () => api.put('/api/admin/settings', {
@@ -142,6 +170,28 @@ export function SubscriptionsAdmin() {
   const remove = useMutation({
     mutationFn: (id: string) => api.del(`/api/admin/subscriptions/${id}`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] }),
+  });
+
+  const addDevice = useMutation({
+    mutationFn: () => api.post<{ token: DeviceToken }>(`/api/admin/subscriptions/${editing!.id}/tokens`, { label: deviceLabel }),
+    onSuccess: () => {
+      setDeviceLabel('');
+      show('已添加设备令牌');
+      if (editing?.id) void reloadDevices(editing.id);
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const toggleDevice = useMutation({
+    mutationFn: (device: DeviceToken) => api.patch(`/api/admin/subscriptions/${editing!.id}/tokens/${device.token}`, { enabled: device.enabled !== 1 }),
+    onSuccess: () => { if (editing?.id) void reloadDevices(editing.id); },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const removeDevice = useMutation({
+    mutationFn: (device: DeviceToken) => api.del(`/api/admin/subscriptions/${editing!.id}/tokens/${device.token}`),
+    onSuccess: () => { if (editing?.id) void reloadDevices(editing.id); },
+    onError: (error: Error) => show(error.message, 'error'),
   });
 
   const restoreAllLines = useMutation({
@@ -348,6 +398,31 @@ export function SubscriptionsAdmin() {
               <option value="full">全部中继</option>
             </select>
           </Field>
+          {editing?.id ? (
+            <>
+              <div className="sheet-section">设备令牌</div>
+              <div className="caption">每个设备一个令牌；禁用某个设备不影响其它设备。</div>
+              <div className="stack" style={{ gap: 6 }}>
+                {devices.map((device) => (
+                  <div key={device.token} className="row row--between" style={{ alignItems: 'center', gap: 8 }}>
+                    <div className="stack" style={{ gap: 2 }}>
+                      <span>{device.label || '未命名设备'}</span>
+                      <span className="caption mono">{device.token.slice(0, 6)}…{device.token.slice(-4)} · {device.enabled === 1 ? '启用' : '已禁用'} · {device.last_seen_at ? `最近 ${formatDateTime(device.last_seen_at)}` : '未使用'}</span>
+                    </div>
+                    <div className="row" style={{ gap: 4 }}>
+                      <Button size="sm" onClick={() => toggleDevice.mutate(device)}>{device.enabled === 1 ? '禁用' : '启用'}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => { if (confirm('删除该设备令牌？')) removeDevice.mutate(device); }}>删除</Button>
+                    </div>
+                  </div>
+                ))}
+                {!devices.length ? <span className="caption">还没有设备令牌。</span> : null}
+              </div>
+              <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                <input className="input" value={deviceLabel} onChange={(event) => setDeviceLabel(event.target.value)} placeholder="设备名，例如 客厅电视" style={{ flex: 1 }} />
+                <Button loading={addDevice.isPending} onClick={() => addDevice.mutate()}>添加设备</Button>
+              </div>
+            </>
+          ) : null}
           <Field label="指定频道（可选）" hint="不选 = 按分组导出；选了 = 只导出这些频道，和分组过滤同时生效">
             <input className="input" value={channelSearch} onChange={(event) => setChannelSearch(event.target.value)} placeholder="搜索频道名，勾选加入订阅" />
           </Field>

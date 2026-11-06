@@ -2,9 +2,13 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env.js';
 import {
   createSubscription,
+  createSubscriptionToken,
   deleteSubscription,
+  deleteSubscriptionToken,
   getSubscription,
+  listSubscriptionTokens,
   listSubscriptions,
+  setSubscriptionTokenEnabled,
   updateSubscription,
   audit,
   type SubscriptionRow,
@@ -129,6 +133,43 @@ subscriptionRoutes.post('/:id/rotate', async (c) => {
   await updateSubscription(c.env, id, { token: randomToken() });
   const next = await getSubscription(c.env, id);
   return ok({ subscription: next, links: next ? links(c, next) : {} });
+});
+
+subscriptionRoutes.get('/:id/tokens', async (c) => {
+  const id = c.req.param('id');
+  const row = await getSubscription(c.env, id);
+  if (!row) return fail('订阅不存在', 404);
+  const items = await listSubscriptionTokens(c.env, id);
+  return ok({ items });
+});
+
+subscriptionRoutes.post('/:id/tokens', async (c) => {
+  const id = c.req.param('id');
+  const row = await getSubscription(c.env, id);
+  if (!row) return fail('订阅不存在', 404);
+  const body = (await readJson<{ label?: string }>(c)) ?? {};
+  const label = String(body.label ?? '').trim() || `设备 ${new Date().toISOString().slice(5, 10)}`;
+  const tokenRow = await createSubscriptionToken(c.env, id, label);
+  await audit(c.env, c.get('actor'), 'subscription.token.create', id, { label });
+  return ok({ token: tokenRow, url: `${baseUrl(c)}/sub/${tokenRow.token}.m3u` }, 201);
+});
+
+subscriptionRoutes.patch('/:id/tokens/:token', async (c) => {
+  const id = c.req.param('id');
+  const body = (await readJson<{ enabled?: boolean }>(c)) ?? {};
+  if (typeof body.enabled !== 'boolean') return fail('缺少 enabled');
+  const updated = await setSubscriptionTokenEnabled(c.env, id, c.req.param('token'), body.enabled);
+  if (!updated) return fail('令牌不存在', 404);
+  await audit(c.env, c.get('actor'), 'subscription.token.toggle', id, { token: c.req.param('token').slice(0, 6), enabled: body.enabled });
+  return ok({ ok: true });
+});
+
+subscriptionRoutes.delete('/:id/tokens/:token', async (c) => {
+  const id = c.req.param('id');
+  const removed = await deleteSubscriptionToken(c.env, id, c.req.param('token'));
+  if (!removed) return fail('令牌不存在', 404);
+  await audit(c.env, c.get('actor'), 'subscription.token.delete', id, { token: c.req.param('token').slice(0, 6) });
+  return ok({ ok: true });
 });
 
 subscriptionRoutes.get('/:id/preview', async (c) => {

@@ -79,6 +79,15 @@ export interface SubscriptionRow {
   updated_at: string;
 }
 
+export interface SubscriptionTokenRow {
+  token: string;
+  subscription_id: string;
+  label: string;
+  enabled: number;
+  last_seen_at: string | null;
+  created_at: string;
+}
+
 export interface RuleRow {
   id: string;
   name: string;
@@ -563,6 +572,68 @@ export async function createSubscription(env: Env, row: SubscriptionRow): Promis
       row.format,
     )
     .run();
+  await env.DB.prepare('INSERT OR IGNORE INTO subscription_tokens (token, subscription_id, label, enabled) VALUES (?, ?, ?, 1)')
+    .bind(row.token, row.id, '主令牌')
+    .run();
+}
+
+export async function listSubscriptionTokens(env: Env, subscriptionId: string): Promise<SubscriptionTokenRow[]> {
+  const { results } = await env.DB.prepare('SELECT * FROM subscription_tokens WHERE subscription_id = ? ORDER BY created_at ASC')
+    .bind(subscriptionId)
+    .all<SubscriptionTokenRow>();
+  return results;
+}
+
+export async function createSubscriptionToken(env: Env, subscriptionId: string, label: string): Promise<SubscriptionTokenRow> {
+  const token = crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+  await env.DB.prepare('INSERT INTO subscription_tokens (token, subscription_id, label, enabled) VALUES (?, ?, ?, 1)')
+    .bind(token, subscriptionId, label.slice(0, 40))
+    .run();
+  const row = await env.DB.prepare('SELECT * FROM subscription_tokens WHERE token = ?').bind(token).first<SubscriptionTokenRow>();
+  return row!;
+}
+
+export async function setSubscriptionTokenEnabled(env: Env, subscriptionId: string, token: string, enabled: boolean): Promise<boolean> {
+  const result = await env.DB.prepare('UPDATE subscription_tokens SET enabled = ? WHERE subscription_id = ? AND token = ?')
+    .bind(enabled ? 1 : 0, subscriptionId, token)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+export async function deleteSubscriptionToken(env: Env, subscriptionId: string, token: string): Promise<boolean> {
+  const result = await env.DB.prepare('DELETE FROM subscription_tokens WHERE subscription_id = ? AND token = ?')
+    .bind(subscriptionId, token)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/** 每个设备令牌每小时最多写一次 last_seen（单条条件 UPDATE，不先读）。 */
+export async function touchSubscriptionToken(env: Env, token: string, now = Date.now()): Promise<void> {
+  const stamp = new Date(now).toISOString();
+  const cutoff = new Date(now - 3_600_000).toISOString();
+  await env.DB.prepare('UPDATE subscription_tokens SET last_seen_at = ? WHERE token = ? AND (last_seen_at IS NULL OR last_seen_at < ?)')
+    .bind(stamp, token, cutoff)
+    .run();
+}
+
+/**
+ * Resolve a subscription from either a device token or the legacy primary
+ * token. Device tokens win so disabling one actually revokes it even though
+ * the primary token still sits in the subscriptions row.
+ */
+export async function resolveSubscriptionByToken(
+  env: Env,
+  token: string,
+): Promise<{ row: SubscriptionRow; tokenRow: SubscriptionTokenRow | null } | null> {
+  const tokenRow = await env.DB.prepare('SELECT * FROM subscription_tokens WHERE token = ?').bind(token).first<SubscriptionTokenRow>();
+  if (tokenRow) {
+    if (tokenRow.enabled !== 1) return null;
+    const row = await getSubscription(env, tokenRow.subscription_id);
+    if (!row || row.enabled !== 1) return null;
+    return { row, tokenRow };
+  }
+  const legacy = await getSubscriptionByToken(env, token);
+  return legacy ? { row: legacy, tokenRow: null } : null;
 }
 
 const SUB_COLUMNS: Record<string, string> = {
