@@ -582,7 +582,7 @@ export function Dashboard() {
                       {task.failureReason ? <div className="caption task-failure">失败原因：{task.failureReason}</div> : null}
                     </div>
                     {task.status === 'failed' || task.status === 'cancelled' ? (
-                      <Button size="sm" variant="glass" onClick={() => taskAction.mutate({ id: task.id, action: 'retry' })}>重试</Button>
+                      <Button size="sm" onClick={() => taskAction.mutate({ id: task.id, action: 'retry' })}>重试</Button>
                     ) : null}
                   </div>
                 ))}
