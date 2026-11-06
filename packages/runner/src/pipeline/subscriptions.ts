@@ -22,6 +22,7 @@ interface SubscriptionRow {
   channelIds: string[];
   line_keys?: string;
   pool_mode?: string;
+  proxy_mode?: string;
   min_resolution: string;
   min_speed_kbps: number;
   protocols: string[];
@@ -104,6 +105,11 @@ export async function publishSubscriptions(
     if (await writePerSubEpg(sub, customKeys)) written++;
     if (customKeys.length) {
       logger.info('自定义订阅由 Worker 按 line_keys 动态渲染', { id: sub.id });
+      continue;
+    }
+    if ((sub.proxy_mode ?? 'direct') !== 'direct') {
+      // F2: proxy URLs need an HMAC signed with the Worker's secret at render time.
+      logger.info('代理模式订阅由 Worker 动态渲染', { id: sub.id, mode: sub.proxy_mode });
       continue;
     }
     const poolMode = sub.pool_mode ?? 'premium';

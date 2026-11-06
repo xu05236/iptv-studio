@@ -5,7 +5,8 @@ import type { AppEnv, Env } from '../env.js';
 import { getSubscriptionByToken, loadSettings } from '../db.js';
 import { fail } from '../lib/http.js';
 import { loadCatalog } from '../lib/catalog.js';
-import { loadLineIndex } from '../lib/lineIndex.js';
+import { loadLineIndex, lineHeadersForUrl } from '../lib/lineIndex.js';
+import { proxyModeOf, signProxyUrl, verifyProxySignature } from '../lib/relaySign.js';
 
 export const relayRoutes = new Hono<AppEnv>();
 
@@ -42,7 +43,22 @@ function overQuota(id: string, bytes = 0): boolean {
   return item.requests > QUOTA_REQUESTS_PER_DAY || item.bytes > QUOTA_BYTES_PER_DAY;
 }
 
+// F2: 订阅级代理要校验订阅仍启用；10 秒内存缓存，停用后最迟 10 秒失效。
+const subscriptionCache = new Map<string, { active: boolean; at: number }>();
+async function subscriptionActive(env: Env, token: string): Promise<boolean> {
+  if (!token) return false;
+  const now = Date.now();
+  const hit = subscriptionCache.get(token);
+  if (hit && now - hit.at < 10_000) return hit.active;
+  const row = await getSubscriptionByToken(env, token);
+  const active = Boolean(row && row.enabled === 1);
+  if (subscriptionCache.size > 5_000) subscriptionCache.clear();
+  subscriptionCache.set(token, { active, at: now });
+  return active;
+}
+
 /** 旧中继只放行播放清单，防止带任何订阅 token 就能代理任意 URL。 */
+
 function isPlaylistUrl(target: URL): boolean {
   return /\.(m3u8?|mpd)$/i.test(target.pathname);
 }
@@ -184,6 +200,52 @@ relayRoutes.get('/', async (c) => {
     const text = await upstream.text();
     const base = upstream.url || target.toString();
     return playlistResponse(await rewritePlaylist(text, base, async (url) => subscriptionUrl(c, token, url)), upstream.status);
+  }
+  return streamResponse(upstream);
+});
+
+/**
+ * F2 subscription-level proxy: exported M3U entries point here. The HMAC covers
+ * upstream URL + subscription token + mode + expiry, so a leaked URL cannot be
+ * reused by another subscription, and disabling a subscription invalidates its
+ * URLs within the 10s token cache.
+ */
+relayRoutes.get('/proxy', async (c) => {
+  const settings = await relaySettings(c.env);
+  if (!settings.relayEnabled) return fail('中继功能未开启（设置 → 高级）', 403);
+
+  const raw = c.req.query('u') ?? '';
+  const token = c.req.query('token') ?? '';
+  const mode = proxyModeOf(c.req.query('mode'));
+  const expires = Number(c.req.query('exp') ?? '0');
+  const signature = c.req.query('sig') ?? '';
+  if (!raw || !signature) return fail('中继地址不完整', 400);
+  if (!(await verifyProxySignature(c.env, raw, expires, token, mode, signature))) {
+    return fail('中继签名无效或已过期', 403, 'relay_signature');
+  }
+  if (!(await subscriptionActive(c.env, token))) return fail('订阅已停用或不存在', 401, 'relay_subscription');
+
+  let target: URL;
+  try {
+    target = new URL(raw);
+  } catch {
+    return fail('地址不合法');
+  }
+  if (!/^https?:$/.test(target.protocol) || isPrivateHost(target.hostname)) return fail('地址不合法');
+  if (overQuota(`token:${token}`)) return fail('中继配额已用完', 429, 'relay_quota');
+
+  const headers = await lineHeadersForUrl(c.env, raw);
+  const upstream = await fetchUpstream(c, target, headers ?? { userAgent: DEFAULT_UA }).catch(() => null);
+  if (!upstream) return fail('上游线路超时或不可达', 504);
+  if (upstream.status >= 400) return fail(`上游线路返回 HTTP ${upstream.status}`, 502);
+  if (isPlaylist(upstream, target)) {
+    const text = await upstream.text();
+    const base = upstream.url || target.toString();
+    const origin = new URL(c.req.url).origin;
+    const proxied = mode === 'playlist'
+      ? await rewritePlaylist(text, base, async (url) => url)
+      : await rewritePlaylist(text, base, (url) => signProxyUrl(c.env, origin, url, token, 'full'));
+    return playlistResponse(proxied, upstream.status);
   }
   return streamResponse(upstream);
 });

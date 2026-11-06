@@ -16,7 +16,7 @@ interface LineIndexPayload {
 const TTL_MS = 60_000;
 const CACHE_URL = 'https://iptv-studio.internal/state/line-index.json';
 
-let memory: { at: number; map: Map<string, LineIndexItem> } | null = null;
+let memory: { at: number; map: Map<string, LineIndexItem>; byUrl: Map<string, RequestHeaders | undefined> } | null = null;
 
 function cacheStorage(): Cache | null {
   try {
@@ -66,6 +66,13 @@ export async function loadLineIndex(env: Env): Promise<Map<string, LineIndexItem
   }
 
   const map = new Map((payload?.items ?? []).map((item) => [item.key, item]));
-  memory = { at: Date.now(), map };
+  const byUrl = new Map((payload?.items ?? []).map((item) => [item.url, item.headers]));
+  memory = { at: Date.now(), map, byUrl };
   return map;
+}
+
+/** F2: look up upstream headers for a proxied URL (same cached index, by URL). */
+export async function lineHeadersForUrl(env: Env, url: string): Promise<RequestHeaders | undefined> {
+  await loadLineIndex(env);
+  return memory?.byUrl.get(url);
 }

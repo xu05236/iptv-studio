@@ -67,6 +67,7 @@ export interface SubscriptionRow {
   channel_ids: string;
   line_keys: string;
   pool_mode: string;
+  proxy_mode: string;
   min_resolution: string;
   min_speed_kbps: number;
   protocols: string;
@@ -539,8 +540,8 @@ export async function getSubscriptionByToken(env: Env, token: string): Promise<S
 
 export async function createSubscription(env: Env, row: SubscriptionRow): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO subscriptions (id, name, token, enabled, groups, exclude_groups, channel_ids, line_keys, pool_mode, min_resolution, min_speed_kbps, protocols, max_lines_per_channel, show_region_suffix, include_epg, format)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO subscriptions (id, name, token, enabled, groups, exclude_groups, channel_ids, line_keys, pool_mode, proxy_mode, min_resolution, min_speed_kbps, protocols, max_lines_per_channel, show_region_suffix, include_epg, format)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       row.id,
@@ -552,6 +553,7 @@ export async function createSubscription(env: Env, row: SubscriptionRow): Promis
       row.channel_ids,
       row.line_keys,
       row.pool_mode,
+      row.proxy_mode,
       row.min_resolution,
       row.min_speed_kbps,
       row.protocols,
@@ -575,6 +577,8 @@ const SUB_COLUMNS: Record<string, string> = {
   lineKeys: 'line_keys',
   pool_mode: 'pool_mode',
   poolMode: 'pool_mode',
+  proxy_mode: 'proxy_mode',
+  proxyMode: 'proxy_mode',
   min_resolution: 'min_resolution',
   minResolution: 'min_resolution',
   min_speed_kbps: 'min_speed_kbps',

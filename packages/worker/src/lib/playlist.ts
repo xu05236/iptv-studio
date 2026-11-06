@@ -17,11 +17,14 @@ import { listChannels, listLineOverrides, listLineTombstones, type LineOverrideR
 import { getJson } from './store.js';
 import { parseJsonField } from './http.js';
 import { loadCatalog, loadPoolSnapshot, type ExportCatalog } from './catalog.js';
+import { applyProxyMode } from './proxyRewrite.js';
+import { signProxyUrl } from './relaySign.js';
 
 export interface SubscriptionConfig extends SubscriptionSpec {
   updatedAt?: string;
   lineKeys?: string[];
   poolMode?: string;
+  proxyMode?: 'direct' | 'playlist' | 'full';
 }
 
 export function subscriptionFromRow(row: SubscriptionRow): SubscriptionConfig {
@@ -35,6 +38,7 @@ export function subscriptionFromRow(row: SubscriptionRow): SubscriptionConfig {
     channelIds: parseJsonField<string[]>(row.channel_ids, []),
     lineKeys: parseJsonField<string[]>(row.line_keys ?? '[]', []),
     poolMode: row.pool_mode ?? 'premium',
+    proxyMode: row.proxy_mode === 'playlist' || row.proxy_mode === 'full' ? row.proxy_mode : 'direct',
     minResolution: row.min_resolution as Quality | 'any',
     minSpeedKbps: row.min_speed_kbps,
     protocols: parseJsonField(row.protocols, []),
@@ -96,7 +100,7 @@ export function buildFromCatalog(
 /** Strong ETag derived from catalog version + subscription configuration. */
 export function playlistEtag(catalog: ExportCatalog, config: SubscriptionConfig): string {
   const fingerprint = hashId(
-    JSON.stringify([catalog.runId, config.updatedAt, config.groups, config.excludeGroups, config.channelIds, config.lineKeys, config.minResolution, config.minSpeedKbps, config.protocols, config.maxLinesPerChannel, config.showRegionSuffix, config.format]),
+    JSON.stringify([catalog.runId, config.updatedAt, config.groups, config.excludeGroups, config.channelIds, config.lineKeys, config.minResolution, config.minSpeedKbps, config.protocols, config.maxLinesPerChannel, config.showRegionSuffix, config.format, config.proxyMode]),
     16,
   );
   return `W/"${catalog.runId}-${fingerprint}"`;
@@ -186,7 +190,7 @@ export function poolEtag(
   const overrideVersion = overrides.reduce((max, row) => (row.updated_at > max ? row.updated_at : max), '');
   const tombstoneVersion = tombstones.reduce((max, row) => (row.created_at > max ? row.created_at : max), '');
   const fingerprint = hashId(
-    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}`,
+    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}:${config.proxyMode ?? 'direct'}`,
     16,
   );
   return `W/"pool-${fingerprint}"`;
@@ -199,6 +203,13 @@ export async function renderSubscription(
 ): Promise<{ body: string; etag: string; channels: number; lines: number } | null> {
   const epgUrl = config.includeEpg ? `${baseUrl}/epg/${config.token}.xml` : null;
   const logoProxyBase = `${baseUrl.replace(/\/+$/, '')}/api/public/logo`;
+  // F2: direct mode keeps raw URLs; playlist/full replace playable URLs with signed relay links.
+  const finalize = async (result: { body: string; etag: string; channels: number; lines: number }) => {
+    const mode = config.proxyMode ?? 'direct';
+    if (mode === 'direct') return result;
+    const body = await applyProxyMode(result.body, config.format, (url) => signProxyUrl(env, baseUrl, url, config.token, mode));
+    return { ...result, body };
+  };
   if (config.lineKeys?.length) {
     const [state, channels] = await Promise.all([
       getJson<{ lines: LineEntry[] }>(env, 'state/lines.json'),
@@ -234,12 +245,12 @@ export async function renderSubscription(
       showRegionSuffix: config.showRegionSuffix,
       headerComment: `iptv-studio · ${config.name}`,
     });
-    return {
+    return finalize({
       body,
       etag: `W/"custom-${hashId(`${config.updatedAt ?? ''}:${[...keys].join(',')}`, 16)}"`,
       channels: exportChannels.length,
       lines: exportChannels.reduce((sum, channel) => sum + channel.lines.length, 0),
-    };
+    });
   }
 
   // Pool-driven subscriptions render from the tested-alive snapshot; the
@@ -250,12 +261,12 @@ export async function renderSubscription(
     if (snapshot) {
       const [overrides, tombstones] = await Promise.all([listLineOverrides(env), listLineTombstones(env)]);
       const rendered = buildFromPool(snapshot, overrides, config, { epgUrl, logoProxyBase }, new Set(tombstones.map((row) => row.url)));
-      return { ...rendered, etag: poolEtag(snapshot, overrides, config, tombstones) };
+      return finalize({ ...rendered, etag: poolEtag(snapshot, overrides, config, tombstones) });
     }
   }
 
   const catalog = await loadCatalog(env);
   if (!catalog) return null;
   const rendered = buildFromCatalog(catalog, config, { logoBaseUrl: undefined, epgUrl, logoProxyBase });
-  return { ...rendered, etag: playlistEtag(catalog, config) };
+  return finalize({ ...rendered, etag: playlistEtag(catalog, config) });
 }

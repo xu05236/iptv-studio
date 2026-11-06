@@ -32,6 +32,11 @@ function links(c: { req: { url: string }; env: { PUBLIC_BASE_URL?: string } }, r
   return out;
 }
 
+const PROXY_MODES = ['direct', 'playlist', 'full'];
+function proxyModeOf(value: unknown): string {
+  return typeof value === 'string' && PROXY_MODES.includes(value) ? value : 'direct';
+}
+
 function defaults(input: Record<string, unknown>, id: string): SubscriptionRow {
   return {
     id,
@@ -43,6 +48,7 @@ function defaults(input: Record<string, unknown>, id: string): SubscriptionRow {
     channel_ids: JSON.stringify(toStringList(input['channelIds'] ?? input['channel_ids'])),
     line_keys: JSON.stringify(toStringList(input['lineKeys'] ?? input['line_keys'])),
     pool_mode: String(input['poolMode'] ?? input['pool_mode'] ?? 'premium'),
+    proxy_mode: proxyModeOf(input['proxyMode'] ?? input['proxy_mode']),
     min_resolution: String(input['minResolution'] ?? input['min_resolution'] ?? 'any'),
     min_speed_kbps: Number(input['minSpeedKbps'] ?? input['min_speed_kbps'] ?? 0),
     protocols: JSON.stringify(toStringList(input['protocols'])),
@@ -99,6 +105,10 @@ subscriptionRoutes.patch('/:id', async (c) => {
   const row = await getSubscription(c.env, id);
   if (!row) return fail('订阅不存在', 404);
   const patch = (await readJson<Record<string, unknown>>(c)) ?? {};
+  const rawMode = patch['proxyMode'] ?? patch['proxy_mode'];
+  if (rawMode !== undefined && proxyModeOf(rawMode) === 'direct' && rawMode !== 'direct') {
+    return fail('代理模式不合法（direct / playlist / full）');
+  }
   const updated = await updateSubscription(c.env, id, patch);
   if (!updated) return fail('没有可更新的字段');
   const next = await getSubscription(c.env, id);

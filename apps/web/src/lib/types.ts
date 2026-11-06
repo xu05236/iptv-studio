@@ -143,6 +143,7 @@ export interface SubscriptionItem {
   includeEpg: boolean;
   format: string;
   pool_mode?: string;
+  proxy_mode?: string;
   matchedChannels?: number;
   updated_at?: string;
   links: Record<string, string>;

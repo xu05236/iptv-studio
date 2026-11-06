@@ -86,7 +86,7 @@ artifactRoutes.get('/sub/:file', async (c) => {
   const prebuilt = config.format === 'diyp'
     ? `out/sub-${config.id}.diyp`
     : `out/sub-${config.id}.${extensionFor(config.format)}`;
-  const prebuiltResponse = poolDriven ? null : await serveArtifact(c, prebuilt, {
+  const prebuiltResponse = poolDriven || config.proxyMode !== 'direct' ? null : await serveArtifact(c, prebuilt, {
     contentType: contentTypeFor(config.format),
     filename: `${encodeURIComponent(config.name)}.${extensionFor(config.format)}`,
     maxAge: 60,

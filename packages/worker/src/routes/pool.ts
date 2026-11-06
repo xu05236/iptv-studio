@@ -634,6 +634,7 @@ poolRoutes.post('/subscription', async (c) => {
     channel_ids: '[]',
     line_keys: JSON.stringify(selected.map((line) => line.key)),
     pool_mode: 'custom',
+    proxy_mode: 'direct',
     min_resolution: 'any',
     min_speed_kbps: 0,
     protocols: '[]',

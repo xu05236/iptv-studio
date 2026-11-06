@@ -20,6 +20,7 @@ interface FormState {
   groups: string;
   excludeGroups: string;
   poolMode: string;
+  proxyMode: string;
   minResolution: string;
   minSpeedKbps: string;
   maxLines: string;
@@ -34,6 +35,7 @@ const EMPTY_FORM: FormState = {
   groups: '',
   excludeGroups: '',
   poolMode: 'premium',
+  proxyMode: 'direct',
   minResolution: 'any',
   minSpeedKbps: '0',
   maxLines: '0',
@@ -108,6 +110,7 @@ export function SubscriptionsAdmin() {
         excludeGroups: split(form.excludeGroups),
         channelIds,
         poolMode: form.poolMode,
+        proxyMode: form.proxyMode,
         minResolution: form.minResolution,
         minSpeedKbps: Number(form.minSpeedKbps || 0),
         maxLinesPerChannel: Math.max(0, Number(form.maxLines) || 0),
@@ -171,6 +174,7 @@ export function SubscriptionsAdmin() {
             groups: item.groups.join(', '),
             excludeGroups: item.excludeGroups.join(', '),
             poolMode: item.pool_mode ?? 'premium',
+            proxyMode: item.proxy_mode ?? 'direct',
             minResolution: item.min_resolution,
             minSpeedKbps: String(item.min_speed_kbps),
             maxLines: String(item.max_lines_per_channel),
@@ -335,6 +339,13 @@ export function SubscriptionsAdmin() {
               <option value="premium_backup">精品 + 备用兜底</option>
               <option value="all">全部可用（含未确认分辨率）</option>
               {form.poolMode === 'custom' ? <option value="custom">自定义线路（来自线路池）</option> : null}
+            </select>
+          </Field>
+          <Field label="代理模式" hint="直连不经过服务器；仅清单只代理播放列表；全部中继会消耗 Worker 流量与请求额度">
+            <select className="select" value={form.proxyMode} onChange={(event) => setForm({ ...form, proxyMode: event.target.value })}>
+              <option value="direct">直连（默认）</option>
+              <option value="playlist">仅清单代理</option>
+              <option value="full">全部中继</option>
             </select>
           </Field>
           <Field label="指定频道（可选）" hint="不选 = 按分组导出；选了 = 只导出这些频道，和分组过滤同时生效">
