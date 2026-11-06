@@ -56,6 +56,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
+          npm run db:mark-drift -w @iptv/worker 2>&1 | tee /tmp/mark.log
           npm run db:migrate -w @iptv/worker 2>&1 | tee /tmp/migrate.log
 
       - name: Deploy
@@ -75,7 +76,7 @@ jobs:
           SITE: https://iptv.xu05236.dpdns.org
         run: |
           msg=""
-          for f in checks build migrate; do
+          for f in checks build mark migrate; do
             if [ -f "/tmp/$f.log" ]; then
               line=$(grep -m 3 -E 'ERROR|✘' "/tmp/$f.log" | tail -n 3 | tr '\n' ' ' | tr -d '"' | cut -c1-200)
               msg="$msg [$f] $line"
