@@ -293,7 +293,12 @@ export async function publish(
     })),
   );
   await store.put('state/probe.json', JSON.stringify({ generatedAt: options.generatedAt, items: probeItems }), json);
-  objects += 6;
+  // F6: 中继热路径用的紧凑索引（key → url + 请求头）。单值一次写，刻意不按 hash 分片；
+  // 中继侧不再解析整份 probe.json（20MB 级，单请求 CPU 必超 10ms）。
+  const lineIndex = probeItems.map((item) => ({ key: item.key, url: item.url, headers: item.headers }));
+  await store.put('state/line-index.json', JSON.stringify({ generatedAt: options.generatedAt, items: lineIndex }), json);
+  step('state/line-index.json');
+  objects += 7;
 
   if (options.epgXml) {
     const bytes = new TextEncoder().encode(options.epgXml).byteLength;

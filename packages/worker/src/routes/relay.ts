@@ -5,7 +5,7 @@ import type { AppEnv, Env } from '../env.js';
 import { getSubscriptionByToken, loadSettings } from '../db.js';
 import { fail } from '../lib/http.js';
 import { loadCatalog } from '../lib/catalog.js';
-import { getJson } from '../lib/store.js';
+import { loadLineIndex } from '../lib/lineIndex.js';
 
 export const relayRoutes = new Hono<AppEnv>();
 
@@ -13,6 +13,39 @@ type Ctx = Context<AppEnv>;
 
 const encoder = new TextEncoder();
 const TTL_SECONDS = 600;
+
+// F6: settings 在 Worker 内存里缓存 60 秒，避免每个分片请求都打一次 D1。
+let settingsCache: { at: number; value: Awaited<ReturnType<typeof loadSettings>> } | null = null;
+async function relaySettings(env: Env): Promise<Awaited<ReturnType<typeof loadSettings>>> {
+  if (settingsCache && Date.now() - settingsCache.at < 60_000) return settingsCache.value;
+  const value = await loadSettings(env);
+  settingsCache = { at: Date.now(), value };
+  return value;
+}
+
+// F6: 按 token/key 的粗粒度配额（按 isolate 计数；免费版不写 D1/KV，避免反而吃额度）。
+const QUOTA_REQUESTS_PER_DAY = 20_000;
+const QUOTA_BYTES_PER_DAY = 2 * 1024 ** 3;
+const quotas = new Map<string, { day: string; requests: number; bytes: number }>();
+function overQuota(id: string, bytes = 0): boolean {
+  const day = new Date().toISOString().slice(0, 10);
+  const item = quotas.get(id) ?? { day, requests: 0, bytes: 0 };
+  if (item.day !== day) {
+    item.day = day;
+    item.requests = 0;
+    item.bytes = 0;
+  }
+  item.requests++;
+  item.bytes += bytes;
+  quotas.set(id, item);
+  if (quotas.size > 5_000) quotas.clear();
+  return item.requests > QUOTA_REQUESTS_PER_DAY || item.bytes > QUOTA_BYTES_PER_DAY;
+}
+
+/** 旧中继只放行播放清单，防止带任何订阅 token 就能代理任意 URL。 */
+function isPlaylistUrl(target: URL): boolean {
+  return /\.(m3u8?|mpd)$/i.test(target.pathname);
+}
 
 function base64Url(bytes: Uint8Array): string {
   let binary = '';
@@ -42,6 +75,8 @@ function isPlaylist(response: Response, target: URL): boolean {
 async function fetchUpstream(c: Ctx, target: URL, headersIn: RequestHeaders): Promise<Response> {
   const headers = new Headers({ 'User-Agent': headersIn.userAgent || DEFAULT_UA, Accept: '*/*' });
   if (headersIn.referer) headers.set('Referer', headersIn.referer);
+  if (headersIn.origin) headers.set('Origin', headersIn.origin);
+  if (headersIn.cookie) headers.set('Cookie', headersIn.cookie);
   const range = c.req.header('range');
   if (range) headers.set('Range', range);
   return fetch(target.toString(), { headers, redirect: 'follow', signal: AbortSignal.timeout(15_000) });
@@ -124,12 +159,13 @@ function subscriptionUrl(c: Ctx, token: string, absolute: string): string {
  * with a valid subscription token.
  */
 relayRoutes.get('/', async (c) => {
-  const settings = await loadSettings(c.env);
+  const settings = await relaySettings(c.env);
   if (!settings.relayEnabled) return fail('中继功能未开启（设置 → 高级）', 403);
 
   const token = c.req.query('token') ?? '';
   const subscription = await getSubscriptionByToken(c.env, token);
   if (!subscription || subscription.enabled !== 1) return fail('订阅令牌无效', 401);
+  if (overQuota(`token:${token}`)) return fail('中继配额已用完', 429, 'relay_quota');
 
   const raw = c.req.query('u');
   if (!raw) return fail('缺少 u 参数');
@@ -140,6 +176,7 @@ relayRoutes.get('/', async (c) => {
     return fail('地址不合法');
   }
   if (!/^https?:$/.test(target.protocol) || isPrivateHost(target.hostname)) return fail('地址不合法');
+  if (!isPlaylistUrl(target)) return fail('旧中继只允许播放清单（.m3u8/.m3u/.mpd）', 403, 'relay_url_blocked');
 
   const upstream = await fetchUpstream(c, target, { userAgent: DEFAULT_UA }).catch(() => null);
   if (!upstream) return fail('上游线路超时或不可达', 504);
@@ -157,18 +194,17 @@ relayRoutes.get('/', async (c) => {
  * short-lived HMAC signatures bound to that key.
  */
 relayRoutes.get('/line/:key', async (c) => {
-  const settings = await loadSettings(c.env);
+  const settings = await relaySettings(c.env);
   if (!settings.relayEnabled) return fail('中继功能未开启（设置 → 高级）', 403);
 
   const key = c.req.param('key');
+  if (overQuota(`key:${key}`)) return fail('中继配额已用完', 429, 'relay_quota');
 
-  // The channel sheet shows every line in the shard, while the export catalog
-  // only contains selected lines. Look in the full probe index first, otherwise
-  // a visible line can 404 here and hls.js reports a network error.
-  const probe = await getJson<{ items: Array<{ key: string; url: string; headers?: RequestHeaders }> }>(c.env, 'state/probe.json');
-  const probed = probe?.items.find((item) => item.key === key);
-  let sourceUrl = probed?.url;
-  let sourceHeaders = probed?.headers;
+  // F6: 热路径只查紧凑索引（内存 60s / Cache API / 单值 KV），不再解析整份 probe.json。
+  const index = await loadLineIndex(c.env);
+  const indexed = index.get(key);
+  let sourceUrl = indexed?.url;
+  let sourceHeaders = indexed?.headers;
 
   if (!sourceUrl) {
     const catalog = await loadCatalog(c.env);

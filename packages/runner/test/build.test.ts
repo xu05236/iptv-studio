@@ -124,6 +124,9 @@ describe('publish', () => {
     expect(written['out/catalog.json']).toContain('"cctv1"');
     expect(written['state/index.json']).toContain('"totalChannels"');
     expect(written[`state/bucket/${bucketOf('cctv1', BUCKET_COUNT)}.json`]).toContain('"lines"');
+    // F6: 中继热路径的紧凑索引必须随发布产出。
+    expect(written['state/line-index.json']).toContain('"items"');
+    expect(written['state/line-index.json']).toContain('"key":"1"');
     expect(written['out/epg.xml']).toContain('<tv>');
     expect(written['logs/2026-10-27/run-3.jsonl']).toContain('"ok":true');
   });
