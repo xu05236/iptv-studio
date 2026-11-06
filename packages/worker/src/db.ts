@@ -1,5 +1,5 @@
 import type { AppSettings, RunReport, SourceRunStats } from '@iptv/core';
-import { DEFAULT_SETTINGS } from '@iptv/core';
+import { computeParseDrop, DEFAULT_SETTINGS } from '@iptv/core';
 import type { Env } from './env.js';
 import { parseJsonField } from './lib/http.js';
 
@@ -33,6 +33,7 @@ export interface SourceRow {
   filters: string | null;
   request_headers: string | null;
   fetch_mode: string | null;
+  parse_report: string | null;
   content_hash: string | null;
   created_at: string;
   updated_at: string;
@@ -760,6 +761,7 @@ export async function applySourceStats(
            last_ok_at = CASE WHEN ? = 1 THEN datetime('now') ELSE last_ok_at END,
            last_error = ?, etag = COALESCE(?, etag), last_modified = COALESCE(?, last_modified),
            reputation = COALESCE(?, reputation), tier = COALESCE(?, tier),
+           parse_report = COALESCE(?, parse_report),
            consecutive_failures = ?, status = ?, updated_at = datetime('now')
          WHERE id = ?`,
       ).bind(
@@ -772,6 +774,7 @@ export async function applySourceStats(
         stat.lastModified ?? null,
         stat.reputation ?? null,
         stat.tier ?? null,
+        stat.parseReport ? JSON.stringify({ ...stat.parseReport, dropPercent: computeParseDrop(before.entry_count, stat.parseReport.entries) }) : null,
         failures,
         status,
         stat.sourceId,

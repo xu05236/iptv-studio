@@ -10,6 +10,7 @@ export * from './normalize/channels.js';
 export * from './source/filters.js';
 export * from './source/fetch.js';
 export * from './source/mirrors.js';
+export * from './source/parseReport.js';
 export * from './probe/index.js';
 export * from './probe/liveness.js';
 export * from './probe/hls.js';

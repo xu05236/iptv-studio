@@ -471,6 +471,16 @@ async function syncSourceStats(
       etag: item.etag ?? source.etag,
       lastModified: item.lastModified ?? source.last_modified,
       error: item.error,
+      parseReport: item.parsed
+        ? {
+            detectedKind: item.parsed.kind,
+            entries: item.parsed.entries.length,
+            bytes: item.bytes,
+            warnings: (item.parsed.warnings ?? []).slice(0, 10),
+            mirrorIndex: item.mirrorIndex ?? 0,
+            fetchedAt: new Date().toISOString(),
+          }
+        : null,
       reputation,
       tier: tierFor(reputation),
     }];

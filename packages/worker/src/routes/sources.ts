@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { isDueForProbe, mapPool, normalizeMirrorUrls, normalizeUrlForDedupe, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters } from '@iptv/core';
+import { isDueForProbe, mapPool, normalizeMirrorUrls, normalizeUrlForDedupe, PARSE_DROP_THRESHOLD, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters, type SourceParseReport } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   deleteSource,
@@ -17,6 +17,13 @@ import { getJson } from '../lib/store.js';
 import { createTask, dispatchNext } from '../lib/tasks.js';
 
 export const sourceRoutes = new Hono<AppEnv>();
+
+/** Last parse diagnostics plus the "entry count dropped" flag the UI highlights. */
+function parseReportOf(row: { parse_report?: string | null }): { parseReport: SourceParseReport | null; parseDrop: boolean } {
+  const report = parseJsonField<SourceParseReport | null>(row.parse_report, null);
+  const drop = Number(report?.dropPercent ?? 0);
+  return { parseReport: report, parseDrop: Number.isFinite(drop) && drop >= PARSE_DROP_THRESHOLD };
+}
 
 interface CreateSourceInput {
   name?: string;
@@ -77,6 +84,7 @@ sourceRoutes.get('/', async (c) => {
       requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}),
       mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []),
       fetchMode: source.fetch_mode ?? 'direct',
+      ...parseReportOf(source),
       enabled: source.enabled === 1,
       progress: progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, quarantine: 0, rejected: 0 },
       report: reportBySource.get(source.id) ?? null,
@@ -184,7 +192,7 @@ async function summarizePreview(text: string, existing: Awaited<ReturnType<typeo
 sourceRoutes.get('/:id', async (c) => {
   const source = await getSource(c.env, c.req.param('id'));
   if (!source) return fail('直播源不存在', 404);
-  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}), mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []), fetchMode: source.fetch_mode ?? 'direct', enabled: source.enabled === 1 } });
+  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}), mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []), fetchMode: source.fetch_mode ?? 'direct', ...parseReportOf(source), enabled: source.enabled === 1 } });
 });
 
 sourceRoutes.get('/:id/detail', async (c) => {
@@ -234,6 +242,7 @@ sourceRoutes.get('/:id/detail', async (c) => {
       requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}),
       mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []),
       fetchMode: source.fetch_mode ?? 'direct',
+      ...parseReportOf(source),
       enabled: source.enabled === 1,
     },
     stats,

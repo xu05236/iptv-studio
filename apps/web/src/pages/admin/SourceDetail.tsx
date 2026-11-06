@@ -170,6 +170,34 @@ export function SourceDetail() {
       <Card>
         <div className="card__header" style={{ padding: '2px 2px 12px' }}>
           <div>
+            <div className="title-3">最近解析</div>
+            <div className="caption">本轮抓取实际解析出的条目、大小与诊断</div>
+          </div>
+          {source.parseDrop ? <Badge tone="red">条数骤降</Badge> : source.parseReport ? <Badge tone="green">{source.parseReport.detectedKind}</Badge> : null}
+        </div>
+        {source.parseReport ? (
+          <>
+            <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
+              <div><div className="caption">条目</div><div className="title-3">{formatNumber(source.parseReport.entries)}</div></div>
+              <div><div className="caption">大小</div><div className="title-3">{Math.max(1, Math.round(source.parseReport.bytes / 1024))} KB</div></div>
+              <div><div className="caption">抓取地址</div><div className="title-3">{source.parseReport.mirrorIndex > 0 ? `备用 #${source.parseReport.mirrorIndex}` : '主地址'}</div></div>
+              <div><div className="caption">时间</div><div className="title-3">{timeAgo(source.parseReport.fetchedAt)}</div></div>
+            </div>
+            {source.parseReport.dropPercent ? (
+              <div className="caption" style={{ marginTop: 8, color: 'var(--red)' }}>比上轮少 {source.parseReport.dropPercent}%</div>
+            ) : null}
+            {source.parseReport.warnings?.length ? (
+              <div style={{ marginTop: 8 }}>
+                {source.parseReport.warnings.slice(0, 3).map((warning) => <div className="caption" key={warning}>· {warning}</div>)}
+              </div>
+            ) : null}
+          </>
+        ) : <div className="task-empty">本轮还没抓取，下一轮采集后出现在这里。</div>}
+      </Card>
+
+      <Card>
+        <div className="card__header" style={{ padding: '2px 2px 12px' }}>
+          <div>
             <div className="title-3">请求设置</div>
             <div className="caption">抓取这个源时使用的请求头与抓取方式</div>
           </div>

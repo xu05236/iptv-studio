@@ -13,6 +13,8 @@ export interface CollectedSource {
   etag?: string | null;
   lastModified?: string | null;
   bytes: number;
+  /** 0 = primary URL, 1+ = which mirror answered. */
+  mirrorIndex?: number;
 }
 
 interface FetchResult {
@@ -136,6 +138,7 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
         base.lastModified = index === 0 ? fetched.lastModified ?? null : null;
         base.fetched = true;
         usedIndex = index;
+        base.mirrorIndex = index;
         break;
       }
       errors.push(`#${index + 1} ${fetched.error ?? fetched.status}`);

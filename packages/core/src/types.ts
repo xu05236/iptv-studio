@@ -461,6 +461,7 @@ export interface SourceRunStats {
   etag?: string | null;
   lastModified?: string | null;
   error?: string;
+  parseReport?: import('./source/parseReport.js').SourceParseReport | null;
 }
 
 export interface CatalogDiff {

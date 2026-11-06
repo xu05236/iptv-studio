@@ -472,6 +472,9 @@ export function Sources() {
                   {source.report.retained ? ` · 保留 ${source.report.retained}` : ''}
                 </div>
               ) : null}
+              {source.parseDrop ? (
+                <div className="source-card__error">解析条数较上轮下降 {source.parseReport?.dropPercent ?? 0}%（{formatNumber(source.parseReport?.entries ?? 0)} 条）</div>
+              ) : null}
               {source.last_error ? <div className="source-card__error">{source.last_error}</div> : null}
               {source.url ? <div className="caption mono truncate source-card__url">{source.url}</div> : null}
 
