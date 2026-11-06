@@ -8,6 +8,7 @@ export * from './util/pool.js';
 export * from './parse/index.js';
 export * from './normalize/channels.js';
 export * from './source/filters.js';
+export * from './source/fetch.js';
 export * from './probe/index.js';
 export * from './probe/liveness.js';
 export * from './probe/hls.js';

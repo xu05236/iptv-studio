@@ -30,6 +30,8 @@ export interface SourceRow {
   r2_key: string | null;
   notes: string | null;
   filters: string | null;
+  request_headers: string | null;
+  fetch_mode: string | null;
   content_hash: string | null;
   created_at: string;
   updated_at: string;
@@ -140,14 +142,16 @@ export interface NewSource {
   r2Key?: string | null;
   notes?: string | null;
   filters?: unknown;
+  requestHeaders?: unknown;
+  fetchMode?: string | null;
   contentHash?: string | null;
   refreshHours?: number;
 }
 
 export async function insertSource(env: Env, input: NewSource): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO sources (id, name, kind, url, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, content_hash, refresh_hours, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+    `INSERT INTO sources (id, name, kind, url, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, request_headers, fetch_mode, content_hash, refresh_hours, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
   )
     .bind(
       input.id,
@@ -163,6 +167,8 @@ export async function insertSource(env: Env, input: NewSource): Promise<void> {
       input.r2Key ?? null,
       input.notes ?? null,
       input.filters ? JSON.stringify(input.filters) : null,
+      input.requestHeaders && Object.keys(input.requestHeaders as Record<string, unknown>).length ? JSON.stringify(input.requestHeaders) : null,
+      input.fetchMode ?? 'direct',
       input.contentHash ?? null,
       input.refreshHours ?? 24,
     )
@@ -191,6 +197,8 @@ const SOURCE_COLUMNS: Record<string, string> = {
   entry_count: 'entry_count',
   alive_count: 'alive_count',
   filters: 'filters',
+  request_headers: 'request_headers',
+  fetch_mode: 'fetch_mode',
   content_hash: 'content_hash',
   refresh_hours: 'refresh_hours',
 };

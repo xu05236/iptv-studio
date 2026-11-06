@@ -62,6 +62,8 @@ export interface SourceItem {
   status: string;
   notes: string | null;
   refresh_hours?: number;
+  requestHeaders?: Record<string, string>;
+  fetchMode?: string;
   progress?: { total: number; tested: number; alive: number; pending: number; pendingTotal?: number; quarantine: number; quarantineTotal?: number; rejected: number; rejectedTotal?: number };
   report?: { added: number; reused: number; retained: number; disappeared: number; skippedRejected: number } | null;
   filters?: { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number };

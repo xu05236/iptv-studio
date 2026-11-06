@@ -37,6 +37,14 @@ jobs:
       - name: Build web
         run: npm run build
 
+      - name: Apply D1 migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/worker
+          command: d1 migrations apply iptv-studio --remote
+
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:

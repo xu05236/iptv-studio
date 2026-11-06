@@ -1,4 +1,4 @@
-import { effectiveRefreshHours, filterSourceEntries, parseSource, readTextCapped, type ParsedSource, type RawEntry, type SourceFilters } from '@iptv/core';
+import { effectiveRefreshHours, fetchText, filterSourceEntries, parseSource, type ParsedSource, type RawEntry, type SourceFilters } from '@iptv/core';
 import type { ArtifactStore, SourceRecord } from '../store.js';
 import type { RunLogger } from '../logger.js';
 import { builtinPlaylist } from '../data/cctvOfficial.js';
@@ -30,44 +30,25 @@ async function fetchPlaylist(
   etag?: string | null,
   lastModified?: string | null,
   conditional = true,
+  headers?: Record<string, string>,
 ): Promise<FetchResult> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error('timeout')), 45_000);
-  const baseHeaders: Record<string, string> = {
-    'User-Agent': 'IPTV-Studio-Runner/0.1',
-    Accept: 'application/json, text/plain, application/x-mpegURL, */*',
-    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.6',
+  const result = await fetchText(url, {
+    etag: conditional ? etag : null,
+    lastModified: conditional ? lastModified : null,
+    headers,
+    timeoutMs: 45_000,
+    maxBytes: 24 * 1024 * 1024,
+    retries: 0,
+  });
+  return {
+    ok: result.ok,
+    status: result.status,
+    text: result.text,
+    etag: result.etag,
+    lastModified: result.lastModified,
+    notModified: result.notModified,
+    error: result.error,
   };
-  const request = (useConditional: boolean): Promise<Response> => {
-    const headers = { ...baseHeaders };
-    if (useConditional && etag) headers['If-None-Match'] = etag;
-    if (useConditional && lastModified) headers['If-Modified-Since'] = lastModified;
-    return fetch(url, { headers, redirect: 'follow', signal: controller.signal });
-  };
-
-  try {
-    const response = await request(conditional);
-    // A 304 means the previous parsed lines are still valid. Do not re-fetch
-    // the body just to parse the same content again.
-    if (response.status === 304) return { ok: true, status: 304, notModified: true, etag, lastModified };
-    if (!response.ok) return { ok: false, status: response.status, error: `HTTP ${response.status}` };
-    const text = await readTextCapped(response.body, 24 * 1024 * 1024);
-    return {
-      ok: true,
-      status: response.status,
-      text,
-      etag: response.headers.get('etag'),
-      lastModified: response.headers.get('last-modified'),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      error: controller.signal.aborted ? '请求超时' : error instanceof Error ? error.message : String(error),
-    };
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 /**
@@ -113,7 +94,14 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
     if (!text) return { ...base, error: `未知内置源 ${source.url}` };
     base.fetched = true;
   } else if (source.url) {
-    const fetched = await fetchPlaylist(source.url, source.etag, source.last_modified, !forceFetch);
+    let requestHeaders: Record<string, string> | undefined;
+    try {
+      const parsed = typeof source.request_headers === 'string' ? JSON.parse(source.request_headers) : source.request_headers;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) requestHeaders = parsed as Record<string, string>;
+    } catch {
+      requestHeaders = undefined;
+    }
+    const fetched = await fetchPlaylist(source.url, source.etag, source.last_modified, !forceFetch, requestHeaders);
     if (fetched.notModified) {
       logger.info('源未变化 (304)', { source: source.name });
       return { ...base, fetched: true, notModified: true };

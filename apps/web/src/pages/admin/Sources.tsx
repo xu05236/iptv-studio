@@ -129,6 +129,8 @@ export function Sources() {
   const [probeResult, setProbeResult] = useState<ProbeSummary | null>(null);
   const [activeSource, setActiveSource] = useState<SourceItem | null>(null);
   const [lineResults, setLineResults] = useState<Array<{ name?: string; url: string; result: { ok: boolean; speedKbps?: number; resolution?: string; error?: string } }> | null>(null);
+  const [requestHeaders, setRequestHeaders] = useState('');
+  const [fetchMode, setFetchMode] = useState('direct');
   const [healthSort, setHealthSort] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>('grid');
 
@@ -175,12 +177,26 @@ export function Sources() {
   });
 
   const saveFilters = useMutation({
-    mutationFn: () => api.patch(`/api/admin/sources/${filterSource?.id}`, {
-      filters: buildFilters(filterForm) ?? {},
-      refresh_hours: Number(refreshHours) || 24,
-    }),
+    mutationFn: () => {
+      let headers: Record<string, string> | undefined;
+      if (requestHeaders.trim()) {
+        try {
+          const parsed = JSON.parse(requestHeaders);
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('必须是 JSON 对象');
+          headers = parsed as Record<string, string>;
+        } catch (error) {
+          throw new Error(`请求设置不是合法 JSON：${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      return api.patch(`/api/admin/sources/${filterSource?.id}`, {
+        filters: buildFilters(filterForm) ?? {},
+        refresh_hours: Number(refreshHours) || 24,
+        requestHeaders: headers ?? {},
+        fetchMode,
+      });
+    },
     onSuccess: () => {
-      show('过滤规则已保存，下一轮采集生效');
+      show('源设置已保存，下一轮采集生效');
       setFilterSource(null);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
     },
@@ -446,7 +462,7 @@ export function Sources() {
                 <Button size="sm" loading={probe.isPending} onClick={() => probe.mutate(source.id)}><RefreshCw size={13} /> 检查解析</Button>
                 <Button size="sm" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}><Zap size={13} /> 抽样测速</Button>
                 <Button size="sm" loading={revive.isPending} onClick={() => revive.mutate(source.id)}><RefreshCw size={13} /> 复活淘汰</Button>
-                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); }}><SlidersHorizontal size={13} /> 过滤</Button>
+                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setFetchMode(source.fetchMode ?? 'direct'); }}><SlidersHorizontal size={13} /> 过滤</Button>
                 <Button size="sm" variant="ghost" onClick={() => { if (confirm(`删除「${source.name}」？`)) remove.mutate(source.id); }}><Trash2 size={13} /> 删除</Button>
               </div>
             </Card>
@@ -562,7 +578,7 @@ export function Sources() {
         subtitle={filterSource?.name}
         footer={
           <Button block variant="primary" loading={saveFilters.isPending} onClick={() => saveFilters.mutate()}>
-            保存过滤
+            保存设置
           </Button>
         }
       >
@@ -573,6 +589,19 @@ export function Sources() {
           <div className="sheet-section">更新策略</div>
           <Field label="更新间隔（小时）" hint="未到间隔时跳过抓取，直接复用上一轮线路；0 表示每次都抓">
             <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="24" />
+          </Field>
+          <div className="sheet-section">请求设置</div>
+          <details className="stack">
+            <summary className="caption">源站要求 UA / Referer / Cookie 时展开填写</summary>
+            <Field label="请求头（JSON）" hint="源级请求头覆盖默认 UA；线路级 #EXTVLCOPT 仍然优先。">
+              <textarea className="textarea mono" rows={5} value={requestHeaders} onChange={(event) => setRequestHeaders(event.target.value)} placeholder={'{\n  "Referer": "https://example.com/"\n}'} />
+            </Field>
+          </details>
+          <Field label="抓取方式" hint="worker 代拉需要 F3；未上线前按直连处理。">
+            <select className="input" value={fetchMode} onChange={(event) => setFetchMode(event.target.value)}>
+              <option value="direct">直连（GitHub Actions）</option>
+              <option value="worker">Worker 代拉（F3）</option>
+            </select>
           </Field>
         </div>
       </Sheet>

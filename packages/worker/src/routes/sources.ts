@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { isDueForProbe, mapPool, normalizeUrlForDedupe, parseSource, probeStream, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters } from '@iptv/core';
+import { isDueForProbe, mapPool, normalizeUrlForDedupe, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   deleteSource,
@@ -32,6 +32,8 @@ interface CreateSourceInput {
   skipFetch?: boolean;
   filters?: SourceFilters;
   refresh_hours?: number;
+  requestHeaders?: unknown;
+  fetchMode?: string;
 }
 
 sourceRoutes.get('/', async (c) => {
@@ -71,6 +73,8 @@ sourceRoutes.get('/', async (c) => {
       ...source,
       tags: parseJsonField<string[]>(source.tags, []),
       filters: parseJsonField<SourceFilters>(source.filters, {}),
+      requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}),
+      fetchMode: source.fetch_mode ?? 'direct',
       enabled: source.enabled === 1,
       progress: progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, quarantine: 0, rejected: 0 },
       report: reportBySource.get(source.id) ?? null,
@@ -178,7 +182,7 @@ async function summarizePreview(text: string, existing: Awaited<ReturnType<typeo
 sourceRoutes.get('/:id', async (c) => {
   const source = await getSource(c.env, c.req.param('id'));
   if (!source) return fail('直播源不存在', 404);
-  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), enabled: source.enabled === 1 } });
+  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}), fetchMode: source.fetch_mode ?? 'direct', enabled: source.enabled === 1 } });
 });
 
 sourceRoutes.get('/:id/content', async (c) => {
@@ -213,6 +217,11 @@ sourceRoutes.post('/', async (c) => {
   if (!input.url && !input.content) return fail('请提供订阅地址或文件/文本内容');
   if (input.content && input.content.length > 24 * 1024 * 1024) return fail('内容超过 24MB 限制', 413);
 
+  const headerCheck = sanitizeSourceHeaders(input.requestHeaders);
+  if (!headerCheck.ok) return fail(headerCheck.error ?? '请求设置不合法');
+  const requestHeaders = Object.keys(headerCheck.headers).length ? headerCheck.headers : null;
+  const fetchMode = input.fetchMode === 'worker' ? 'worker' : 'direct';
+
   const existingSources = await listSources(c.env);
   if (input.url) {
     const normalized = normalizeUrlForDedupe(input.url);
@@ -236,6 +245,8 @@ sourceRoutes.post('/', async (c) => {
       r2Key: null,
       notes: input.notes ?? '等待采集器抓取',
       filters: input.filters ?? null,
+      requestHeaders: requestHeaders ?? undefined,
+      fetchMode,
       refreshHours: Number(input.refresh_hours ?? 24),
     });
     await audit(c.env, c.get('actor'), 'source.create.skip_fetch', id, { url: input.url });
@@ -265,7 +276,7 @@ sourceRoutes.post('/', async (c) => {
   if (input.url) {
     const validation = validateRemoteUrl(input.url);
     if (!validation.ok) return fail(validation.reason ?? '订阅地址不合法');
-    const fetched = await fetchSourceText(input.url);
+    const fetched = await fetchSourceText(input.url, { headers: requestHeaders ?? undefined });
     if (!fetched.ok || fetched.notModified) return fail(`抓取失败：${fetched.error ?? '未知错误'}。若源站限制 Cloudflare/海外 IP，可勾选「跳过预检」交给采集器抓取，或下载后上传文件。`);
     text = fetched.text ?? '';
     etag = fetched.etag ?? null;
@@ -307,6 +318,8 @@ sourceRoutes.post('/', async (c) => {
     r2Key,
     notes: input.notes ?? null,
     filters: input.filters ?? null,
+    requestHeaders: requestHeaders ?? undefined,
+    fetchMode,
     contentHash,
     refreshHours: Number(input.refresh_hours ?? 24),
   });
@@ -372,6 +385,20 @@ sourceRoutes.patch('/:id', async (c) => {
     if (!validation.ok) return fail(validation.reason ?? '订阅地址不合法');
   }
   if (patch['filters'] && typeof patch['filters'] !== 'object') return fail('filters 必须是对象');
+  if (patch['requestHeaders'] !== undefined) {
+    const headerCheck = sanitizeSourceHeaders(patch['requestHeaders']);
+    if (!headerCheck.ok) return fail(headerCheck.error ?? '请求设置不合法');
+    patch['request_headers'] = Object.keys(headerCheck.headers).length ? JSON.stringify(headerCheck.headers) : null;
+    delete patch['requestHeaders'];
+    // 新的请求头可能改变源站返回内容，下一次必须重新抓取。
+    patch.etag = null;
+    patch.last_modified = null;
+    patch.last_fetch_at = null;
+  }
+  if (patch['fetchMode'] !== undefined) {
+    patch['fetch_mode'] = patch['fetchMode'] === 'worker' ? 'worker' : 'direct';
+    delete patch['fetchMode'];
+  }
   // A filter change must be re-applied to the full source text. Drop the
   // conditional-request validators and the refresh timestamp so the next
   // collect fetches the body immediately instead of reusing a 304.

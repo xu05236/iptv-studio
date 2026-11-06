@@ -54,11 +54,11 @@
 
 ---
 
-## 2. Batch 1 · 源管理（约 13.5 人日，S7–S10 已完成）
+## 2. Batch 1 · 源管理（约 13.5 人日，S1、S7–S10 已完成）
 
 | # | 任务 | 效果 | 额度 |
 | --- | --- | --- | --- |
-| S1 | **源级请求配置**（`request_headers` JSON：UA/Referer/Cookie/附加头；`fetch_mode`） | 要 Referer 的源能抓了 | 0 |
+| S1 | ✅ **源级请求配置**（`request_headers` JSON：UA/Referer/Cookie/附加头；`fetch_mode`） | 要 Referer 的源能抓了 | 0 |
 | S2 | **备用地址链**（`mirror_urls`，依次尝试，记录用第几个成功） | 主地址挂了不整源失效 | 失败时多 1 次抓取 |
 | S3 | **降级/恢复状态机**（3 次 → degraded，5 次 → paused，半开探测自动恢复；阈值进 settings） | 坏源隔离但不丢，源站恢复后自动复活 | 半开并入现有 fetch 运行 |
 | S4 | **解析诊断留档**（`parse_report` 存 D1 列：detectedKind/entries/groups/warnings/bytes；条数突变 >30% 标黄） | 能回答"这源这次解析出了什么" | D1 +20 行/轮 |
@@ -78,7 +78,7 @@
 
 | # | 任务 | 效果 | 额度 |
 | --- | --- | --- | --- |
-| F0 | **统一 fetch 层**（`core/src/source/fetch.ts`，替换 worker/runner 两套实现） | 改一处不再漏另一处 | 0 |
+| F0 | ✅ **统一 fetch 层**（`core/src/source/fetch.ts`，替换 worker/runner 两套实现） | 改一处不再漏另一处 | 0 |
 | F1 | **错误归类 + 选择性重试**（只重试超时/429/5xx；4xx 不重试；`last_error_kind`） | 少做无用功，日志可归因 | Actions ↓ |
 | F4 | **编码健壮性**（GBK/BIG5/BOM 解码；坏行容忍） | 乱码源能导入 | 0 |
 | F5 | **每源抓取参数**（超时/并发/间隔，默认沿用全局） | 慢源不拖整轮 | Actions ↓ |
