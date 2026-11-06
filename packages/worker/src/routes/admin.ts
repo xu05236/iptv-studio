@@ -34,19 +34,17 @@ import { registerTelegramWebhook } from '../lib/telegram.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
 import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, nextScheduledAt, parseCollectTimes } from '../lib/schedule.js';
 import { sourceMetaMap } from '../lib/source.js';
+import { summarizeCoverage, type GuideLike } from '../lib/epgCoverage.js';
 
 export const adminRoutes = new Hono<AppEnv>();
 
 adminRoutes.get('/epg/coverage', async (c) => {
   const [index, guide] = await Promise.all([loadIndex(c.env), loadGuide(c.env)]);
   if (!index) return ok({ total: 0, covered: 0, percent: 0, missing: [], missingTotal: 0, filteredTotal: 0, offset: 0, limit: 100 });
-  const data = (guide ?? {}) as { channels?: Record<string, unknown> };
-  const coveredIds = new Set(
-    Object.entries(data.channels ?? {})
-      .filter(([, programmes]) => Array.isArray(programmes) && programmes.length > 0)
-      .map(([channelId]) => channelId),
-  );
-  const missing = index.channels.filter((channel) => !coveredIds.has(channel.id));
+  const summary = summarizeCoverage(index.channels.map((channel) => channel.id), guide as GuideLike | null);
+  const channelById = new Map(index.channels.map((channel) => [channel.id, channel]));
+  const missing = summary.missingIds.map((id) => channelById.get(id)).filter((channel): channel is NonNullable<typeof channel> => Boolean(channel));
+  const staleChannels = summary.staleIds.map((id) => channelById.get(id)).filter((channel): channel is NonNullable<typeof channel> => Boolean(channel));
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
   const group = (c.req.query('group') ?? '').trim();
   const filtered = missing.filter((channel) => {
@@ -56,18 +54,58 @@ adminRoutes.get('/epg/coverage', async (c) => {
   });
   const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0);
   const limit = Math.min(200, Math.max(1, Number(c.req.query('limit') ?? 100) || 100));
-  const total = index.channels.length;
   return ok({
-    total,
-    covered: total - missing.length,
-    percent: total ? Math.round(((total - missing.length) / total) * 100) : 0,
+    total: summary.total,
+    covered: summary.covered,
+    coveredAny: summary.coveredAny,
+    stale: summary.stale,
+    percent: summary.percent,
+    guideGeneratedAt: (guide as GuideLike | null)?.generatedAt ?? null,
+    guideAgeHours: summary.guideAgeHours,
+    guideStale: summary.guideStale,
+    guideHours: (guide as GuideLike | null)?.hours ?? null,
     missing: filtered.slice(offset, offset + limit).map((channel) => ({ id: channel.id, name: channel.name, group: channel.group })),
+    staleChannels: staleChannels.slice(0, 100).map((channel) => ({ id: channel.id, name: channel.name })),
     missingTotal: filtered.length,
     filteredTotal: filtered.length,
     allMissing: missing.length,
     offset,
     limit,
   });
+});
+
+adminRoutes.get('/epg/sources', async (c) => {
+  const report = await getJson<{ generatedAt?: string; items?: unknown[] }>(c.env, 'state/epg-sources.json');
+  return ok({ generatedAt: report?.generatedAt ?? null, items: report?.items ?? [] });
+});
+
+adminRoutes.get('/epg/unmatched', async (c) => {
+  const [report, channels] = await Promise.all([
+    getJson<{ generatedAt?: string; items?: Array<{ epgName: string; provider: string; channelId: string; confidence: number }> }>(
+      c.env,
+      'state/epg-unmatched.json',
+    ),
+    listChannels(c.env),
+  ]);
+  return ok({
+    generatedAt: report?.generatedAt ?? null,
+    items: report?.items ?? [],
+    channels: channels.map((channel) => ({ id: channel.id, name: channel.name, group: channel.group_title })),
+  });
+});
+
+adminRoutes.post('/epg/clean-noise', async (c) => {
+  const [state, channels] = await Promise.all([
+    getJson<{ lines?: Array<{ channelId: string }> }>(c.env, 'state/lines.json'),
+    listChannels(c.env),
+  ]);
+  const live = new Set((state?.lines ?? []).map((line) => line.channelId));
+  const noise = channels.filter((channel) => channel.id.startsWith('x-') && !live.has(channel.id));
+  for (let index = 0; index < noise.length; index += 40) {
+    await c.env.DB.batch(noise.slice(index, index + 40).map((channel) => c.env.DB.prepare('DELETE FROM channels WHERE id = ?').bind(channel.id)));
+  }
+  await audit(c.env, c.get('actor'), 'epg.clean_noise', String(noise.length));
+  return ok({ removed: noise.length });
 });
 
 /**
@@ -572,6 +610,14 @@ adminRoutes.put('/settings', async (c) => {
     const times = parseCollectTimes(clean.fetchTimes);
     if (!times.length) return fail('抓取时间格式应为 HH:mm，多个用逗号分隔（北京时间）');
     clean.fetchTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
+  }
+  if (clean.epgSourcePriority !== undefined) {
+    const list = String(clean.epgSourcePriority ?? '')
+      .split(/[,，\s]+/)
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 20);
+    clean.epgSourcePriority = [...new Set(list)].join(',');
   }
   if (clean.sourceDegradeThreshold !== undefined) clean.sourceDegradeThreshold = Math.max(1, Math.min(10, Number(clean.sourceDegradeThreshold) || 3));
   if (clean.sourcePauseThreshold !== undefined) clean.sourcePauseThreshold = Math.max(2, Math.min(20, Number(clean.sourcePauseThreshold) || 5));

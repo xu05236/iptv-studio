@@ -145,6 +145,11 @@ export function Dashboard() {
         total: number;
         covered: number;
         percent: number;
+        coveredAny?: number;
+        stale?: number;
+        guideGeneratedAt?: string | null;
+        guideAgeHours?: number | null;
+        guideStale?: boolean;
         missing: Array<{ id: string; name: string; group: string }>;
         missingTotal: number;
       }>('/api/admin/epg/coverage'),
@@ -671,12 +676,19 @@ export function Dashboard() {
             <span className="epg-card__icon"><Tv size={17} /></span>
             <div className="grow">
               <div className="title-3">EPG 覆盖率</div>
-              <div className="caption">{epgCoverage.data.covered} / {epgCoverage.data.total} 频道有节目单</div>
+              <div className="caption">
+                {epgCoverage.data.covered} / {epgCoverage.data.total} 频道有未来节目
+                {epgCoverage.data.guideAgeHours === null || epgCoverage.data.guideAgeHours === undefined
+                  ? ' · 节目单时间未知'
+                  : ` · 节目单 ${epgCoverage.data.guideAgeHours} 小时前`}
+              </div>
             </div>
             <div className="epg-card__percent">{epgCoverage.data.percent}%</div>
           </div>
           <UsageBar label="有节目单" used={epgCoverage.data.covered} limit={epgCoverage.data.total} />
           <div className="caption" style={{ marginTop: 10 }}>
+            {epgCoverage.data.guideStale ? '节目单已超过 26 小时未更新，覆盖率可能虚高。' : null}
+            {epgCoverage.data.stale ? ` 其中 ${epgCoverage.data.stale} 个频道节目已全部过期。` : null}
             缺少节目单 {epgCoverage.data.missingTotal} 个
             {epgCoverage.data.missing.length
               ? ` · ${epgCoverage.data.missing.slice(0, 6).map((item) => item.name).join(' / ')}${epgCoverage.data.missingTotal > 6 ? ' …' : ''}`

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildXmltv, formatXmltvDate, parseXmltv, parseXmltvDate } from '../src/epg/xmltv.js';
-import { mergeEpg } from '../src/epg/merge.js';
+import { matchEpg, mergeEpg } from '../src/epg/merge.js';
+import { ChannelRegistry } from '../src/normalize/channels.js';
 
 const sample = `<?xml version="1.0" encoding="UTF-8"?>
 <tv generator-info-name="test">
@@ -33,6 +34,27 @@ describe('XMLTV parsing', () => {
     const epoch = Date.UTC(2026, 9, 27, 4, 0, 0);
     expect(formatXmltvDate(epoch, 480)).toBe('20261027120000 +0800');
     expect(parseXmltvDate('20261027120000 +0800')).toBe(epoch);
+  });
+});
+
+describe('matchEpg unmatched report', () => {
+  it('records channel names that fall back to x- ids', () => {
+    const registry = new ChannelRegistry([{ id: 'cctv1', name: 'CCTV-1', group: '央视' }]);
+    const unmatched: Array<{ epgName: string; provider: string }> = [];
+    matchEpg(
+      {
+        channels: [
+          { id: 'CCTV1', names: ['CCTV-1'] },
+          { id: 'weird', names: ['某个不存在的频道'] },
+        ],
+        programmes: [],
+      },
+      registry,
+      { provider: 'demo', unmatched },
+    );
+    expect(unmatched).toHaveLength(1);
+    expect(unmatched[0]!.epgName).toBe('某个不存在的频道');
+    expect(unmatched[0]!.provider).toBe('demo');
   });
 });
 

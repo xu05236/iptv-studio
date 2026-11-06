@@ -107,6 +107,15 @@ function safeJson<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
+/** EPG source priority from settings: comma separated hostnames, highest first. */
+function parseEpgPriority(value: unknown): string[] {
+  return String(value ?? '')
+    .split(/[,，\s]+/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
 export interface SourceDiff {
   sourceId: string;
   sourceName: string;
@@ -627,9 +636,15 @@ async function publishPhase(
   await applyLineFavorites(api, lines);
   await reportTaskProgress(api, 0, 5, '准备发布');
   const epg = epgMode === 'fetch'
-    ? await collectEpg(settings.epgUrls, registry, logger)
+    ? await collectEpg(settings.epgUrls, registry, logger, parseEpgPriority(settings.epgSourcePriority))
     : { xml: null, programmes: 0, data: epgFromGuide(await store.getJson<StoredGuide>('state/guide.json')) };
   await reportTaskProgress(api, 1, 5, 'EPG 已准备');
+  if ('unmatched' in epg && epg.unmatched.length) {
+    await store.put('state/epg-unmatched.json', JSON.stringify({ generatedAt: nowIso(), items: epg.unmatched }), 'application/json; charset=utf-8');
+  }
+  if ('sourcesReport' in epg && epg.sourcesReport.length) {
+    await store.put('state/epg-sources.json', JSON.stringify({ generatedAt: nowIso(), items: epg.sourcesReport }), 'application/json; charset=utf-8');
+  }
 
   const output = buildArtifacts({
     runId,
@@ -670,7 +685,9 @@ async function publishPhase(
     await api.post('/api/admin/snapshots', { origin: 'publish' }).catch((error) => logger.warn('发布后创建快照失败', { error: String(error) }));
   }
   await reportTaskProgress(api, 4, 5, '订阅生成完成');
-  await api.post('/api/admin/sync/channels', { channels: output.channels.map((channel) => ({ ...channel, aliases: [] })) });
+  const lineChannelIds = new Set(lines.map((line) => line.channelId));
+  const syncChannels = output.channels.filter((channel) => !channel.id.startsWith('x-') || lineChannelIds.has(channel.id));
+  await api.post('/api/admin/sync/channels', { channels: syncChannels.map((channel) => ({ ...channel, aliases: [] })) });
   await reportTaskProgress(api, 5, 5, '频道元数据同步完成');
 
   const previousCatalog = await store.getJson<ExportCatalog>('state/prev.json');
@@ -1564,7 +1581,13 @@ async function main(): Promise<void> {
       const registry = buildRegistry(remote);
       const previousGuide = await store.getJson<StoredGuide>('state/guide.json');
       const previousIds = new Set(Object.keys(previousGuide?.channels ?? {}));
-      const epg = await collectEpg(remote.settings.epgUrls, registry, logger);
+      const epg = await collectEpg(remote.settings.epgUrls, registry, logger, parseEpgPriority(remote.settings.epgSourcePriority));
+      if (epg.unmatched.length) {
+        await store.put('state/epg-unmatched.json', JSON.stringify({ generatedAt: nowIso(), items: epg.unmatched }), 'application/json; charset=utf-8');
+      }
+      if (epg.sourcesReport.length) {
+        await store.put('state/epg-sources.json', JSON.stringify({ generatedAt: nowIso(), items: epg.sourcesReport }), 'application/json; charset=utf-8');
+      }
       let bytes = 0;
       if (epg.xml) {
         bytes = new TextEncoder().encode(epg.xml).byteLength;

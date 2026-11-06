@@ -12,14 +12,27 @@ import {
   type EpgChannel,
   type EpgData,
   type EpgProgramme,
+  type UnmatchedEpgChannel,
 } from '@iptv/core';
 import type { RunLogger } from '../logger.js';
+
+export interface EpgSourceMeta {
+  provider: string;
+  url: string;
+  ok: boolean;
+  bytes: number;
+  channels: number;
+  programmes: number;
+  error?: string;
+}
 
 export interface EpgResult {
   data: EpgData;
   sources: number;
   programmes: number;
   xml: string;
+  unmatched: UnmatchedEpgChannel[];
+  sourcesReport: EpgSourceMeta[];
 }
 
 /** Fetch CNTV's unofficial JSON guide for CCTV and supported satellite channels. */
@@ -63,10 +76,14 @@ async function collectCntvEpg(
 }
 
 /** Fetch, normalise and merge every configured XMLTV source plus CCTV. */
-export async function collectEpg(urls: string[], registry: ChannelRegistry, logger: RunLogger): Promise<EpgResult> {
+export async function collectEpg(urls: string[], registry: ChannelRegistry, logger: RunLogger, priority: string[] = []): Promise<EpgResult> {
+  const ordered = sortUrlsByPriority(urls, priority);
   const sources: EpgData[] = [];
+  const metas: EpgSourceMeta[] = [];
+  const unmatched: UnmatchedEpgChannel[] = [];
   const cntv = await collectCntvEpg(registry, logger);
-  for (const url of urls) {
+  metas.push({ provider: 'api.cntv.cn', url: 'cntv://epg', ok: true, bytes: 0, channels: cntv.channels.length, programmes: cntv.programmes.length });
+  for (const url of ordered) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error('timeout')), 90_000);
     try {
@@ -76,6 +93,7 @@ export async function collectEpg(urls: string[], registry: ChannelRegistry, logg
         redirect: 'follow',
       });
       if (!response.ok) {
+        metas.push({ provider: providerLabel(url), url, ok: false, bytes: 0, channels: 0, programmes: 0, error: `HTTP ${response.status}` });
         logger.warn('EPG 抓取失败', { url, status: response.status });
         continue;
       }
@@ -85,10 +103,29 @@ export async function collectEpg(urls: string[], registry: ChannelRegistry, logg
         : buffer.toString('utf8');
       const parsed = matchEpg(parseXmltv(xml), registry, {
         idMap: url.includes('epg.pw') ? EPGPW_ID_MAP : undefined,
+        provider: providerLabel(url),
+        unmatched,
       });
       logger.info('EPG 解析完成', { url, channels: parsed.channels.length, programmes: parsed.programmes.length });
       sources.push(parsed);
+      metas.push({
+        provider: providerLabel(url),
+        url,
+        ok: true,
+        bytes: buffer.byteLength,
+        channels: parsed.channels.length,
+        programmes: parsed.programmes.length,
+      });
     } catch (error) {
+      metas.push({
+        provider: providerLabel(url),
+        url,
+        ok: false,
+        bytes: 0,
+        channels: 0,
+        programmes: 0,
+        error: error instanceof Error ? error.message : String(error),
+      });
       logger.warn('EPG 抓取异常', { url, error: error instanceof Error ? error.message : String(error) });
     } finally {
       clearTimeout(timer);
@@ -103,28 +140,49 @@ export async function collectEpg(urls: string[], registry: ChannelRegistry, logg
     maxProgrammesPerChannel: 180,
   });
 
-  // CNTV's own API wins for channels it covers (CCTV + most satellite). Remove
-  // every XMLTV programme for those channels first; otherwise a slightly
-  // shifted XMLTV entry can survive next to the official one and show the
-  // wrong "now playing" title.
-  const cntvIds = new Set(cntv.programmes.map((programme) => programme.channelId));
-  data.programmes = data.programmes.filter((programme) => !cntvIds.has(programme.channelId));
-
-  // CNTV data wins for the exact same start time; future days from XMLTV stay.
-  if (cntv.programmes.length) {
-    const known = new Set(data.channels.map((channel) => channel.id));
-    for (const channel of cntv.channels) if (!known.has(channel.id)) data.channels.push(channel);
-    const bySlot = new Map(data.programmes.map((programme) => [`${programme.channelId}|${programme.start}`, programme]));
-    for (const programme of cntv.programmes) bySlot.set(`${programme.channelId}|${programme.start}`, programme);
-    data.programmes = [...bySlot.values()].sort((a, b) => a.start - b.start);
+  // CNTV wins per (channel, start) slot only: removing every XMLTV programme
+  // for those channels used to wipe future days that CNTV does not cover.
+  const known = new Set(data.channels.map((channel) => channel.id));
+  for (const channel of cntv.channels) {
+    if (!known.has(channel.id)) {
+      data.channels.push(channel);
+      known.add(channel.id);
+    }
   }
+  const bySlot = new Map(data.programmes.map((programme) => [`${programme.channelId}|${programme.start}`, programme]));
+  for (const programme of cntv.programmes) bySlot.set(`${programme.channelId}|${programme.start}`, programme);
+  data.programmes = [...bySlot.values()].sort((a, b) => a.start - b.start);
 
   const xml = buildXmltv(data, {
     generator: 'iptv-studio',
     channelNames: new Map(data.channels.map((channel) => [channel.id, channel.names[0] ?? channel.id])),
   });
-  logger.info('EPG 合并完成', { sources: sources.length, channels: data.channels.length, programmes: data.programmes.length });
-  return { data, sources: sources.length, programmes: data.programmes.length, xml };
+  const uniqueUnmatched = [...new Map(unmatched.map((item) => [`${item.provider}|${item.epgName}`, item])).values()];
+  logger.info('EPG 合并完成', { sources: sources.length, channels: data.channels.length, programmes: data.programmes.length, unmatched: uniqueUnmatched.length });
+  return { data, sources: sources.length, programmes: data.programmes.length, xml, unmatched: uniqueUnmatched, sourcesReport: metas };
+}
+
+/** Sort XMLTV URLs by the configured hostname priority (unknown sources last). */
+export function sortUrlsByPriority(urls: string[], priority: string[]): string[] {
+  if (!priority.length) return urls;
+  const rankOf = (url: string): number => {
+    const label = providerLabel(url);
+    const index = priority.findIndex((item) => label === item || label.endsWith(`.${item}`) || url.includes(item));
+    return index === -1 ? priority.length : index;
+  };
+  return urls
+    .map((url, index) => ({ url, index, rank: rankOf(url) }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map((item) => item.url);
+}
+
+/** Provider label for the unmatched report: the source hostname. */
+function providerLabel(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 export interface GuideProgramme {

@@ -15,6 +15,20 @@ export interface MergeOptions {
 export interface MatchOptions {
   /** provider channel id -> a known standard channel name */
   idMap?: Record<string, string>;
+  /** provider label written into the unmatched report */
+  provider?: string;
+  /** EPG channels that could not be mapped to a real channel (created `x-` ids) */
+  unmatched?: UnmatchedEpgChannel[];
+}
+
+export interface UnmatchedEpgChannel {
+  /** display name from the EPG source */
+  epgName: string;
+  /** provider label or channel id */
+  provider: string;
+  /** generated placeholder id (`x-…`) */
+  channelId: string;
+  confidence: number;
 }
 
 /**
@@ -38,6 +52,14 @@ export function matchEpg(data: EpgData, registry: ChannelRegistry, options: Matc
       else if (resolved.created === next.created && next.confidence > resolved.confidence) resolved = next;
     }
     idMap.set(channel.id, resolved.id);
+    if (resolved.id.startsWith('x-')) {
+      options.unmatched?.push({
+        epgName: candidates[0] ?? channel.id,
+        provider: options.provider ?? channel.id,
+        channelId: resolved.id,
+        confidence: resolved.confidence,
+      });
+    }
     if (!seen.has(resolved.id)) {
       seen.add(resolved.id);
       channels.push({ id: resolved.id, names: [resolved.name], icon: channel.icon });

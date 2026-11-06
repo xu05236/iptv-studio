@@ -351,6 +351,8 @@ export interface AppSettings {
   snapshotScheduleEnabled: boolean;
   snapshotScheduleTimes: string;
   epgUrls: string[];
+  /** EPG source priority: comma separated hostnames, highest first. */
+  epgSourcePriority: string;
   regionSuffix: boolean;
   notifyTelegram: boolean;
   retentionDays: number;
@@ -422,6 +424,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   snapshotScheduleEnabled: false,
   snapshotScheduleTimes: '03:00',
   epgUrls: DEFAULT_EPG_URLS,
+  epgSourcePriority: '',
   regionSuffix: true,
   notifyTelegram: false,
   retentionDays: 7,

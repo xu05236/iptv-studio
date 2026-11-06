@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
+  CalendarClock,
   ClipboardList,
   Gauge,
   Layers3,
@@ -28,6 +29,7 @@ const GROUPS = [
       { to: '/admin/sources', label: '采集站', icon: RadioTower, end: false },
       { to: '/admin/pool', label: '线路池', icon: Layers3, end: false },
       { to: '/admin/channels', label: '频道', icon: Tv, end: false },
+      { to: '/admin/epg', label: 'EPG', icon: CalendarClock, end: false },
     ],
   },
   {
@@ -54,6 +56,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/sources': '采集站',
   '/admin/pool': '线路池',
   '/admin/channels': '频道',
+  '/admin/epg': 'EPG 节目单',
   '/admin/probe': '检测中心',
   '/admin/subscriptions': '订阅与导出',
   '/admin/runs': '运行与日志',

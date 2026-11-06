@@ -330,6 +330,14 @@ export function SettingsPage() {
               <div className="caption">当前 {epgUrls.length} 个源；默认包含 fanmingming 与 epg.pw。</div>
             </div>
           </Field>
+          <Field label="EPG 源优先级" hint="按 hostname 排序，逗号分隔，靠前优先；同频道同一时刻以靠前的源为准。">
+            <input
+              className="input"
+              placeholder="fanmingming.com,epg.pw,51zmt.top"
+              value={form.epgSourcePriority ?? ''}
+              onChange={(event) => set('epgSourcePriority', event.target.value)}
+            />
+          </Field>
           <div className="list">
             <div className="list__row">
               <span className="grow">启用 EPG 独立定时抓取</span>

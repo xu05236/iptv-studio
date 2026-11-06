@@ -118,6 +118,10 @@ export function ChannelsAdmin() {
         total: number;
         covered: number;
         percent: number;
+        coveredAny?: number;
+        stale?: number;
+        guideAgeHours?: number | null;
+        guideStale?: boolean;
         missing: Array<{ id: string; name: string; group: string }>;
         missingTotal: number;
       }>(`/api/admin/epg/coverage?${params.toString()}`);
@@ -531,11 +535,12 @@ export function ChannelsAdmin() {
           ) : null}
         </div>
       </Sheet>
-      <Sheet open={epgOpen} onClose={() => setEpgOpen(false)} title="EPG 缺失映射" subtitle={epgCoverage.data ? `${epgCoverage.data.covered} / ${epgCoverage.data.total} 个频道有节目单` : undefined}>
+      <Sheet open={epgOpen} onClose={() => setEpgOpen(false)} title="EPG 缺失映射" subtitle={epgCoverage.data ? `${epgCoverage.data.covered} / ${epgCoverage.data.total} 个频道有未来节目${epgCoverage.data.guideStale ? '（节目单已过期）' : ''}` : undefined}>
         <div className="stack">
           <div className="caption">
             输入 EPG 里的显示名或数字 ID（例如 北京卫视 / 539726），绑定后下一轮采集生效。
             {epgCoverage.data ? ` 当前缺失 ${epgCoverage.data.missingTotal} 个，已显示 ${epgCoverage.data.missing.length} 个。` : ''}
+            {epgCoverage.data?.stale ? ` 另有 ${epgCoverage.data.stale} 个频道节目已全部过期。` : ''}
           </div>
           <div className="row row--wrap" style={{ gap: 6, flexWrap: 'wrap' }}>
             <button

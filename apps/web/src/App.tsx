@@ -11,6 +11,7 @@ const Help = lazy(() => import('./pages/Help').then((module) => ({ default: modu
 const Login = lazy(() => import('./pages/admin/Login').then((module) => ({ default: module.Login })));
 const Dashboard = lazy(() => import('./pages/admin/Dashboard').then((module) => ({ default: module.Dashboard })));
 const Sources = lazy(() => import('./pages/admin/Sources').then((module) => ({ default: module.Sources })));
+const Epg = lazy(() => import('./pages/admin/Epg').then((module) => ({ default: module.Epg })));
 const SourceDetail = lazy(() => import('./pages/admin/SourceDetail').then((module) => ({ default: module.SourceDetail })));
 const Pool = lazy(() => import('./pages/admin/Pool').then((module) => ({ default: module.Pool })));
 const ChannelsAdmin = lazy(() => import('./pages/admin/ChannelsAdmin').then((module) => ({ default: module.ChannelsAdmin })));
@@ -42,6 +43,7 @@ export function App() {
         >
           <Route index element={<Dashboard />} />
           <Route path="sources" element={<Sources />} />
+          <Route path="epg" element={<Epg />} />
           <Route path="sources/:id" element={<SourceDetail />} />
           <Route path="pool" element={<Pool />} />
           <Route path="channels" element={<ChannelsAdmin />} />
