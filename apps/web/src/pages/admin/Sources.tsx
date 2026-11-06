@@ -227,6 +227,15 @@ export function Sources() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const revive = useMutation({
+    mutationFn: (id: string) => api.post<{ revived: number; taskId?: string }>('/api/admin/pool/revive', { sourceId: id }),
+    onSuccess: (result) => {
+      show(`已复活 ${result.revived} 条已淘汰线路${result.taskId ? '，已派发探测' : ''}`);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const items = useMemo(() => {
     const base = data?.items ?? [];
     const favorite = (source: SourceItem): number => (source.weight >= 2 ? 1 : 0);
@@ -430,6 +439,7 @@ export function Sources() {
               <div className="source-card__actions">
                 <Button size="sm" loading={probe.isPending} onClick={() => probe.mutate(source.id)}><RefreshCw size={13} /> 检查解析</Button>
                 <Button size="sm" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}><Zap size={13} /> 抽样测速</Button>
+                <Button size="sm" loading={revive.isPending} onClick={() => revive.mutate(source.id)}><RefreshCw size={13} /> 复活淘汰</Button>
                 <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); }}><SlidersHorizontal size={13} /> 过滤</Button>
                 <Button size="sm" variant="ghost" onClick={() => { if (confirm(`删除「${source.name}」？`)) remove.mutate(source.id); }}><Trash2 size={13} /> 删除</Button>
               </div>

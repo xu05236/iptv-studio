@@ -19,6 +19,7 @@ import {
   splitUrlHeaders,
   tierFor,
   withinRetention,
+  isPurgeable,
   type AppSettings,
   type EpgData,
   type LineEntry,
@@ -1230,7 +1231,7 @@ async function runSelectedProbes(): Promise<void> {
   }
 }
 
-/** One-off maintenance: drop lines whose channel no longer exists in D1. */
+/** Remove lines whose channel no longer exists in D1. */
 async function runCleanupOrphans(): Promise<void> {
   const config = loadConfig();
   const logger = new RunLogger();
@@ -1280,10 +1281,166 @@ async function runCleanupOrphans(): Promise<void> {
   }
 }
 
+/** 清理超过保留期的已淘汰线路：先写墓碑再删除，避免下次抓源又导入。 */
+async function runCleanupRejected(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+  let report: RunReport = {
+    id: runId, trigger: 'manual', status: 'running', startedAt,
+    sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0, durationMs: 0, warnings: [],
+  };
+
+  try {
+    const remote = await loadRemoteConfig(api);
+    const settings = remote.settings;
+    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const lines = previous?.lines ?? [];
+    const retention = Math.max(1, Number(settings.rejectedRetentionDays) || 30);
+    const expired = lines.filter((line) => line.status === 'dead' && isPurgeable(line, retention, new Date()));
+    if (!expired.length) {
+      logger.info('没有到期的已淘汰线路', { retention });
+      const logKey = await writeLog(store, runId, logger);
+      report = {
+        ...report, status: 'success', finishedAt: nowIso(),
+        channels: new Set(lines.map((line) => line.channelId)).size,
+        lines: lines.length, durationMs: Date.now() - startedMs, logKey,
+        warnings: [`没有到期的已淘汰线路（保留 ${retention} 天）`],
+      };
+      await finishRun(api, report);
+      return;
+    }
+    await api.post('/api/admin/pool/tombstone', { urls: [...new Set(expired.map((line) => line.url))], reason: 'retention' });
+    const removed = new Set(expired.map((line) => line.key));
+    const kept = lines.filter((line) => !removed.has(line.key));
+    const generatedAt = nowIso();
+    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines: kept }), 'application/json');
+    await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, kept, generatedAt)), 'application/json');
+    await writePoolStats(store, remote, kept);
+    await syncSourceCounts(api, remote, kept);
+    logger.info('已淘汰线路清理完成', { removed: expired.length, lines: kept.length });
+    const logKey = await writeLog(store, runId, logger);
+    const alive = kept.filter((line) => line.status === 'alive').length;
+    report = {
+      ...report, status: 'success', finishedAt: nowIso(),
+      channels: new Set(kept.map((line) => line.channelId)).size,
+      lines: kept.length, alive, dead: kept.length - alive,
+      durationMs: Date.now() - startedMs, logKey,
+      warnings: [`已淘汰线路清理 ${expired.length} 条`],
+    };
+    await finishRun(api, report);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('已淘汰线路清理失败', { error: message });
+    report = { ...report, status: 'failed', finishedAt: nowIso(), error: message, durationMs: Date.now() - startedMs };
+    try { report.logKey = await writeLog(store, runId, logger); } catch { /* ignore */ }
+    await finishRun(api, report);
+    throw error;
+  }
+}
+
+/** 月末抽检/整批复活：把已淘汰线路拉回待测，只探测一次，失败重新淘汰。 */
+async function runReviveBatch(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+  let report: RunReport = {
+    id: runId, trigger: 'manual', status: 'running', startedAt,
+    sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0, durationMs: 0, warnings: [],
+  };
+
+  try {
+    const remote = await loadRemoteConfig(api);
+    const settings = remote.settings;
+    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const lines = previous?.lines ?? [];
+    const budget = Math.max(1, Number(process.env.PROBE_BUDGET || settings.monthlyReviveBatchSize) || 800);
+    const selected = lines
+      .filter((line) => line.status === 'dead')
+      .sort((left, right) => String(left.rejectedAt ?? '').localeCompare(String(right.rejectedAt ?? '')))
+      .slice(0, budget);
+    if (!selected.length) {
+      logger.info('没有可复活的已淘汰线路');
+      const logKey = await writeLog(store, runId, logger);
+      report = {
+        ...report, status: 'success', finishedAt: nowIso(),
+        channels: new Set(lines.map((line) => line.channelId)).size,
+        lines: lines.length, durationMs: Date.now() - startedMs, logKey,
+        warnings: ['没有可复活的已淘汰线路'],
+      };
+      await finishRun(api, report);
+      return;
+    }
+    for (const line of selected) {
+      line.status = 'unknown';
+      line.failCount = 0;
+      line.lastProbeAt = undefined;
+      delete line.rejectedAt;
+    }
+    logger.info('复活抽检计划', { selected: selected.length, budget });
+    const concurrency = Math.max(1, Math.min(config.concurrency || settings.concurrency || 32, 64));
+    await reportTaskProgress(api, 0, selected.length);
+    const summary = await runProbes(selected, settings, concurrency, logger, (done) => {
+      void reportTaskProgress(api, done, selected.length);
+    });
+    const now = new Date();
+    for (const line of selected) {
+      if (line.status !== 'alive') {
+        line.status = 'dead';
+        line.rejectedAt = now.toISOString();
+      }
+    }
+    const generatedAt = nowIso();
+    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
+    await writePoolStats(store, remote, lines);
+    await syncSourceCounts(api, remote, lines);
+    logger.info('复活抽检完成', { probed: summary.probed, alive: summary.alive, failedAgain: selected.length - summary.alive });
+    const logKey = await writeLog(store, runId, logger);
+    const aliveTotal = lines.filter((line) => line.status === 'alive').length;
+    report = {
+      ...report, status: 'success', finishedAt: nowIso(),
+      channels: new Set(lines.map((line) => line.channelId)).size,
+      lines: lines.length, alive: aliveTotal, dead: lines.length - aliveTotal,
+      probed: summary.probed,
+      bytes: summary.bytes,
+      durationMs: Date.now() - startedMs, logKey,
+      warnings: [
+        `复活抽检 ${selected.length} 条，成功 ${summary.alive} 条`,
+        ...summary.errors.slice(0, 10).map((item) => `${item.url}: ${item.error}`),
+      ],
+    };
+    await finishRun(api, report);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('复活抽检失败', { error: message });
+    report = { ...report, status: 'failed', finishedAt: nowIso(), error: message, durationMs: Date.now() - startedMs };
+    try { report.logKey = await writeLog(store, runId, logger); } catch { /* ignore */ }
+    await finishRun(api, report);
+    throw error;
+  }
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2] ?? 'collect';
   if (command === 'cleanup-orphans') {
     await runCleanupOrphans();
+    return;
+  }
+  if (command === 'cleanup-rejected') {
+    await runCleanupRejected();
+    return;
+  }
+  if (command === 'revive-batch') {
+    await runReviveBatch();
     return;
   }
   if (command === 'liveness') {

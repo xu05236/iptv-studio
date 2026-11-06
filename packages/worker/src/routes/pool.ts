@@ -20,6 +20,7 @@ import {
 } from '../db.js';
 import { fail, ok, parseJsonField, randomId, randomToken, readJson } from '../lib/http.js';
 import { getJson, putArtifact } from '../lib/store.js';
+import { createTask, dispatchNext } from '../lib/tasks.js';
 import { countryOfGroup } from '../lib/channelCountry.js';
 import { loadIndex } from '../lib/catalog.js';
 
@@ -444,6 +445,80 @@ poolRoutes.post('/untombstone', async (c) => {
   const removed = await removeLineTombstones(c.env, urls);
   await audit(c.env, c.get('actor'), 'pool.untombstone', 'bulk', { urls, removed });
   return ok({ removed });
+});
+
+/** 一次性迁移：旧待复测（失败≥2 次）改判已淘汰；已淘汰补 rejectedAt 并清掉旧 reviveAt。 */
+poolRoutes.post('/migrate-rejected', async (c) => {
+  const state = await getJson<{ generatedAt?: string; lines: LineEntry[] }>(c.env, 'state/lines.json');
+  if (!state?.lines?.length) return fail('当前没有线路池', 404);
+  const generatedAt = new Date().toISOString();
+  let rejected = 0;
+  let cleared = 0;
+  for (const line of state.lines) {
+    const legacy = line as LineEntry & { reviveAt?: string };
+    if (legacy.reviveAt) {
+      delete legacy.reviveAt;
+      cleared++;
+    }
+    if (line.status === 'dead') {
+      if (!line.rejectedAt) {
+        line.rejectedAt = line.lastProbeAt ?? generatedAt;
+        rejected++;
+      }
+      continue;
+    }
+    if (line.status === 'suspect') {
+      const everAlive = line.everAlive ?? (line.passCount ?? 0) > 0;
+      const threshold = everAlive ? 3 : 2;
+      if (Number(line.failCount ?? 0) >= threshold) {
+        line.status = 'dead';
+        line.rejectedAt = generatedAt;
+        rejected++;
+      }
+    }
+  }
+  if (rejected || cleared) {
+    await putArtifact(c.env, 'state/lines.json', JSON.stringify({ generatedAt, lines: state.lines }), 'application/json; charset=utf-8');
+  }
+  await audit(c.env, c.get('actor'), 'pool.migrate-rejected', 'bulk', { rejected, cleared, total: state.lines.length });
+  return ok({ rejected, cleared, total: state.lines.length });
+});
+
+/** 复活已淘汰线路：按 keys 或整源拉回待测，立即派发前 50 条探测。 */
+poolRoutes.post('/revive', async (c) => {
+  const body = (await readJson<{ keys?: unknown; sourceId?: unknown; limit?: unknown }>(c)) ?? {};
+  const keys = Array.isArray(body.keys)
+    ? body.keys.filter((key): key is string => typeof key === 'string' && Boolean(key.trim())).slice(0, 1000)
+    : [];
+  const sourceId = typeof body.sourceId === 'string' ? body.sourceId.trim().slice(0, 120) : '';
+  const limit = Math.max(1, Math.min(1000, Number(body.limit) || 500));
+  if (!keys.length && !sourceId) return fail('keys 或 sourceId 不能为空');
+  const state = await getJson<{ generatedAt?: string; lines: LineEntry[] }>(c.env, 'state/lines.json');
+  if (!state?.lines?.length) return fail('当前没有线路池', 404);
+  const selected = state.lines
+    .filter((line) => line.status === 'dead' && (keys.includes(line.key) || (sourceId && line.sourceId === sourceId)))
+    .slice(0, limit);
+  if (!selected.length) return fail('没有可复活的已淘汰线路', 404);
+  const generatedAt = new Date().toISOString();
+  for (const line of selected) {
+    line.status = 'unknown';
+    line.failCount = 0;
+    line.lastProbeAt = undefined;
+    delete line.rejectedAt;
+  }
+  await putArtifact(c.env, 'state/lines.json', JSON.stringify({ generatedAt, lines: state.lines }), 'application/json; charset=utf-8');
+  const probeKeys = selected.slice(0, 50).map((line) => line.key);
+  const task = await createTask(c.env, {
+    type: 'probe-lines',
+    source: 'manual',
+    priority: 100,
+    payload: { line_keys: probeKeys.join(','), budget: '0', force: 'false', source_id: '', phase: '' },
+    total: selected.length,
+    unit: 'lines',
+  });
+  const dispatched = await dispatchNext(c.env);
+  await audit(c.env, c.get('actor'), 'pool.revive', 'bulk', { revived: selected.length, sourceId, taskId: task.id });
+  return ok({ revived: selected.length, taskId: task.id, dispatched: Boolean(dispatched.task) });
 });
 
 function escapeM3u(value: string): string {

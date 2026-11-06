@@ -167,6 +167,7 @@ export async function runScheduler(env: Env): Promise<void> {
     let enqueued = false;
     if (await runFetchWatch(env, settings, at)) enqueued = true;
     if (await runProbeWatch(env, settings, at)) enqueued = true;
+    if (await runMonthlyReviveWatch(env, settings, at)) enqueued = true;
     await runAutoPublishAfterProbe(env, settings, at);
     await dispatchNext(env);
     return;
@@ -238,6 +239,7 @@ export async function runScheduler(env: Env): Promise<void> {
   const at = Date.now();
   if (await runFetchWatch(env, settings, at)) enqueued = true;
   if (await runProbeWatch(env, settings, at)) enqueued = true;
+  if (await runMonthlyReviveWatch(env, settings, at)) enqueued = true;
   await runAutoPublishAfterProbe(env, settings, at);
   // Always drain the queue, even when no scheduled task was newly enqueued.
   // Otherwise manual/source tasks can sit queued until the next schedule event.
@@ -440,5 +442,43 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
   });
   await recordInterval(env, 'state/probe-schedule.json', now, now + intervalMs, 'queued');
   await audit(env, 'scheduler', 'schedule.probe-batch', task.id);
+  return true;
+}
+
+/**
+ * 月末抽检：只在当月最后一天（北京时间）尝试一次，Actions 剩余额度达到阈值
+ * 才把一批已淘汰线路拉回复活检测；跳过时 1 小时后再试，不消耗当月唯一机会。
+ */
+async function runMonthlyReviveWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
+  if (!settings.monthlyReviveEnabled) return false;
+  const beijing = new Date(now + 8 * 3_600_000);
+  const daysInMonth = new Date(Date.UTC(beijing.getUTCFullYear(), beijing.getUTCMonth() + 1, 0)).getUTCDate();
+  if (beijing.getUTCDate() !== daysInMonth) return false;
+  const state = await getRuntimeJson<IntervalState>(env, 'state/monthly-revive-schedule.json');
+  if (state?.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
+  const month = beijing.toISOString().slice(0, 7);
+  if (state?.lastRunAt?.startsWith(month)) return false;
+  const allowance = await loadActionsAllowance(env, settings);
+  const minRemaining = Math.max(0, Number(settings.monthlyReviveMinRemainingMinutes) || 600);
+  if (allowance.remaining < minRemaining) {
+    await putRuntimeJson(env, 'state/monthly-revive-schedule.json', { nextRunAt: new Date(now + 3_600_000).toISOString(), result: `skipped: Actions 余额 ${allowance.remaining} < ${minRemaining}` });
+    return false;
+  }
+  const guard = await intervalGuard(env, settings);
+  if (guard) {
+    await putRuntimeJson(env, 'state/monthly-revive-schedule.json', { nextRunAt: new Date(now + 3_600_000).toISOString(), result: `skipped: ${guard}` });
+    return false;
+  }
+  const batch = Math.max(1, Number(settings.monthlyReviveBatchSize) || 800);
+  const task = await createTask(env, {
+    type: 'revive-batch',
+    source: 'schedule',
+    priority: 30,
+    payload: { budget: String(batch) },
+    total: batch,
+    unit: 'lines',
+  });
+  await putRuntimeJson(env, 'state/monthly-revive-schedule.json', { lastRunAt: new Date(now).toISOString(), result: 'queued', taskId: task.id });
+  await audit(env, 'scheduler', 'schedule.revive-batch', task.id);
   return true;
 }

@@ -9,6 +9,8 @@
     "probe": "tsx src/cli.ts probe",
     "probe-batch": "tsx src/cli.ts probe-batch",
     "cleanup-orphans": "tsx src/cli.ts cleanup-orphans",
+    "cleanup-rejected": "tsx src/cli.ts cleanup-rejected",
+    "revive-batch": "tsx src/cli.ts revive-batch",
     "publish": "tsx src/cli.ts publish",
     "liveness": "tsx src/cli.ts liveness",
     "export": "tsx src/cli.ts export",
