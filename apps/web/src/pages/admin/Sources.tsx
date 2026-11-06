@@ -246,6 +246,15 @@ export function Sources() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/api/admin/sources/${id}`),
+    onSuccess: () => {
+      show('已删除');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const bulk = useMutation({
     mutationFn: async (action: { kind: 'enable' | 'disable' | 'delete' | 'tag' | 'priority'; tag?: string; priority?: number }) => {
       const ids = [...selected];
@@ -569,12 +578,13 @@ export function Sources() {
               <div className="source-card__actions">
                 <Link to={`/admin/sources/${source.id}`}><Button size="sm">详情</Button></Link>
                 {source.status !== 'active' ? (
-                  <Button size="sm" variant="glass" loading={recover.isPending} onClick={() => recover.mutate(source.id)}>重试恢复</Button>
+                  <Button size="sm" title="重试恢复" loading={recover.isPending} onClick={() => recover.mutate(source.id)}>恢复</Button>
                 ) : null}
-                <Button size="sm" title="检查解析" loading={probe.isPending} onClick={() => probe.mutate(source.id)}><RefreshCw size={13} /> 检查</Button>
-                <Button size="sm" title="抽样测速" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}><Zap size={13} /> 测速</Button>
-                <Button size="sm" variant="glass" title="复活本源的已淘汰线路" loading={revive.isPending} onClick={() => revive.mutate(source.id)}><RefreshCw size={13} /> 复活</Button>
-                <Button size="sm" variant="glass" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); }}><SlidersHorizontal size={13} /> 过滤</Button>
+                <Button size="sm" title="检查解析" loading={probe.isPending} onClick={() => probe.mutate(source.id)}>检查</Button>
+                <Button size="sm" title="抽样测速" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}>测速</Button>
+                <Button size="sm" title="复活本源的已淘汰线路" loading={revive.isPending} onClick={() => revive.mutate(source.id)}>复活</Button>
+                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); }}>过滤</Button>
+                <Button size="sm" title="删除本源" loading={remove.isPending} onClick={() => { if (confirm(`删除「${source.name}」？该源的线路会一起移除。`)) remove.mutate(source.id); }}>删除</Button>
               </div>
             </Card>
           );

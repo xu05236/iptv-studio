@@ -2633,6 +2633,13 @@ button {
   border-top: 1px solid var(--sep);
 }
 
+/* Six short actions must stay readable on one row; drop the extra horizontal
+   padding that makes them wrap onto a second line. */
+.source-card__actions .btn {
+  padding-inline: 9px;
+  white-space: nowrap;
+}
+
 .source-health {
   border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--sep) 80%, transparent);

@@ -107,15 +107,14 @@ export function SourceDetail() {
         description={`${hostOf(source)} · ${source.kind} · 权重 ${source.weight} · 抓取 ${source.fetchMode === 'worker' ? 'Worker 代拉' : '直连'}`}
         actions={
           <>
-            <Link to="/admin/sources"><Button variant="glass" size="sm"><ArrowLeft size={14} /> 返回</Button></Link>
-            {source.url ? <a href={source.url} target="_blank" rel="noreferrer"><Button variant="glass" size="sm"><ExternalLink size={14} /> 打开源</Button></a> : null}
-            <Button size="sm" variant="glass" loading={probe.isPending} onClick={() => probe.mutate()}><Zap size={14} /> 立即探测</Button>
-            <Button size="sm" variant={source.enabled ? 'ghost' : 'primary'} loading={toggle.isPending} onClick={() => toggle.mutate()}>
+            <Link to="/admin/sources"><Button size="sm"><ArrowLeft size={14} /> 返回</Button></Link>
+            {source.url ? <a href={source.url} target="_blank" rel="noreferrer"><Button size="sm"><ExternalLink size={14} /> 打开源</Button></a> : null}
+            <Button size="sm" loading={probe.isPending} onClick={() => probe.mutate()}><Zap size={14} /> 立即探测</Button>
+            <Button size="sm" loading={toggle.isPending} onClick={() => toggle.mutate()}>
               {source.enabled ? '停用' : '启用'}
             </Button>
             <Button
               size="sm"
-              variant="glass"
               loading={remove.isPending}
               onClick={() => {
                 if (confirm(`删除「${source.name}」？该源的线路会一起移除。`)) remove.mutate();
