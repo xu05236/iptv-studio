@@ -723,8 +723,11 @@ export async function saveSettings(env: Env, patch: Partial<AppSettings>): Promi
 export async function applySourceStats(
   env: Env,
   stats: Array<SourceRunStats & { reputation?: number; tier?: string }>,
+  thresholds?: { degrade?: number; pause?: number },
 ): Promise<void> {
   if (!stats.length) return;
+  const degrade = Math.max(1, Number(thresholds?.degrade) || 3);
+  const pause = Math.max(degrade + 1, Number(thresholds?.pause) || 5);
   const day = new Date().toISOString().slice(0, 10);
   const existingRows = await listSources(env);
   const existing = new Map(existingRows.map((row) => [row.id, row]));
@@ -738,7 +741,7 @@ export async function applySourceStats(
     // Sources that keep failing must not linger as "active" and burn a fetch
     // slot every run. Keep the row instead of deleting it: the admin UI needs
     // it to show why the source stopped and to let the user resume it.
-    if (failures >= 5) {
+    if (failures >= pause) {
       statements.push(
         env.DB.prepare(
           `UPDATE sources SET status = 'paused', consecutive_failures = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -746,7 +749,7 @@ export async function applySourceStats(
       );
       continue;
     }
-    const status = failures >= 3 || empty ? 'degraded' : 'active';
+    const status = failures >= degrade || empty ? 'degraded' : 'active';
     statements.push(
       env.DB.prepare(
         `UPDATE sources SET entry_count = ?, alive_count = ?, last_fetch_at = ?,

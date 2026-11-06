@@ -282,6 +282,12 @@ export interface AppSettings {
   keepSuspect: boolean;
   /** 已淘汰线路保留天数（到期清理，默认 30）。 */
   rejectedRetentionDays: number;
+  /** 源连续失败多少次标 degraded（默认 3）。 */
+  sourceDegradeThreshold: number;
+  /** 源连续失败多少次暂停（默认 5）。 */
+  sourcePauseThreshold: number;
+  /** 暂停源每隔多少小时做一次半开探测（默认 6）。 */
+  sourceHalfOpenHours: number;
   probeBudget: number;
   concurrency: number;
   /** Recheck interval for alive backup lines (hours). */
@@ -374,6 +380,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   compensate: true,
   keepSuspect: true,
   rejectedRetentionDays: 30,
+  sourceDegradeThreshold: 3,
+  sourcePauseThreshold: 5,
+  sourceHalfOpenHours: 6,
   probeBudget: 12_000,
   concurrency: 64,
   probeAliveHours: 360,

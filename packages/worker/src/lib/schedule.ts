@@ -167,6 +167,7 @@ export async function runScheduler(env: Env): Promise<void> {
     let enqueued = false;
     if (await runFetchWatch(env, settings, at)) enqueued = true;
     if (await runProbeWatch(env, settings, at)) enqueued = true;
+    if (await runSourceRecoveryWatch(env, settings, at)) enqueued = true;
     if (await runMonthlyReviveWatch(env, settings, at)) enqueued = true;
     await runAutoPublishAfterProbe(env, settings, at);
     await dispatchNext(env);
@@ -239,6 +240,7 @@ export async function runScheduler(env: Env): Promise<void> {
   const at = Date.now();
   if (await runFetchWatch(env, settings, at)) enqueued = true;
   if (await runProbeWatch(env, settings, at)) enqueued = true;
+  if (await runSourceRecoveryWatch(env, settings, at)) enqueued = true;
   if (await runMonthlyReviveWatch(env, settings, at)) enqueued = true;
   await runAutoPublishAfterProbe(env, settings, at);
   // Always drain the queue, even when no scheduled task was newly enqueued.
@@ -395,6 +397,39 @@ function phaseList(value: string): string[] {
 }
 
 /** 抓取任务按 `fetchTimes` 多时段触发；每个时段只派发一次，源自身再按 12/24/72 小时到期判断。 */
+/**
+ * Half-open probing for paused sources: every `sourceHalfOpenHours`, re-fetch
+ * one paused source. A success resets it to active via applySourceStats; a
+ * failure keeps it paused, so a dead source costs one cheap fetch per window.
+ */
+async function runSourceRecoveryWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
+  const hours = Math.max(1, Number(settings.sourceHalfOpenHours) || 6);
+  const state = await getRuntimeJson<{ lastRunAt?: string }>(env, 'state/source-recovery-schedule.json');
+  if (state?.lastRunAt && now - Date.parse(state.lastRunAt) < hours * 3_600_000) return false;
+  const sources = await listSources(env);
+  const due = sources.filter(
+    (source) => source.status === 'paused' && (!source.last_fetch_at || now - Date.parse(source.last_fetch_at) >= hours * 3_600_000),
+  );
+  if (!due.length) {
+    await putRuntimeJson(env, 'state/source-recovery-schedule.json', { lastRunAt: new Date(now).toISOString(), result: 'idle' });
+    return false;
+  }
+  const source = due[0];
+  await createTask(env, {
+    type: 'fetch',
+    source: 'schedule',
+    priority: 40,
+    payload: { source_id: source.id, force: 'false', budget: '0' },
+    message: `半开探测 ${source.name}`,
+  });
+  await putRuntimeJson(env, 'state/source-recovery-schedule.json', {
+    lastRunAt: new Date(now).toISOString(),
+    sourceId: source.id,
+    result: 'queued',
+  });
+  return true;
+}
+
 async function runFetchWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
   if (!settings.autoFetchEnabled) return false;
   const times = parseCollectTimes(settings.fetchTimes || '06:30');

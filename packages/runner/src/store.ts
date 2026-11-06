@@ -168,10 +168,15 @@ export async function loadRemoteConfig(api: ApiClient): Promise<RemoteConfig> {
   const aliasesResponse = await api.get<{ aliases: Record<string, string> }>('/api/admin/channels/meta/aliases');
   const rulesResponse = await api.get<{ items: Array<Rule & { enabled: boolean }> }>('/api/admin/rules');
 
+  // A half-open recovery run targets one paused source explicitly; every other
+  // run keeps skipping auto-paused sources.
+  const scopedSourceId = (process.env.SOURCE_ID ?? '').trim();
   return {
     settings: settingsResponse.settings,
     sources: sourcesResponse.items.filter(
-      (source) => (source.enabled === true || source.enabled === 1) && source.status !== 'paused',
+      (source) =>
+        (source.enabled === true || source.enabled === 1) &&
+        (source.status !== 'paused' || source.id === scopedSourceId),
     ),
     channels: channelsResponse.items,
     aliases: aliasesResponse.aliases,

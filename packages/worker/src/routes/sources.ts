@@ -185,6 +185,75 @@ sourceRoutes.get('/:id', async (c) => {
   return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}), fetchMode: source.fetch_mode ?? 'direct', enabled: source.enabled === 1 } });
 });
 
+sourceRoutes.get('/:id/detail', async (c) => {
+  const id = c.req.param('id');
+  const [source, state, fetchReport] = await Promise.all([
+    getSource(c.env, id),
+    getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json'),
+    getJson<{ generatedAt?: string; sources?: Array<{ sourceId: string } & Record<string, unknown>> }>(c.env, 'state/fetch-report.json'),
+  ]);
+  if (!source) return fail('直播源不存在', 404);
+
+  const now = new Date();
+  const lines = (state?.lines ?? []).filter((line) => line.sourceId === id);
+  const stats = { total: lines.length, alive: 0, pending: 0, quarantine: 0, rejected: 0, tested: 0, dueQuarantine: 0, duePending: 0 };
+  let lastProbeAt: string | null = null;
+  let oldestAliveProbeAt: string | null = null;
+  for (const line of lines) {
+    if (line.lastProbeAt || line.lastLivenessAt) stats.tested++;
+    if (line.lastProbeAt && (!lastProbeAt || line.lastProbeAt > lastProbeAt)) lastProbeAt = line.lastProbeAt;
+    if (line.status === 'alive') {
+      stats.alive++;
+      if (line.lastProbeAt && (!oldestAliveProbeAt || line.lastProbeAt < oldestAliveProbeAt)) oldestAliveProbeAt = line.lastProbeAt;
+    } else if (line.status === 'suspect') {
+      stats.quarantine++;
+      if (isDueForProbe(line, 'normal', now)) stats.dueQuarantine++;
+    } else if (line.status === 'dead') {
+      stats.rejected++;
+    } else if (line.status === 'unknown') {
+      stats.pending++;
+      if (!line.lastProbeAt) stats.duePending++;
+    }
+  }
+
+  const days = Math.min(30, Math.max(1, Number(c.req.query('days') ?? 7) || 7));
+  const { results: healthRows } = await c.env.DB.prepare(
+    `SELECT day, fetched, parsed, alive, dead, avg_speed, avg_latency, reputation
+     FROM source_stats WHERE source_id = ? AND day >= date('now', ?) ORDER BY day ASC`,
+  ).bind(id, `-${days - 1} days`).all<{
+    day: string; fetched: number; parsed: number; alive: number; dead: number; avg_speed: number; avg_latency: number; reputation: number;
+  }>();
+
+  return ok({
+    source: {
+      ...source,
+      tags: parseJsonField<string[]>(source.tags, []),
+      filters: parseJsonField<SourceFilters>(source.filters, {}),
+      requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}),
+      fetchMode: source.fetch_mode ?? 'direct',
+      enabled: source.enabled === 1,
+    },
+    stats,
+    lastProbeAt,
+    oldestAliveProbeAt,
+    health: {
+      days,
+      points: healthRows.map((row) => ({
+        day: row.day,
+        fetched: row.fetched === 1,
+        parsed: row.parsed,
+        alive: row.alive,
+        dead: row.dead,
+        avgSpeedKbps: row.avg_speed,
+        avgLatencyMs: row.avg_latency,
+        reputation: row.reputation,
+      })),
+    },
+    report: (fetchReport?.sources ?? []).find((item) => item.sourceId === id) ?? null,
+    reportGeneratedAt: fetchReport?.generatedAt ?? null,
+  });
+});
+
 sourceRoutes.get('/:id/content', async (c) => {
   const source = await getSource(c.env, c.req.param('id'));
   if (!source) return fail('直播源不存在', 404);
@@ -534,6 +603,23 @@ sourceRoutes.post('/:id/toggle', async (c) => {
     ...(enabling && source.status === 'paused' ? { status: 'active', consecutive_failures: 0 } : {}),
   });
   return ok({ source: await getSource(c.env, id) });
+});
+
+sourceRoutes.post('/:id/recover', async (c) => {
+  const id = c.req.param('id');
+  const source = await getSource(c.env, id);
+  if (!source) return fail('直播源不存在', 404);
+  await updateSource(c.env, id, { enabled: 1, status: 'active', consecutive_failures: 0 });
+  const task = await createTask(c.env, {
+    type: 'fetch',
+    source: 'source',
+    priority: 90,
+    payload: { source_id: id, force: 'false', budget: '0' },
+    message: `重试恢复 ${source.name}`,
+  });
+  const dispatched = await dispatchNext(c.env);
+  await audit(c.env, c.get('actor'), 'source.recover', id, { taskId: task.id });
+  return ok({ source: await getSource(c.env, id), taskId: task.id, message: dispatched.message });
 });
 
 async function sha256(text: string): Promise<string> {

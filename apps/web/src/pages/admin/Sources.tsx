@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, ChevronDown, LayoutGrid, List, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Trash2, Upload, Zap } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -206,6 +207,15 @@ export function Sources() {
   const toggle = useMutation({
     mutationFn: (id: string) => api.post(`/api/admin/sources/${id}/toggle`),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] }),
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const recover = useMutation({
+    mutationFn: (id: string) => api.post<{ message?: string }>(`/api/admin/sources/${id}/recover`),
+    onSuccess: (result) => {
+      show(result?.message ?? '已重试恢复');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
+    },
     onError: (error: Error) => show(error.message, 'error'),
   });
 
@@ -418,7 +428,7 @@ export function Sources() {
               <div className="source-card__head">
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="row row--wrap" style={{ gap: 6 }}>
-                    <span className="source-card__name truncate">{source.name}</span>
+                    <Link to={`/admin/sources/${source.id}`} className="source-card__name truncate">{source.name}</Link>
                     {source.weight >= 2 ? <Badge tone="orange">收藏</Badge> : null}
                     {source.status === 'degraded' ? <Badge tone="red">抓取异常</Badge> : null}
                     {source.status === 'paused' ? <Badge tone="orange">已暂停</Badge> : null}
@@ -459,6 +469,10 @@ export function Sources() {
               {source.url ? <div className="caption mono truncate source-card__url">{source.url}</div> : null}
 
               <div className="source-card__actions">
+                <Link to={`/admin/sources/${source.id}`}><Button size="sm" variant="glass">详情</Button></Link>
+                {source.status !== 'active' ? (
+                  <Button size="sm" variant="glass" loading={recover.isPending} onClick={() => recover.mutate(source.id)}>重试恢复</Button>
+                ) : null}
                 <Button size="sm" loading={probe.isPending} onClick={() => probe.mutate(source.id)}><RefreshCw size={13} /> 检查解析</Button>
                 <Button size="sm" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}><Zap size={13} /> 抽样测速</Button>
                 <Button size="sm" loading={revive.isPending} onClick={() => revive.mutate(source.id)}><RefreshCw size={13} /> 复活淘汰</Button>
