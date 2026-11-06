@@ -122,7 +122,7 @@ async function collectGithub(): Promise<{
   if (!githubToken || !githubRepo) return { github: { month: monthStart(), minutes: 0, runs: 0 }, minutesByDay };
   let minutes = 0;
   let runs = 0;
-  for (let page = 1; page <= 5; page++) {
+  for (let page = 1; page <= 10; page++) {
     const response = await fetch(
       `https://api.github.com/repos/${githubRepo}/actions/runs?per_page=100&page=${page}&created=${encodeURIComponent(`>=${monthStart()}`)}`,
       { headers: { Authorization: `Bearer ${githubToken}`, Accept: 'application/vnd.github+json', 'User-Agent': 'iptv-studio-usage' } },
@@ -130,6 +130,9 @@ async function collectGithub(): Promise<{
     if (!response.ok) break;
     const data = (await response.json()) as { workflow_runs: Array<{ run_duration_ms?: number; created_at: string; updated_at: string }> };
     for (const run of data.workflow_runs) {
+      // Defensive: only count runs from the current month even if the API
+      // ignores the created filter.
+      if (run.created_at.slice(0, 10) < monthStart()) continue;
       const ms = run.run_duration_ms ?? Math.max(0, new Date(run.updated_at).getTime() - new Date(run.created_at).getTime());
       const day = run.created_at.slice(0, 10);
       minutes += ms / 60_000;
