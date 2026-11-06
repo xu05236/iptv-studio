@@ -42,8 +42,13 @@
 | B0-8 | ◐ | `docs/ARCHITECTURE.md` 分桶说明已改 8 桶，本清单与 `docs/TASKS-2026-11-06.md` 已同步；`docs/FEATURES.md` 的「未做」条目需逐项核对代码后再改（避免写入未验证结论） |
 | B0-9 | ◐ | 新增 `packages/core/test/hash.test.ts`、`packages/runner/test/remote-config.test.ts`；`sources`/`filters` 仍无测试（留 Batch 1） |
 
-**验证**：`npm run typecheck` ✅；`npm test` 99 passed / 22 files ✅；未部署。
-**验收待线上复核**：部署后连续两次发布看 KV 写 < 60/次、D1 写 < 30k/天。
+**验证**：`npm run typecheck` ✅；`npm test` 99 passed / 22 files ✅。
+
+**部署与线上验收（2026-11-06）**
+- push `cf70eef` → `deploy.yml` 成功；首页资产 `index-ZvVO669v.js` → `index-pIAdslPt.js`，`Pool-*.js` 含「重建快照」、`Sources-*.js` 含「已暂停」，确认新前端已上线。
+- M1（分片桶）：抽查 40 个 `hash%16≥8` 频道，`/api/public/channels/:id` 的 `lines` 数与 `/api/public/channels` 的 index `lines` 全部一致（mismatch 0）；另抽查 2 个 `hash%16<8` 频道也一致。
+- 待复核（需 admin 或下一次定时发布）：连续两次发布 KV 写 <60/次、D1 写 <30k/天；`d1.rowsWritten=95,000` 时「立即采集」返回 429 `d1_quota`；paused 源在后台的显示/恢复；self-heal 60s 冷却。
+- 本地 `npm run build` 因 esbuild 临时文件 `Access is denied`（Windows 临时目录权限）失败；CI/Linux 构建部署正常，与本次改动无关。
 
 > 护栏是软护栏：读的是 `state/usage.json` 上一次 usage 上报的数字，最多滞后 6 小时；宁可少跑一轮，也不在超限边缘发任务。
 
