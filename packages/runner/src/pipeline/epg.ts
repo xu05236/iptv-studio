@@ -15,6 +15,7 @@ import {
   type UnmatchedEpgChannel,
 } from '@iptv/core';
 import type { RunLogger } from '../logger.js';
+import { fetchCctvFallback } from './cctvFallback.js';
 
 export interface EpgSourceMeta {
   provider: string;
@@ -152,6 +153,31 @@ export async function collectEpg(urls: string[], registry: ChannelRegistry, logg
   const bySlot = new Map(data.programmes.map((programme) => [`${programme.channelId}|${programme.start}`, programme]));
   for (const programme of cntv.programmes) bySlot.set(`${programme.channelId}|${programme.start}`, programme);
   data.programmes = [...bySlot.values()].sort((a, b) => a.start - b.start);
+
+  // Last resort: tv.cctv.com's own channel-day guide (the JSON its schedule
+  // page is rendered from) for CCTV channels no source produced programmes for.
+  const coveredIds = new Set(data.programmes.map((programme) => programme.channelId));
+  const fallback = await fetchCctvFallback(registry, coveredIds, logger);
+  if (fallback.attempted) {
+    const fallbackKnown = new Set(data.channels.map((channel) => channel.id));
+    for (const channel of fallback.channels) {
+      if (fallbackKnown.has(channel.id)) continue;
+      data.channels.push(channel);
+      fallbackKnown.add(channel.id);
+    }
+    const fallbackSlot = new Map(data.programmes.map((programme) => [`${programme.channelId}|${programme.start}`, programme]));
+    for (const programme of fallback.programmes) fallbackSlot.set(`${programme.channelId}|${programme.start}`, programme);
+    data.programmes = [...fallbackSlot.values()].sort((a, b) => a.start - b.start);
+    metas.push({
+      provider: 'tv.cctv.com',
+      url: 'cntv://fallback',
+      ok: fallback.failed < fallback.attempted,
+      bytes: 0,
+      channels: fallback.channels.length,
+      programmes: fallback.programmes.length,
+      error: fallback.failed ? `${fallback.failed}/${fallback.attempted} 个频道失败` : undefined,
+    });
+  }
 
   const xml = buildXmltv(data, {
     generator: 'iptv-studio',
