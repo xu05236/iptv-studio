@@ -55,6 +55,7 @@ export interface SourceItem {
   last_fetch_at: string | null;
   last_ok_at: string | null;
   last_error: string | null;
+  lastErrorKind?: string | null;
   entry_count: number;
   alive_count: number;
   reputation: number;

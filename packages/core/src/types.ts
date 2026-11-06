@@ -461,6 +461,8 @@ export interface SourceRunStats {
   etag?: string | null;
   lastModified?: string | null;
   error?: string;
+  /** F1: error classification (timeout/network/http_4xx/http_5xx/challenge/not_playlist). */
+  errorKind?: string | null;
   parseReport?: import('./source/parseReport.js').SourceParseReport | null;
 }
 

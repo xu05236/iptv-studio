@@ -1,6 +1,19 @@
 import { readTextCapped } from '../probe/measure.js';
 
-export type FetchErrorKind = 'timeout' | 'network' | 'http';
+export type FetchErrorKind = 'timeout' | 'network' | 'http_4xx' | 'http_5xx' | 'challenge';
+
+export const FETCH_ERROR_LABELS: Record<FetchErrorKind, string> = {
+  timeout: '请求超时',
+  network: '网络/TLS 失败',
+  http_4xx: 'HTTP 4xx（请求被拒绝）',
+  http_5xx: 'HTTP 5xx（服务端错误）',
+  challenge: 'Cloudflare 质询',
+};
+
+export function fetchErrorLabel(kind?: FetchErrorKind | string | null): string {
+  if (!kind) return '';
+  return FETCH_ERROR_LABELS[kind as FetchErrorKind] ?? String(kind);
+}
 
 export interface FetchTextOptions {
   /** Conditional request: previous ETag. */
@@ -77,8 +90,9 @@ const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 /** Only transient failures deserve another attempt; 4xx means the request itself is wrong. */
 export function isRetryable(result: Pick<FetchTextResult, 'ok' | 'status' | 'errorKind'>): boolean {
   if (result.ok) return false;
-  if (result.errorKind === 'timeout' || result.errorKind === 'network') return true;
-  return result.errorKind === 'http' && RETRYABLE_STATUS.has(result.status);
+  if (result.errorKind === 'timeout' || result.errorKind === 'network' || result.errorKind === 'http_5xx') return true;
+  // 408/425/429 are 4xx but transient.
+  return result.errorKind === 'http_4xx' && RETRYABLE_STATUS.has(result.status);
 }
 
 function mergeHeaders(options: FetchTextOptions): Record<string, string> {
@@ -128,7 +142,18 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
         return { ok: true, status: 304, notModified: true, etag: options.etag ?? null, lastModified: options.lastModified ?? null, attempts: attempt };
       }
       if (!response.ok) {
-        last = { ok: false, status: response.status, error: `HTTP ${response.status}`, errorKind: 'http', attempts: attempt };
+        // Cloudflare challenge pages are a 403/503 with a `cf-mitigated`
+        // header; retrying them only burns quota.
+        const mitigated = (response.headers.get('cf-mitigated') ?? '').toLowerCase();
+        const challenge = mitigated.includes('challenge');
+        const errorKind: FetchErrorKind = challenge ? 'challenge' : response.status >= 500 ? 'http_5xx' : 'http_4xx';
+        last = {
+          ok: false,
+          status: response.status,
+          error: challenge ? `Cloudflare 质询 (HTTP ${response.status})` : `HTTP ${response.status}`,
+          errorKind,
+          attempts: attempt,
+        };
       } else {
         const text = await readTextCapped(response.body, options.maxBytes ?? DEFAULT_MAX_BYTES);
         return {

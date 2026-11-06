@@ -30,9 +30,34 @@ describe('fetchText', () => {
     const impl = vi.fn(async () => new Response('nope', { status: 404 }));
     const result = await fetchText('https://x/y.m3u', { retries: 2, retryDelayMs: 1, fetchImpl: impl as never });
     expect(result.ok).toBe(false);
-    expect(result.errorKind).toBe('http');
+    expect(result.errorKind).toBe('http_4xx');
     expect(result.attempts).toBe(1);
     expect(impl).toHaveBeenCalledTimes(1);
+  });
+
+  it('429 属于可重试 4xx', async () => {
+    const impl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('busy', { status: 429 }))
+      .mockResolvedValueOnce(ok());
+    const result = await fetchText('https://x/y.m3u', { retries: 2, retryDelayMs: 1, fetchImpl: impl as never });
+    expect(result.ok).toBe(true);
+    expect(result.attempts).toBe(2);
+  });
+
+  it('Cloudflare 质询不重试并单独归类', async () => {
+    const impl = vi.fn(async () => new Response('blocked', { status: 403, headers: { 'cf-mitigated': 'challenge' } }));
+    const result = await fetchText('https://x/y.m3u', { retries: 2, retryDelayMs: 1, fetchImpl: impl as never });
+    expect(result.ok).toBe(false);
+    expect(result.errorKind).toBe('challenge');
+    expect(result.attempts).toBe(1);
+    expect(impl).toHaveBeenCalledTimes(1);
+  });
+
+  it('5xx 归类为 http_5xx', async () => {
+    const impl = vi.fn(async () => new Response('bad', { status: 502 }));
+    const result = await fetchText('https://x/y.m3u', { retries: 0, fetchImpl: impl as never });
+    expect(result.errorKind).toBe('http_5xx');
   });
 
   it('超时归类为 timeout 并重试', async () => {

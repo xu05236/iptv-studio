@@ -21,6 +21,7 @@ export interface SourceRow {
   last_fetch_at: string | null;
   last_ok_at: string | null;
   last_error: string | null;
+  last_error_kind: string | null;
   entry_count: number;
   alive_count: number;
   refresh_hours: number;
@@ -198,6 +199,7 @@ const SOURCE_COLUMNS: Record<string, string> = {
   last_fetch_at: 'last_fetch_at',
   last_ok_at: 'last_ok_at',
   last_error: 'last_error',
+  last_error_kind: 'last_error_kind',
   entry_count: 'entry_count',
   alive_count: 'alive_count',
   filters: 'filters',
@@ -759,7 +761,7 @@ export async function applySourceStats(
       env.DB.prepare(
         `UPDATE sources SET entry_count = ?, alive_count = ?, last_fetch_at = ?,
            last_ok_at = CASE WHEN ? = 1 THEN datetime('now') ELSE last_ok_at END,
-           last_error = ?, etag = COALESCE(?, etag), last_modified = COALESCE(?, last_modified),
+           last_error = ?, last_error_kind = ?, etag = COALESCE(?, etag), last_modified = COALESCE(?, last_modified),
            reputation = COALESCE(?, reputation), tier = COALESCE(?, tier),
            parse_report = COALESCE(?, parse_report),
            consecutive_failures = ?, status = ?, updated_at = datetime('now')
@@ -770,6 +772,7 @@ export async function applySourceStats(
         new Date().toISOString(),
         stat.fetched && !stat.error && stat.parsed > 0 ? 1 : 0,
         empty ? '解析出 0 条' : stat.error ?? null,
+        stat.errorKind ?? null,
         stat.etag ?? null,
         stat.lastModified ?? null,
         stat.reputation ?? null,

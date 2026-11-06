@@ -3,6 +3,7 @@ import { ArrowLeft, ExternalLink, RefreshCw, Trash2, Zap } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { timeAgo } from '../../lib/format';
+import { errorKindLabel } from '../../lib/fetchErrors';
 import type { SourceItem } from '../../lib/types';
 import { Badge, Button, Card, EmptyState, Skeleton, Stat, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
@@ -157,7 +158,12 @@ export function SourceDetail() {
           <div><div className="caption">最近成功</div><div className="title-3">{source.last_ok_at ? timeAgo(source.last_ok_at) : '还没有成功过'}</div></div>
           <div><div className="caption">连续失败</div><div className="title-3">{source.consecutive_failures ?? 0} 次</div></div>
         </div>
-        {source.last_error ? <div className="caption" style={{ marginTop: 8, color: 'var(--red)' }}>最近错误：{source.last_error}</div> : null}
+        {source.last_error ? (
+          <div className="caption" style={{ marginTop: 8, color: 'var(--red)' }}>
+            最近错误：{source.last_error}
+            {source.lastErrorKind ? ` · ${errorKindLabel(source.lastErrorKind)}` : ''}
+          </div>
+        ) : null}
       </Card>
 
       <Card>

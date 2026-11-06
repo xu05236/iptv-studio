@@ -5,6 +5,7 @@ import { Activity, ChevronDown, LayoutGrid, List, Plus, RefreshCw, RadioTower, S
 import { api } from '../../lib/api';
 import type { SourceItem } from '../../lib/types';
 import { timeAgo } from '../../lib/format';
+import { errorKindLabel } from '../../lib/fetchErrors';
 import { Badge, Button, Card, EmptyState, Field, Segmented, Sheet, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { ReputationBadge } from '../../components/ReputationBadge';
@@ -572,7 +573,12 @@ export function Sources() {
               {source.parseDrop ? (
                 <div className="source-card__error">解析条数较上轮下降 {source.parseReport?.dropPercent ?? 0}%（{formatNumber(source.parseReport?.entries ?? 0)} 条）</div>
               ) : null}
-              {source.last_error ? <div className="source-card__error">{source.last_error}</div> : null}
+              {source.last_error ? (
+                <div className="source-card__error">
+                  {source.lastErrorKind ? `[${errorKindLabel(source.lastErrorKind)}] ` : ''}
+                  {source.last_error}
+                </div>
+              ) : null}
               {source.url ? <div className="caption mono truncate source-card__url">{source.url}</div> : null}
 
               <div className="source-card__actions">

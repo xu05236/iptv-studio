@@ -1,4 +1,4 @@
-import { effectiveRefreshHours, fetchText, filterSourceEntries, parseWithAdapter, type ParsedSource, type RawEntry, type SourceFilters } from '@iptv/core';
+import { effectiveRefreshHours, fetchText, filterSourceEntries, parseWithAdapter, type FetchErrorKind, type ParsedSource, type RawEntry, type SourceFilters } from '@iptv/core';
 import type { ArtifactStore, SourceRecord } from '../store.js';
 import type { RunLogger } from '../logger.js';
 import { builtinPlaylist } from '../data/cctvOfficial.js';
@@ -13,6 +13,9 @@ export interface CollectedSource {
   etag?: string | null;
   lastModified?: string | null;
   bytes: number;
+  /** Classification of the last failure (see FetchErrorKind). */
+  errorKind?: FetchErrorKind;
+  attempts?: number;
   /** 0 = primary URL, 1+ = which mirror answered. */
   mirrorIndex?: number;
 }
@@ -25,6 +28,8 @@ interface FetchResult {
   lastModified?: string | null;
   notModified?: boolean;
   error?: string;
+  errorKind?: FetchErrorKind;
+  attempts?: number;
 }
 
 async function fetchPlaylist(
@@ -40,7 +45,8 @@ async function fetchPlaylist(
     headers,
     timeoutMs: 45_000,
     maxBytes: 24 * 1024 * 1024,
-    retries: 0,
+    retries: 2,
+    retryDelayMs: 800,
   });
   return {
     ok: result.ok,
@@ -50,6 +56,8 @@ async function fetchPlaylist(
     lastModified: result.lastModified,
     notModified: result.notModified,
     error: result.error,
+    errorKind: result.errorKind,
+    attempts: result.attempts,
   };
 }
 
@@ -142,10 +150,16 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
         break;
       }
       errors.push(`#${index + 1} ${fetched.error ?? fetched.status}`);
+      if (fetched.errorKind) {
+        // Prefer the most actionable classification: a challenge on any URL
+        // explains every subsequent failure better than an HTTP code.
+        if (fetched.errorKind === 'challenge' || !base.errorKind) base.errorKind = fetched.errorKind;
+      }
+      base.attempts = (base.attempts ?? 0) + (fetched.attempts ?? 1);
     }
     if (!text) {
       logger.warn('抓取失败', { source: source.name, error: errors.join('；') });
-      return { ...base, error: errors.join('；') || '抓取失败' };
+      return { ...base, error: errors.join('；') || '抓取失败', errorKind: base.errorKind ?? 'network' };
     }
     if (usedIndex > 0) {
       logger.warn('主地址失败，已使用备用地址', { source: source.name, used: usedIndex + 1, errors });
@@ -174,5 +188,6 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
     parsed: { ...parsed, entries: filtered.entries },
     entries: filtered.entries,
     bytes: text.length,
+    ...(parsed.entries.length === 0 ? { error: '内容不是播放列表（解析出 0 条）', errorKind: 'not_playlist' as FetchErrorKind } : {}),
   };
 }

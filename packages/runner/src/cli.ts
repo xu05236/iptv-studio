@@ -256,18 +256,14 @@ function normalize(
 }
 
 async function collectSourceWithRetry(source: SourceRecord, store: ArtifactStore, logger: RunLogger): Promise<CollectedSource> {
-  let last: CollectedSource | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const item = await collectSource(source, store, logger);
-      last = item;
-      if (!item.error) return item;
-    } catch (error) {
-      logger.warn('抓取异常', { source: source.name, attempt: attempt + 1, error: error instanceof Error ? error.message : String(error) });
-    }
-    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1_000 * (attempt + 1)));
+  // Retries live in the shared fetch layer (fetchText) so they respect the
+  // error classification: 4xx/challenge fail fast, 5xx/timeout/network retry.
+  try {
+    return await collectSource(source, store, logger);
+  } catch (error) {
+    logger.warn('抓取异常', { source: source.name, error: error instanceof Error ? error.message : String(error) });
+    return { source, entries: [], fetched: false, notModified: false, bytes: 0, error: '抓取失败', errorKind: 'network' };
   }
-  return last ?? { source, entries: [], fetched: false, notModified: false, bytes: 0, error: '抓取失败' };
 }
 
 async function collectAll(
@@ -471,6 +467,7 @@ async function syncSourceStats(
       etag: item.etag ?? source.etag,
       lastModified: item.lastModified ?? source.last_modified,
       error: item.error,
+      errorKind: item.errorKind ?? null,
       parseReport: item.parsed
         ? {
             detectedKind: item.parsed.kind,
