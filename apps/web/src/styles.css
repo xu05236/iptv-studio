@@ -2640,6 +2640,21 @@ button {
   white-space: nowrap;
 }
 
+/* Fill the whole row instead of leaving a big empty area on the right. */
+.source-card__actions > .btn,
+.source-card__actions > a {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.source-card__actions > a {
+  display: flex;
+}
+
+.source-card__actions > a .btn {
+  width: 100%;
+}
+
 .source-health {
   border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--sep) 80%, transparent);
