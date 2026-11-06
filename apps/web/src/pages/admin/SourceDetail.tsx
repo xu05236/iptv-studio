@@ -39,6 +39,20 @@ function hostOf(source: SourceItem): string {
   }
 }
 
+function Sparkline({ values }: { values: number[] }) {
+  if (!values.length) return null;
+  const width = 220;
+  const height = 46;
+  const max = Math.max(1, ...values);
+  const step = values.length > 1 ? width / (values.length - 1) : width;
+  const coords = values.map((value, index) => `${Math.round(index * step)},${Math.round(height - 4 - (value / max) * (height - 8))}`).join(' ');
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="近 7 天解析条数">
+      <polyline points={coords} fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function SourceDetail() {
   const { id = '' } = useParams();
   const { show } = useToast();
@@ -120,7 +134,10 @@ export function SourceDetail() {
           <div><div className="caption">最老可用线路</div><div className="title-3">{data.oldestAliveProbeAt ? timeAgo(data.oldestAliveProbeAt) : '无可用线路'}</div></div>
           <div><div className="caption">到期待复测</div><div className="title-3">{formatNumber(stats.dueQuarantine)} 条</div></div>
           <div><div className="caption">从未探测</div><div className="title-3">{formatNumber(stats.duePending)} 条</div></div>
+          <div><div className="caption">最近成功</div><div className="title-3">{source.last_ok_at ? timeAgo(source.last_ok_at) : '还没有成功过'}</div></div>
+          <div><div className="caption">连续失败</div><div className="title-3">{source.consecutive_failures ?? 0} 次</div></div>
         </div>
+        {source.last_error ? <div className="caption" style={{ marginTop: 8, color: 'var(--red)' }}>最近错误：{source.last_error}</div> : null}
       </Card>
 
       <Card>
@@ -148,6 +165,7 @@ export function SourceDetail() {
             <div className="title-3">最近 {health.days} 天</div>
             <div className="caption">抓取次数、解析条目、探测可用率</div>
           </div>
+          <Sparkline values={health.points.map((point) => point.parsed)} />
         </div>
         {health.points.length ? (
           <div className="run-list">

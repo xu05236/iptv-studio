@@ -56,6 +56,7 @@ sourceRoutes.get('/', async (c) => {
   const unprobeable = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
   const now = new Date();
   const progress = new Map<string, { total: number; tested: number; alive: number; pending: number; pendingTotal: number; quarantine: number; quarantineTotal: number; rejected: number; rejectedTotal: number }>();
+  const channelSets = new Map<string, Set<string>>();
   for (const line of state?.lines ?? []) {
     const item = progress.get(line.sourceId) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0 };
     item.total++;
@@ -66,8 +67,12 @@ sourceRoutes.get('/', async (c) => {
       item.pending++;
       item.pendingTotal++;
     }
-    if (usable && line.status === 'alive') item.alive++;
-    else if (usable && line.status === 'suspect') {
+    if (usable && line.status === 'alive') {
+      item.alive++;
+      const set = channelSets.get(line.sourceId) ?? new Set<string>();
+      set.add(line.channelId);
+      channelSets.set(line.sourceId, set);
+    } else if (usable && line.status === 'suspect') {
       item.quarantineTotal++;
       if (livenessReady && isDueForProbe(line, 'normal', now)) item.quarantine++;
     } else if (usable && line.status === 'dead') {
@@ -86,7 +91,7 @@ sourceRoutes.get('/', async (c) => {
       fetchMode: source.fetch_mode ?? 'direct',
       ...parseReportOf(source),
       enabled: source.enabled === 1,
-      progress: progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, quarantine: 0, rejected: 0 },
+      progress: { ...(progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0 }), channels: channelSets.get(source.id)?.size ?? 0 },
       report: reportBySource.get(source.id) ?? null,
     })),
     reportGeneratedAt: fetchReport?.generatedAt ?? null,

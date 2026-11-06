@@ -60,6 +60,7 @@ export interface SourceItem {
   reputation: number;
   tier: 'high' | 'normal' | 'low';
   status: string;
+  consecutive_failures?: number;
   notes: string | null;
   refresh_hours?: number;
   requestHeaders?: Record<string, string>;
@@ -67,7 +68,7 @@ export interface SourceItem {
   parseReport?: { detectedKind: string; entries: number; bytes: number; warnings: string[]; mirrorIndex: number; fetchedAt: string; dropPercent?: number | null } | null;
   parseDrop?: boolean;
   fetchMode?: string;
-  progress?: { total: number; tested: number; alive: number; pending: number; pendingTotal?: number; quarantine: number; quarantineTotal?: number; rejected: number; rejectedTotal?: number };
+  progress?: { total: number; tested: number; alive: number; pending: number; pendingTotal?: number; quarantine: number; quarantineTotal?: number; rejected: number; rejectedTotal?: number; channels?: number };
   report?: { added: number; reused: number; retained: number; disappeared: number; skippedRejected: number } | null;
   filters?: { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number };
   created_at: string;

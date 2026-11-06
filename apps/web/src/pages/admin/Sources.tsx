@@ -38,6 +38,14 @@ function sourceSite(source: SourceItem): string {
   return source.origin === 'upload' ? '本地上传' : '手动粘贴';
 }
 
+function needsAttention(source: SourceItem): boolean {
+  return !source.enabled
+    || source.status !== 'active'
+    || Boolean(source.last_error)
+    || Boolean(source.parseDrop)
+    || Number(source.consecutive_failures ?? 0) > 0;
+}
+
 interface FilterForm {
   groups: string;
   excludeGroups: string;
@@ -134,6 +142,7 @@ export function Sources() {
   const [mirrorUrls, setMirrorUrls] = useState('');
   const [fetchMode, setFetchMode] = useState('direct');
   const [healthSort, setHealthSort] = useState(false);
+  const [attentionOnly, setAttentionOnly] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>('grid');
 
   const { data, isLoading } = useQuery({
@@ -270,11 +279,13 @@ export function Sources() {
   });
 
   const items = useMemo(() => {
-    const base = data?.items ?? [];
+    const all = data?.items ?? [];
+    const base = attentionOnly ? all.filter(needsAttention) : all;
     const favorite = (source: SourceItem): number => (source.weight >= 2 ? 1 : 0);
     const added = (source: SourceItem): number => Date.parse(source.created_at) || 0;
+    const attention = (source: SourceItem): number => (needsAttention(source) ? 1 : 0);
     if (!healthSort || !health.data) {
-      return [...base].sort((a, b) => favorite(b) - favorite(a) || added(b) - added(a) || b.reputation - a.reputation || a.name.localeCompare(b.name, 'zh-CN'));
+      return [...base].sort((a, b) => attention(b) - attention(a) || favorite(b) - favorite(a) || added(b) - added(a) || b.reputation - a.reputation || a.name.localeCompare(b.name, 'zh-CN'));
     }
     const score = new Map(
       health.data.items.map((item) => {
@@ -283,8 +294,9 @@ export function Sources() {
         return [item.sourceId, total ? alive / total : 0];
       }),
     );
-    return [...base].sort((a, b) => favorite(b) - favorite(a) || added(b) - added(a) || (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
-  }, [data, healthSort, health.data]);
+    return [...base].sort((a, b) => attention(b) - attention(a) || favorite(b) - favorite(a) || added(b) - added(a) || (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
+  }, [data, healthSort, health.data, attentionOnly]);
+  const attentionCount = useMemo(() => (data?.items ?? []).filter(needsAttention).length, [data]);
   const sites = useMemo(() => [...new Set(items.map(sourceSite))], [items]);
   const siteCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -354,6 +366,9 @@ export function Sources() {
               <Button size="sm" variant={view === 'grid' ? 'primary' : 'ghost'} onClick={() => setView('grid')}><LayoutGrid size={14} /> 网格</Button>
               <Button size="sm" variant={view === 'list' ? 'primary' : 'ghost'} onClick={() => setView('list')}><List size={14} /> 列表</Button>
             </div>
+            <Button size="sm" variant={attentionOnly ? 'primary' : 'default'} onClick={() => setAttentionOnly((value) => !value)}>
+              只看需处理{attentionCount ? `（${attentionCount}）` : ''}
+            </Button>
             <Button size="sm" variant={healthSort ? 'primary' : 'default'} onClick={() => setHealthSort((value) => !value)}>
               按 7 天健康排序
             </Button>
@@ -465,6 +480,11 @@ export function Sources() {
               <div className="source-card__meta">
                 更新 {timeAgo(source.last_ok_at)} · {source.refresh_hours && source.refresh_hours !== 24 ? `每 ${source.refresh_hours}h` : '跟随分档（12/24/72h）'}
                 {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
+              </div>
+              <div className="source-card__meta">
+                最近成功 {source.last_ok_at ? timeAgo(source.last_ok_at) : '还没有成功过'}
+                {source.consecutive_failures ? ` · 连续失败 ${source.consecutive_failures} 次` : ''}
+                {source.progress?.channels ? ` · 贡献 ${formatNumber(source.progress.channels)} 个频道` : ''}
               </div>
               {source.report ? (
                 <div className="source-card__meta">
