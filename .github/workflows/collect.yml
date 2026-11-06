@@ -59,6 +59,22 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Diagnose D1 migration
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+        run: |
+          npm run db:migrate -w @iptv/worker > /tmp/migrate.log 2>&1 || true
+          tail -c 380 /tmp/migrate.log > /tmp/tail.txt
+          jq -n --arg m "$(cat /tmp/tail.txt)" '{kind:"ci",message:$m,channelId:"ci-deploy"}' > /tmp/fb.json
+          curl -s -X POST "$API_BASE_URL/api/admin/feedback" \
+            -H "authorization: Bearer $ADMIN_TOKEN" \
+            -H 'content-type: application/json' \
+            --data-binary @/tmp/fb.json || true
+
       - name: Ensure ffmpeg/ffprobe
         if: ${{ contains(fromJSON('["collect","probe","probe-batch","probe-lines"]'), github.event.inputs.command || 'collect') }}
         run: |
