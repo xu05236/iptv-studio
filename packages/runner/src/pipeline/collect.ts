@@ -1,4 +1,4 @@
-import { effectiveRefreshHours, fetchText, filterSourceEntries, parseSource, type ParsedSource, type RawEntry, type SourceFilters } from '@iptv/core';
+import { effectiveRefreshHours, fetchText, filterSourceEntries, parseWithAdapter, type ParsedSource, type RawEntry, type SourceFilters } from '@iptv/core';
 import type { ArtifactStore, SourceRecord } from '../store.js';
 import type { RunLogger } from '../logger.js';
 import { builtinPlaylist } from '../data/cctvOfficial.js';
@@ -154,7 +154,7 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
     return { ...base, error: '源没有地址和内容' };
   }
 
-  const parsed = parseSource(text, source.kind as never);
+  const parsed = parseWithAdapter(text, source.kind);
   if (parsed.warnings.length) {
     logger.warn('解析警告', { source: source.name, warnings: parsed.warnings.slice(0, 3) });
   }
