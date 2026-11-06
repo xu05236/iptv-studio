@@ -51,6 +51,8 @@ export async function publishSubscriptions(
   if (!items.length) return 0;
 
   let written = 0;
+  // Many subscriptions share the same channel set; render each distinct set once.
+  const epgCache = new Map<string, string>();
   const writePerSubEpg = async (sub: SubscriptionRow, lineKeys: string[] = []): Promise<boolean> => {
     if (!epg || !sub.includeEpg) return false;
     const keySet = new Set(lineKeys);
@@ -84,11 +86,29 @@ export async function publishSubscriptions(
       programmes.push(...epg.programmes.filter((programme) => programme.channelId === sourceId).map((programme) => ({ ...programme, channelId: id })));
     }
     if (!channels.length) return false;
-    const xml = buildXmltv(
-      { channels, programmes },
-      { generator: 'iptv-studio', channelNames: new Map(channels.map((channel) => [channel.id, channel.names[0] ?? channel.id])) },
-    );
-    if (new TextEncoder().encode(xml).byteLength >= 24 * 1024 * 1024) return false;
+    // Players only need the future, and long descriptions dominate the size of
+    // dozens of nearly identical per-subscription guides. Shrink first, then
+    // shrink the window; if it still exceeds the KV value limit, skip the
+    // per-sub artifact so the route falls back to the shared out/epg.xml.
+    const now = Date.now();
+    const fit = (maxDays: number): string | null => {
+      const limit = now + maxDays * 86_400_000;
+      const trimmed = programmes
+        .filter((programme) => (programme.stop ?? programme.start + 3_600_000) >= now && programme.start <= limit)
+        .map((programme) => (programme.desc && programme.desc.length > 80 ? { ...programme, desc: `${programme.desc.slice(0, 80)}…` } : programme));
+      const body = buildXmltv(
+        { channels, programmes: trimmed },
+        { generator: 'iptv-studio', channelNames: new Map(channels.map((channel) => [channel.id, channel.names[0] ?? channel.id])) },
+      );
+      return new TextEncoder().encode(body).byteLength < 24 * 1024 * 1024 ? body : null;
+    };
+    const cacheKey = [...ids].sort().join(',');
+    let xml = epgCache.get(cacheKey) ?? null;
+    if (!xml) {
+      xml = fit(3) ?? fit(1);
+      if (!xml) return false;
+      epgCache.set(cacheKey, xml);
+    }
     await store.put(`out/epg-${sub.id}.xml`, xml, 'application/xml; charset=utf-8');
     return true;
   };
