@@ -1,6 +1,6 @@
-import type { AppSettings } from '@iptv/core';
+import { effectiveRefreshHours, type AppSettings } from '@iptv/core';
 import type { Env } from '../env.js';
-import { audit, loadSettings } from '../db.js';
+import { audit, listSources, loadSettings } from '../db.js';
 import { workflowRunStatus } from './github.js';
 import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
@@ -394,20 +394,37 @@ function phaseList(value: string): string[] {
   return String(value ?? '').split(/[\s,，]+/).map((item) => item.trim()).filter((item) => (PHASES as readonly string[]).includes(item));
 }
 
-/** Weekly-ish fetch task, independent from daily publish/probe. */
+/** 抓取任务按 `fetchTimes` 多时段触发；每个时段只派发一次，源自身再按 12/24/72 小时到期判断。 */
 async function runFetchWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
   if (!settings.autoFetchEnabled) return false;
+  const times = parseCollectTimes(settings.fetchTimes || '06:30');
+  if (!times.length) return false;
+  const slot = mostRecentScheduledAt(times, now);
+  if (slot === null) return false;
   const state = await getRuntimeJson<IntervalState>(env, 'state/fetch-schedule.json');
-  if (state?.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
-  const intervalMs = Math.max(1, Number(settings.fetchIntervalDays) || 7) * 86_400_000;
+  if (state?.result?.startsWith('skipped') && state.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
+  if (state?.lastRunAt && Date.parse(state.lastRunAt) >= slot) return false;
+  const sources = await listSources(env);
+  const hasDue = sources.some((item) => {
+    if (item.enabled !== 1) return false;
+    const hours = effectiveRefreshHours({ refreshHours: item.refresh_hours, weight: item.weight, createdAt: item.created_at, now });
+    if (hours <= 0) return false;
+    if (!item.last_fetch_at || (item.entry_count ?? 0) <= 0) return true;
+    return now - Date.parse(item.last_fetch_at) >= hours * 3_600_000;
+  });
+  if (!hasDue) {
+    await recordInterval(env, 'state/fetch-schedule.json', now, now + 30 * 60_000, 'idle: no source due');
+    return false;
+  }
   const guard = await intervalGuard(env, settings);
   if (guard) {
     const delay = guard === 'actions' ? 6 * 3_600_000 : 30 * 60_000;
     await recordInterval(env, 'state/fetch-schedule.json', now, now + delay, `skipped: ${guard}`);
     return false;
   }
+  const next = nextScheduledAt(times, now + 60_000) ?? now + 6 * 3_600_000;
   const task = await createTask(env, { type: 'fetch', source: 'schedule', priority: 50, payload: {} });
-  await recordInterval(env, 'state/fetch-schedule.json', now, now + intervalMs, 'queued');
+  await recordInterval(env, 'state/fetch-schedule.json', now, next, 'queued');
   await audit(env, 'scheduler', 'schedule.fetch', task.id);
   return true;
 }

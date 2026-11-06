@@ -21,4 +21,5 @@ export * from './aggregate/rules.js';
 export * from './epg/index.js';
 export * from './export/index.js';
 export * from './diff.js';
+export * from './refresh.js';
 export * from './linePool.js';

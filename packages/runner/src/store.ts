@@ -134,6 +134,7 @@ export interface SourceRecord {
   last_fetch_at?: string | null;
   entry_count?: number;
   refresh_hours?: number;
+  created_at?: string | null;
   filters?: string | { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number } | null;
 }
 

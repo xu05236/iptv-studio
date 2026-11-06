@@ -1,4 +1,4 @@
-import { filterSourceEntries, parseSource, readTextCapped, type ParsedSource, type RawEntry, type SourceFilters } from '@iptv/core';
+import { effectiveRefreshHours, filterSourceEntries, parseSource, readTextCapped, type ParsedSource, type RawEntry, type SourceFilters } from '@iptv/core';
 import type { ArtifactStore, SourceRecord } from '../store.js';
 import type { RunLogger } from '../logger.js';
 import { builtinPlaylist } from '../data/cctvOfficial.js';
@@ -70,6 +70,14 @@ async function fetchPlaylist(
   }
 }
 
+/**
+ * 每个源的抓取间隔：自定义值优先（24 小时是历史默认值，视为“跟随分档”）；
+ * 否则收藏源 12 小时、7 天内新增源 24 小时、普通源 72 小时。
+ */
+function refreshHoursFor(source: SourceRecord): number {
+  return effectiveRefreshHours({ refreshHours: source.refresh_hours, weight: source.weight, createdAt: source.created_at });
+}
+
 /** Fetch one configured source (remote URL or R2-stored upload) and parse it. */
 export async function collectSource(source: SourceRecord, store: ArtifactStore, logger: RunLogger): Promise<CollectedSource> {
   const base: CollectedSource = {
@@ -84,7 +92,7 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
 
   let text: string | null = null;
 
-  const refreshHours = Number(source.refresh_hours ?? 24) || 0;
+  const refreshHours = refreshHoursFor(source);
   const forceFetch = process.env.PROBE_FORCE === '1' || process.env.PROBE_FORCE === 'true';
   if (!forceFetch && refreshHours > 0 && source.last_fetch_at && (source.entry_count ?? 0) > 0) {
     const ageHours = (Date.now() - new Date(source.last_fetch_at).getTime()) / 3_600_000;

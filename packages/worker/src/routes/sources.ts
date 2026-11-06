@@ -35,11 +35,13 @@ interface CreateSourceInput {
 }
 
 sourceRoutes.get('/', async (c) => {
-  const [sources, state, channels] = await Promise.all([
+  const [sources, state, channels, fetchReport] = await Promise.all([
     listSources(c.env),
     getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json'),
     listChannels(c.env),
+    getJson<{ generatedAt?: string; sources?: Array<{ sourceId: string; added: number; reused: number; retained: number; disappeared: number; skippedRejected: number }> }>(c.env, 'state/fetch-report.json'),
   ]);
+  const reportBySource = new Map((fetchReport?.sources ?? []).map((item) => [item.sourceId, item]));
   const validChannels = new Set(channels.map((channel) => channel.id));
   const unprobeable = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
   const now = new Date();
@@ -71,7 +73,9 @@ sourceRoutes.get('/', async (c) => {
       filters: parseJsonField<SourceFilters>(source.filters, {}),
       enabled: source.enabled === 1,
       progress: progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, quarantine: 0, rejected: 0 },
+      report: reportBySource.get(source.id) ?? null,
     })),
+    reportGeneratedAt: fetchReport?.generatedAt ?? null,
   });
 });
 

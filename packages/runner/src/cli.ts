@@ -107,6 +107,18 @@ function safeJson<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
+export interface SourceDiff {
+  sourceId: string;
+  sourceName: string;
+  fetched: boolean;
+  added: number;
+  reused: number;
+  retained: number;
+  disappeared: number;
+  skippedRejected: number;
+  skippedTombstoned: number;
+}
+
 function normalize(
   collected: CollectedSource[],
   registry: ChannelRegistry,
@@ -115,25 +127,56 @@ function normalize(
   timestamp: string,
   tombstoned: Set<string> = new Set(),
   retentionDays = 30,
-): { lines: LineEntry[]; authoritative: Set<string> } {
+): { lines: LineEntry[]; authoritative: Set<string>; report: SourceDiff[] } {
   const previousByKey = new Map(previousLines.map((line) => [`${line.sourceId}|${line.urlKey}`, line]));
   const authoritative = new Set<string>();
   const merged = new Map<string, LineEntry>();
+  const report = new Map<string, SourceDiff>();
+  const present = new Set<string>();
+
+  const diffFor = (sourceId: string): SourceDiff => {
+    const existing = report.get(sourceId);
+    if (existing) return existing;
+    const item: SourceDiff = {
+      sourceId,
+      sourceName: sources.get(sourceId)?.name ?? sourceId,
+      fetched: false,
+      added: 0,
+      reused: 0,
+      retained: 0,
+      disappeared: 0,
+      skippedRejected: 0,
+      skippedTombstoned: 0,
+    };
+    report.set(sourceId, item);
+    return item;
+  };
 
   for (const item of collected) {
     if (!item.parsed) continue;
     authoritative.add(item.source.id);
+    const diff = diffFor(item.source.id);
+    diff.fetched = true;
 
     for (const raw of item.entries as RawEntry[]) {
       const { url } = splitUrlHeaders(raw.url);
       const urlKey = normalizeUrlForDedupe(url);
       if (!urlKey) continue;
-      if (tombstoned.has(canonicalPoolUrl(url))) continue;
+      present.add(`${item.source.id}|${urlKey}`);
+      if (tombstoned.has(canonicalPoolUrl(url))) {
+        diff.skippedTombstoned++;
+        continue;
+      }
 
       const source = sources.get(item.source.id);
       const resolved = registry.resolve(raw.name, { tvgId: raw.tvgId, group: raw.group });
       const key = entryKey(item.source.id, urlKey);
       const old = previousByKey.get(`${item.source.id}|${urlKey}`);
+      // 已淘汰是终态：重抓不再把它拉回池子。
+      if (old?.status === 'dead') {
+        diff.skippedRejected++;
+        continue;
+      }
 
       const line: LineEntry = {
         key,
@@ -173,6 +216,8 @@ function normalize(
         favorite: old?.favorite,
       };
       merged.set(`${line.sourceId}|${line.urlKey}`, line);
+      if (old) diff.reused++;
+      else diff.added++;
     }
   }
 
@@ -199,9 +244,15 @@ function normalize(
     if (!old.lastProbeAt && old.status === 'unknown') continue;
     if (!withinRetention(old.lastSeenAt, nowMs, retentionDays)) continue;
     merged.set(key, old.retained ? old : { ...old, retained: true });
+    diffFor(old.sourceId).retained++;
   }
 
-  return { lines: [...merged.values()], authoritative };
+  for (const old of previousLines) {
+    if (!authoritative.has(old.sourceId)) continue;
+    if (!present.has(`${old.sourceId}|${old.urlKey}`)) diffFor(old.sourceId).disappeared++;
+  }
+
+  return { lines: [...merged.values()], authoritative, report: [...report.values()] };
 }
 
 async function collectSourceWithRetry(source: SourceRecord, store: ArtifactStore, logger: RunLogger): Promise<CollectedSource> {
@@ -455,6 +506,11 @@ async function fetchPhase(
   const sources = new Map(remote.sources.map((source) => [source.id, source]));
   const retentionDays = Math.max(0, envNumber('LINE_RETENTION_DAYS') ?? settings.lineRetentionDays ?? 30);
   const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso(), tombstones, retentionDays);
+  await store.put(
+    'state/fetch-report.json',
+    JSON.stringify({ generatedAt: nowIso(), sources: normalized.report }),
+    'application/json',
+  );
   const pruned = pruneOrphanLines(remote, normalized.lines);
   const lines = pruned.lines;
   if (pruned.removed) logger.warn('已剔除孤儿线路', { removed: pruned.removed });

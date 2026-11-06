@@ -430,9 +430,15 @@ export function Sources() {
               </div>
 
               <div className="source-card__meta">
-                更新 {timeAgo(source.last_ok_at)} · 每 {source.refresh_hours ?? 24}h
+                更新 {timeAgo(source.last_ok_at)} · {source.refresh_hours && source.refresh_hours !== 24 ? `每 ${source.refresh_hours}h` : '跟随分档（12/24/72h）'}
                 {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
               </div>
+              {source.report ? (
+                <div className="source-card__meta">
+                  上次对比 · 新增 {source.report.added} · 复用 {source.report.reused} · 跳过淘汰 {source.report.skippedRejected} · 消失 {source.report.disappeared}
+                  {source.report.retained ? ` · 保留 ${source.report.retained}` : ''}
+                </div>
+              ) : null}
               {source.last_error ? <div className="source-card__error">{source.last_error}</div> : null}
               {source.url ? <div className="caption mono truncate source-card__url">{source.url}</div> : null}
 
