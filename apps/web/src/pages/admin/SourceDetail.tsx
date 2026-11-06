@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ExternalLink, RefreshCw, Zap } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft, ExternalLink, RefreshCw, Trash2, Zap } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { timeAgo } from '../../lib/format';
 import type { SourceItem } from '../../lib/types';
@@ -55,6 +55,7 @@ function Sparkline({ values }: { values: number[] }) {
 
 export function SourceDetail() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const { show } = useToast();
   const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
@@ -82,6 +83,16 @@ export function SourceDetail() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const remove = useMutation({
+    mutationFn: () => api.del(`/api/admin/sources/${encodeURIComponent(id)}`),
+    onSuccess: () => {
+      show('已删除');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
+      navigate('/admin/sources');
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   if (isLoading) return <Skeleton height={320} radius={16} />;
   if (error || !data) {
     return <EmptyState title="源不存在或已删除" description="返回采集站列表查看其它源。" action={<Link to="/admin/sources"><Button>返回采集站</Button></Link>} />;
@@ -101,6 +112,16 @@ export function SourceDetail() {
             <Button size="sm" variant="glass" loading={probe.isPending} onClick={() => probe.mutate()}><Zap size={14} /> 立即探测</Button>
             <Button size="sm" variant={source.enabled ? 'ghost' : 'primary'} loading={toggle.isPending} onClick={() => toggle.mutate()}>
               {source.enabled ? '停用' : '启用'}
+            </Button>
+            <Button
+              size="sm"
+              variant="glass"
+              loading={remove.isPending}
+              onClick={() => {
+                if (confirm(`删除「${source.name}」？该源的线路会一起移除。`)) remove.mutate();
+              }}
+            >
+              <Trash2 size={14} /> 删除
             </Button>
           </>
         }

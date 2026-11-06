@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ChevronDown, LayoutGrid, List, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Trash2, Upload, Zap } from 'lucide-react';
+import { Activity, ChevronDown, LayoutGrid, List, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Upload, Zap } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { SourceItem } from '../../lib/types';
 import { timeAgo } from '../../lib/format';
@@ -241,15 +241,6 @@ export function Sources() {
     mutationFn: (source: SourceItem) => api.patch(`/api/admin/sources/${source.id}`, { weight: source.weight >= 2 ? 1 : 2 }),
     onSuccess: () => {
       show('收藏状态已更新，下一轮排序生效');
-      void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
-    },
-    onError: (error: Error) => show(error.message, 'error'),
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: string) => api.del(`/api/admin/sources/${id}`),
-    onSuccess: () => {
-      show('已删除');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
@@ -576,15 +567,14 @@ export function Sources() {
               {source.url ? <div className="caption mono truncate source-card__url">{source.url}</div> : null}
 
               <div className="source-card__actions">
-                <Link to={`/admin/sources/${source.id}`}><Button size="sm" variant="glass">详情</Button></Link>
+                <Link to={`/admin/sources/${source.id}`}><Button size="sm">详情</Button></Link>
                 {source.status !== 'active' ? (
                   <Button size="sm" variant="glass" loading={recover.isPending} onClick={() => recover.mutate(source.id)}>重试恢复</Button>
                 ) : null}
-                <Button size="sm" loading={probe.isPending} onClick={() => probe.mutate(source.id)}><RefreshCw size={13} /> 检查解析</Button>
-                <Button size="sm" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}><Zap size={13} /> 抽样测速</Button>
-                <Button size="sm" loading={revive.isPending} onClick={() => revive.mutate(source.id)}><RefreshCw size={13} /> 复活淘汰</Button>
-                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); }}><SlidersHorizontal size={13} /> 过滤</Button>
-                <Button size="sm" variant="ghost" onClick={() => { if (confirm(`删除「${source.name}」？`)) remove.mutate(source.id); }}><Trash2 size={13} /> 删除</Button>
+                <Button size="sm" title="检查解析" loading={probe.isPending} onClick={() => probe.mutate(source.id)}><RefreshCw size={13} /> 检查</Button>
+                <Button size="sm" title="抽样测速" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}><Zap size={13} /> 测速</Button>
+                <Button size="sm" variant="glass" title="复活本源的已淘汰线路" loading={revive.isPending} onClick={() => revive.mutate(source.id)}><RefreshCw size={13} /> 复活</Button>
+                <Button size="sm" variant="glass" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); }}><SlidersHorizontal size={13} /> 过滤</Button>
               </div>
             </Card>
           );
