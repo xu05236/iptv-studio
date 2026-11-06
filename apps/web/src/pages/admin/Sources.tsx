@@ -691,8 +691,8 @@ export function Sources() {
           <div className="sheet-section">线路过滤</div>
           <FilterFields form={filterForm} onChange={setFilterForm} />
           <div className="sheet-section">抓取策略</div>
-          <Field label="更新间隔（小时）" hint="未到间隔时跳过抓取，直接复用上一轮线路；0 表示每次都抓">
-            <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="24" />
+          <Field label="更新间隔（小时）" hint="留空或 24 = 跟随分档（7 天内新源 24h、重点源 12h、其它 72h）；0 = 不自动重抓；其它数字 = 自定义小时数">
+            <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="24（跟随分档）" />
           </Field>
           {mode !== 'url' && content ? <div className="caption"><Upload size={12} /> 已读取 {content.length.toLocaleString()} 字符</div> : null}
           {preview ? (
@@ -723,8 +723,8 @@ export function Sources() {
           <div className="sheet-section">过滤规则</div>
           <FilterFields form={filterForm} onChange={setFilterForm} />
           <div className="sheet-section">更新策略</div>
-          <Field label="更新间隔（小时）" hint="未到间隔时跳过抓取，直接复用上一轮线路；0 表示每次都抓">
-            <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="24" />
+          <Field label="更新间隔（小时）" hint="留空或 24 = 跟随分档（7 天内新源 24h、重点源 12h、其它 72h）；0 = 不自动重抓；其它数字 = 自定义小时数">
+            <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="24（跟随分档）" />
           </Field>
           <div className="sheet-section">请求设置</div>
           <details className="stack">
