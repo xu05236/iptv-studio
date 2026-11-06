@@ -48,6 +48,9 @@ jobs:
     timeout-minutes: 350
     permissions:
       contents: read
+      # The usage snapshot at the end of the job lists workflow runs; without
+      # this the GitHub API returns 403 and the dashboard shows 0 minutes.
+      actions: read
     steps:
       - uses: actions/checkout@v4
 
