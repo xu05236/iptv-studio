@@ -116,7 +116,7 @@ Actions 手动入口：
 
 - 本机到自定义域名的 HTTPS 抖动严重（30–90s 超时），验证尽量用 `curl -m 90` 或 GitHub Actions
 - 本地 `wrangler d1 ... --local` 会因 Windows 权限起不来，远程命令正常
-- Workers 免费版 CPU 10ms，订阅必须走预渲染/R2→KV 静态对象
+- Workers 免费版 CPU 10ms，订阅必须走预渲染到 KV 静态对象
 - KV 单值 25MB，EPG/线路状态有 24MB 保护
 - RTSP/RTMP 浏览器无法播放，只能 VLC/盒子
 - 中继已开启，会消耗 Worker 流量；如遇限速可在「设置 → 高级」关闭
@@ -959,7 +959,7 @@ Actions 手动入口：
 
 - `fetch`：抓取启用的源 → 归一化/去重/墓碑/留存 → 写 `state/lines.json` → 同步源信誉；不测速、不发布
 - `probe`：读 `state/lines.json` → 轻量预筛 → 完整测速/分辨率 → 写回 lines + pool；不抓源、不发布
-- `publish`：读 lines → 抓 EPG → 构建 catalog/index/分片 → 发布 KV/R2 → 订阅 → 频道同步 → 差异/通知；不抓源、不测速
+- `publish`：读 lines → 抓 EPG → 构建 catalog/index/分片 → 发布 KV → 订阅 → 频道同步 → 差异/通知；不抓源、不测速
 - `collect`：串联 fetch/probe/publish 三个核心函数，仍然只有一条运行报告/日志
 - `liveness`：原 `probe` 轻量测活改名，避免和完整探测阶段冲突
 - `probe-lines`：检测中心选中线路探测，保持不变
