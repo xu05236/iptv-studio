@@ -22,27 +22,58 @@ export async function dispatchWorkflow(
   const ref = env.GITHUB_REF || 'main';
   const url = `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/${workflow}/dispatches`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'iptv-studio-worker',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ ref, inputs }),
-  });
+  const headers = {
+    Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'User-Agent': 'iptv-studio-worker',
+    'content-type': 'application/json',
+  };
+  let lastMessage = 'GitHub API 暂不可用';
 
-  if (response.status === 204) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ref, inputs }),
+      });
+    } catch (error) {
+      lastMessage = error instanceof Error ? error.message : 'GitHub 请求失败';
+      if (attempt < 3) {
+        await sleep(500 * attempt);
+        continue;
+      }
+      return { ok: false, message: `触发失败：${lastMessage}（已重试 3 次）` };
+    }
+
+    if (response.status === 204) {
+      return {
+        ok: true,
+        message: '已触发 GitHub Actions 采集任务',
+        runUrl: `https://github.com/${env.GITHUB_REPO}/actions/workflows/${workflow}`,
+      };
+    }
+
+    const text = (await response.text()).trim();
+    lastMessage = text ? text.slice(0, 300) : 'GitHub 返回空响应';
+    const transient = response.status === 429 || response.status >= 500;
+    if (transient && attempt < 3) {
+      await sleep(500 * attempt);
+      continue;
+    }
     return {
-      ok: true,
-      message: '已触发 GitHub Actions 采集任务',
-      runUrl: `https://github.com/${env.GITHUB_REPO}/actions/workflows/${workflow}`,
+      ok: false,
+      message: `触发失败 (${response.status}): ${lastMessage}${transient ? `（已重试 ${attempt} 次）` : ''}`,
     };
   }
-  const text = await response.text();
-  return { ok: false, message: `触发失败 (${response.status}): ${text.slice(0, 300)}` };
+
+  return { ok: false, message: `触发失败：${lastMessage}` };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export interface WorkflowRun {
