@@ -298,7 +298,7 @@ adminRoutes.post('/runs/dispatch', async (c) => {
       budget: String(body.budget ?? defaultBudget),
       source_id: body.sourceId?.trim() ?? '',
       line_keys: lineKeys.join(','),
-      phase: typeof body.phase === 'string' && ['pending', 'quarantine', 'rejected'].includes(body.phase) ? body.phase : '',
+      phase: typeof body.phase === 'string' && ['pending', 'quarantine'].includes(body.phase) ? body.phase : '',
     },
     total: command === 'probe-batch' ? Math.max(0, Number(settings.probeBatchSize) || 1200) : 0,
     unit: command === 'probe-batch' ? 'lines' : '',
@@ -518,7 +518,8 @@ adminRoutes.put('/settings', async (c) => {
   const patch = await readJson<Partial<AppSettings>>(c);
   if (!patch) return fail('请求体不合法');
   const allowed: Array<keyof AppSettings> = [
-    'logoBaseUrl', 'maxLinesPerChannel', 'frontLineLimit', 'maxLinesPerSource', 'compensate', 'keepSuspect', 'deadReviveDays',
+    'logoBaseUrl', 'maxLinesPerChannel', 'frontLineLimit', 'maxLinesPerSource', 'compensate', 'keepSuspect', 'rejectedRetentionDays',
+    'fetchTimes', 'monthlyReviveEnabled', 'monthlyReviveMinRemainingMinutes', 'monthlyReviveBatchSize',
     'probeBudget', 'concurrency', 'probeAliveHours', 'probePremiumHours', 'probePerChannel',
     'ffprobeLimit', 'probePrefilterEnabled', 'probePrefilterBudget', 'lineRetentionDays', 'epgUrls', 'regionSuffix',
     'autoCollectEnabled', 'autoCollectTimes', 'autoLivenessEnabled', 'autoLivenessTimes',
@@ -563,6 +564,14 @@ adminRoutes.put('/settings', async (c) => {
   if (clean.actionsMonthlyBudgetMinutes !== undefined) clean.actionsMonthlyBudgetMinutes = Math.max(300, Math.min(100_000, Number(clean.actionsMonthlyBudgetMinutes) || 2_000));
   if (clean.actionsReserveMinutes !== undefined) clean.actionsReserveMinutes = Math.max(0, Math.min(50_000, Number(clean.actionsReserveMinutes) || 0));
   if (clean.actionsRunCostMinutes !== undefined) clean.actionsRunCostMinutes = Math.max(1, Math.min(120, Number(clean.actionsRunCostMinutes) || 6));
+  if (clean.rejectedRetentionDays !== undefined) clean.rejectedRetentionDays = Math.max(1, Math.min(3650, Number(clean.rejectedRetentionDays) || 30));
+  if (clean.monthlyReviveMinRemainingMinutes !== undefined) clean.monthlyReviveMinRemainingMinutes = Math.max(0, Math.min(100_000, Number(clean.monthlyReviveMinRemainingMinutes) || 0));
+  if (clean.monthlyReviveBatchSize !== undefined) clean.monthlyReviveBatchSize = Math.max(1, Math.min(20_000, Number(clean.monthlyReviveBatchSize) || 800));
+  if (clean.fetchTimes !== undefined) {
+    const times = parseCollectTimes(clean.fetchTimes);
+    if (!times.length) return fail('抓取时间格式应为 HH:mm，多个用逗号分隔（北京时间）');
+    clean.fetchTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
+  }
   if (clean.fetchIntervalDays !== undefined) clean.fetchIntervalDays = Math.max(1, Number(clean.fetchIntervalDays) || 7);
   const settings = await saveSettings(c.env, clean);
   return ok({ settings });
@@ -593,11 +602,10 @@ adminRoutes.get('/schedule', async (c) => {
   });
 });
 
-const TASK_PHASES = ['pending', 'quarantine', 'rejected'] as const;
+const TASK_PHASES = ['pending', 'quarantine'] as const;
 const TASK_PHASE_LABEL: Record<string, string> = {
   pending: '待测（从未探测）',
   quarantine: '待复测（到期）',
-  rejected: '已淘汰（可复活）',
 };
 
 function describeTask(task: Task, sourceNames: Map<string, string>): string {

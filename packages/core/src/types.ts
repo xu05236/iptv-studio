@@ -132,7 +132,10 @@ export interface LineEntry {
   retained?: boolean;
   /** Operator-marked good line; prioritized in exports and pool ordering. */
   favorite?: boolean;
-  reviveAt?: string;
+  /** 是否走通过探测；新线路只给一次复测，老线路 3 次失败才淘汰。 */
+  everAlive?: boolean;
+  /** 进入已淘汰终态的时间（保留 30 天后清理）。 */
+  rejectedAt?: string;
   region?: string;
   operator?: string;
   tags: string[];
@@ -277,7 +280,8 @@ export interface AppSettings {
   maxLinesPerSource: number;
   compensate: boolean;
   keepSuspect: boolean;
-  deadReviveDays: number;
+  /** 已淘汰线路保留天数（到期清理，默认 30）。 */
+  rejectedRetentionDays: number;
   probeBudget: number;
   concurrency: number;
   /** Recheck interval for alive backup lines (hours). */
@@ -299,10 +303,16 @@ export interface AppSettings {
   /** Daily pool liveness schedule (default on, cheap). */
   autoLivenessEnabled: boolean;
   autoLivenessTimes: string;
-  /** Automatic batched probing of pending/quarantine/rejected lines. */
+  /** 自动探测的线路状态：待测、待复测（已淘汰不再自动探测）。 */
   autoProbeEnabled: boolean;
   probeBatchSize: number;
   autoProbeIntervalHours: number;
+  /** 每月末自动抽检已淘汰线路尝试复活。 */
+  monthlyReviveEnabled: boolean;
+  /** 自动抽检所需的最低剩余 Actions 分钟数。 */
+  monthlyReviveMinRemainingMinutes: number;
+  /** 单次抽检的线路条数上限。 */
+  monthlyReviveBatchSize: number;
   /** Monthly GitHub Actions minute budget (private repo free plan: 2000). */
   actionsMonthlyBudgetMinutes: number;
   /** Minutes kept free for manual/emergency runs. */
@@ -313,8 +323,9 @@ export interface AppSettings {
   probePhaseOrder: string;
   /** Phases temporarily skipped by the batch scheduler. */
   probePausedPhases: string;
-  /** Weekly source refresh + manual fetch on source add. */
+  /** 定时重抓：每日时刻列表（北京时间，逗号分隔，可多段）。 */
   autoFetchEnabled: boolean;
+  fetchTimes: string;
   fetchIntervalDays: number;
   /** Daily publish-only (EPG/catalog) without probing. */
   autoPublishEnabled: boolean;
@@ -362,7 +373,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxLinesPerSource: 2,
   compensate: true,
   keepSuspect: true,
-  deadReviveDays: 14,
+  rejectedRetentionDays: 30,
   probeBudget: 12_000,
   concurrency: 64,
   probeAliveHours: 360,
@@ -379,12 +390,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoProbeEnabled: true,
   probeBatchSize: 1200,
   autoProbeIntervalHours: 6,
+  monthlyReviveEnabled: true,
+  monthlyReviveMinRemainingMinutes: 600,
+  monthlyReviveBatchSize: 800,
   actionsMonthlyBudgetMinutes: 2000,
   actionsReserveMinutes: 300,
   actionsRunCostMinutes: 6,
-  probePhaseOrder: 'pending,quarantine,rejected',
+  probePhaseOrder: 'pending,quarantine',
   probePausedPhases: '',
   autoFetchEnabled: true,
+  fetchTimes: '06:30',
   fetchIntervalDays: 7,
   autoPublishEnabled: true,
   autoPublishTimes: '08:30',

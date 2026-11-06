@@ -206,8 +206,8 @@ export function SettingsPage() {
           <div className="caption">
             超时 9 秒、预热丢弃 512 KB、采样 1.5 秒、发布前冷却 60 秒已内置（调这些会影响误判率和测速准确性，不建议开放）。
           </div>
-          <Field label="失效线路复活天数" hint="连续 3 次失败判定失效，到期后允许复测一次">
-            <input className="input" inputMode="numeric" value={form.deadReviveDays} onChange={(event) => set('deadReviveDays', Number(event.target.value))} />
+          <Field label="已淘汰线路保留天数" hint="线路进入已淘汰终态后保留的天数；到期由清理任务删除并写入墓碑，防止重抓再入">
+            <input className="input" inputMode="numeric" value={form.rejectedRetentionDays ?? 30} onChange={(event) => set('rejectedRetentionDays', Number(event.target.value))} />
           </Field>
         </div>
       </Card>

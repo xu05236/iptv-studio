@@ -386,7 +386,7 @@ async function recordInterval(env: Env, key: string, now: number, nextMs: number
   await putRuntimeJson(env, key, state);
 }
 
-const PHASES = ['pending', 'quarantine', 'rejected'] as const;
+const PHASES = ['pending', 'quarantine'] as const;
 
 function phaseList(value: string): string[] {
   return String(value ?? '').split(/[\s,，]+/).map((item) => item.trim()).filter((item) => (PHASES as readonly string[]).includes(item));

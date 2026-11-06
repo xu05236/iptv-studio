@@ -190,15 +190,20 @@ export async function runProbes(
       if (retry.ok) result = retry;
     }
 
-    const next = transition(line, result, { reviveDays: settings.deadReviveDays });
+    const next = transition(line, result, { now: new Date() });
     if (next.skipped) {
       summary.skipped++;
     } else {
       line.status = next.status;
       line.failCount = next.failCount;
       line.passCount = next.passCount;
-      line.reviveAt = next.reviveAt;
       line.lastProbeAt = result.checkedAt;
+      if (next.status === 'alive') {
+        line.everAlive = true;
+        line.rejectedAt = undefined;
+      } else if (next.rejectedAt) {
+        line.rejectedAt = next.rejectedAt;
+      }
       summary.probed++;
       if (next.status === 'alive') summary.alive++;
       else if (next.status === 'dead') summary.dead++;

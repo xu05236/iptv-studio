@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dedupeLines } from '../src/aggregate/dedupe.js';
 import { selectLines } from '../src/aggregate/merge.js';
-import { transition, shouldExport, isDueForProbe } from '../src/aggregate/state.js';
+import { transition, shouldExport, isDueForProbe, isPurgeable } from '../src/aggregate/state.js';
 import { scoreLine } from '../src/aggregate/rank.js';
 import type { LineEntry } from '../src/types.js';
 
@@ -26,16 +26,38 @@ function line(overrides: Partial<LineEntry>): LineEntry {
 }
 
 describe('state machine', () => {
-  it('demotes after failures and revives on success', () => {
-    let state: { status: 'alive' | 'suspect' | 'dead' | 'unknown'; failCount: number; reviveAt?: string } = { status: 'alive', failCount: 0 };
-    state = transition(state, { ok: false, error: 'HTTP 500' }, { reviveDays: 14 });
+  it('老线路三次失败才终态，成功即回可用', () => {
+    let state = { status: 'alive' as const, failCount: 0, passCount: 3, everAlive: true };
+    state = { ...state, ...transition(state, { ok: false, error: 'HTTP 500' }) };
     expect(state.status).toBe('suspect');
     expect(state.failCount).toBe(1);
-    state = transition(state, { ok: false, error: 'HTTP 500' });
-    state = transition(state, { ok: false, error: 'HTTP 500' });
+    state = { ...state, ...transition(state, { ok: false, error: 'HTTP 500' }) };
+    expect(state.status).toBe('suspect');
+    state = { ...state, ...transition(state, { ok: false, error: 'HTTP 500' }) };
     expect(state.status).toBe('dead');
-    expect(state.reviveAt).toBeTruthy();
-    expect(transition(state, { ok: true }).status).toBe('alive');
+    expect(state.failCount).toBe(3);
+    const dead = transition({ status: 'dead', failCount: 3, passCount: 0, everAlive: true }, { ok: true });
+    expect(dead.status).toBe('alive');
+  });
+
+  it('新线路只给一次复测，失败即终态', () => {
+    let state = { status: 'unknown' as const, failCount: 0, passCount: 0, everAlive: false };
+    state = { ...state, ...transition(state, { ok: false, error: 'HTTP 500' }) };
+    expect(state.status).toBe('suspect');
+    const next = transition(state, { ok: false, error: 'HTTP 500' }, { now: new Date('2026-02-01T00:00:00Z') });
+    expect(next.status).toBe('dead');
+    expect(next.rejectedAt).toBe('2026-02-01T00:00:00.000Z');
+  });
+
+  it('已淘汰是终态，不再进入探测', () => {
+    const dead = line({ status: 'dead', failCount: 3, lastProbeAt: '2026-01-01T00:00:00Z' });
+    expect(isDueForProbe(dead, 'high', new Date('2026-06-01T00:00:00Z'))).toBe(false);
+  });
+
+  it('已淘汰超过保留天数才可清理', () => {
+    const now = new Date('2026-03-01T00:00:00Z');
+    expect(isPurgeable(line({ status: 'dead', rejectedAt: '2026-01-25T00:00:00Z' }), 30, now)).toBe(true);
+    expect(isPurgeable(line({ status: 'dead', rejectedAt: '2026-02-10T00:00:00Z' }), 30, now)).toBe(false);
   });
 
   it('does not judge protocols it cannot probe', () => {

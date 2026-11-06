@@ -159,7 +159,8 @@ function normalize(
         firstSeenAt: old?.firstSeenAt ?? timestamp,
         lastSeenAt: timestamp,
         lastProbeAt: old?.lastProbeAt,
-        reviveAt: old?.reviveAt,
+        everAlive: old?.everAlive,
+        rejectedAt: old?.rejectedAt,
         region: source?.region ?? old?.region,
         operator: source?.operator ?? old?.operator,
         tags: old?.tags ?? [],
@@ -350,7 +351,7 @@ function poolStatsFor(remote: RemoteConfig, lines: LineEntry[]) {
     // Only lines whose TTL is due; otherwise the scheduler would keep dispatching
     // batches that immediately go idle.
     quarantine: valid.filter((line) => line.status === 'suspect' && livenessReady(line, now) && isDueForProbe(line, 'normal', nowDate)).length,
-    rejected: valid.filter((line) => line.status === 'dead' && line.failCount < 5 && (!line.reviveAt || Date.parse(line.reviveAt) <= now)).length,
+    rejected: valid.filter((line) => line.status === 'dead').length,
     alive: valid.filter((line) => line.status === 'alive').length,
     dead: valid.filter((line) => line.status === 'dead').length,
   };
@@ -754,31 +755,25 @@ async function runProbePhase(): Promise<void> {
   }
 }
 
-function parsePhaseList(value: string): Array<'pending' | 'quarantine' | 'rejected'> {
-  const valid = new Set(['pending', 'quarantine', 'rejected']);
+function parsePhaseList(value: string): Array<'pending' | 'quarantine'> {
+  const valid = new Set(['pending', 'quarantine']);
   return String(value ?? '')
     .split(/[\s,，]+/)
     .map((item) => item.trim())
-    .filter((item): item is 'pending' | 'quarantine' | 'rejected' => valid.has(item));
+    .filter((item): item is 'pending' | 'quarantine' => valid.has(item));
 }
 
-function parsePhaseOrder(value: string): Array<'pending' | 'quarantine' | 'rejected'> {
+function parsePhaseOrder(value: string): Array<'pending' | 'quarantine'> {
   const order = parsePhaseList(value);
-  return order.length ? order : ['pending', 'quarantine', 'rejected'];
+  return order.length ? order : ['pending', 'quarantine'];
 }
 
-function phaseMatches(line: LineEntry, phase: 'pending' | 'quarantine' | 'rejected', now: number, forced: boolean): boolean {
+function phaseMatches(line: LineEntry, phase: 'pending' | 'quarantine', now: number, forced: boolean): boolean {
   if (UNPROBEABLE_URL.test(line.url)) return false;
   if (phase === 'pending') return !line.lastProbeAt && line.status === 'unknown';
-  if (phase === 'quarantine') {
-    if (line.status !== 'suspect') return false;
-    if (!forced && !livenessReady(line, now)) return false;
-    return forced || isDueForProbe(line, 'normal', new Date(now));
-  }
-  if (line.status !== 'dead') return false;
-  // Permanently dead lines are not worth re-probing.
-  if (line.failCount >= 5) return false;
-  return forced || !line.reviveAt || Date.parse(line.reviveAt) <= now;
+  if (line.status !== 'suspect') return false;
+  if (!forced && !livenessReady(line, now)) return false;
+  return forced || isDueForProbe(line, 'normal', new Date(now));
 }
 
 /**
@@ -807,12 +802,12 @@ async function runBatchProbe(): Promise<void> {
     const channelIds = new Set(remote.channels.map((channel) => channel.id));
     const poolChannels = new Set(lines.map((line) => line.channelId)).size;
     const now = Date.now();
-    const forcedPhase = (process.env.PROBE_PHASE ?? '').trim() as 'pending' | 'quarantine' | 'rejected' | '';
+    const forcedPhase = (process.env.PROBE_PHASE ?? '').trim() as 'pending' | 'quarantine' | '';
     const paused = new Set(parsePhaseList(settings.probePausedPhases));
     const order = parsePhaseOrder(settings.probePhaseOrder);
-    const validPhase = (phase: 'pending' | 'quarantine' | 'rejected'): boolean =>
+    const validPhase = (phase: 'pending' | 'quarantine'): boolean =>
       channelIds.size > 0 && lines.some((line) => channelIds.has(line.channelId) && phaseMatches(line, phase, now, forcedPhase === phase));
-    const phase = forcedPhase && ['pending', 'quarantine', 'rejected'].includes(forcedPhase)
+    const phase = forcedPhase && ['pending', 'quarantine'].includes(forcedPhase)
       ? forcedPhase
       : order.find((candidate) => !paused.has(candidate) && validPhase(candidate));
     if (!phase) {
@@ -842,12 +837,10 @@ async function runBatchProbe(): Promise<void> {
     }
     picked.sort((a, b) => favoriteRank(a) - favoriteRank(b) || (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
     const selected = picked.slice(0, batchSize);
-    const phaseLabel = phase === 'pending' ? '待测' : phase === 'quarantine' ? '待复测' : '待复活';
+    const phaseLabel = phase === 'pending' ? '待测' : '待复测';
     logger.info('分批探测计划', { phase, candidates: candidates.length, batch: selected.length, batchSize, forced: Boolean(forcedPhase) });
 
-    const blocked = phase === 'rejected'
-      ? new Set<string>()
-      : await prefilterLiveness(selected, settings, config.concurrency || settings.concurrency || 32, logger);
+    const blocked = await prefilterLiveness(selected, settings, config.concurrency || settings.concurrency || 32, logger);
     const probeList = selected.filter((line) => !blocked.has(line.key));
     await reportTaskProgress(api, 0, selected.length, `分批探测 · ${phaseLabel} · 本批 ${selected.length} 条`);
     const summary = await runProbes(probeList, settings, config.concurrency || settings.concurrency, logger, (done) => {
@@ -1082,12 +1075,7 @@ async function runLiveness(): Promise<void> {
       }
       line.failCount = Math.min(99, line.failCount + 1);
       line.error = result.error?.slice(0, 200);
-      if (line.failCount >= 3) {
-        line.status = 'dead';
-        line.reviveAt = new Date(Date.now() + settings.deadReviveDays * 86_400_000).toISOString();
-      } else {
-        line.status = 'suspect';
-      }
+      line.status = 'suspect';
       failed++;
     });
     logger.info('轻量测活完成', { checked: selected.length, alive, failed, skipped });

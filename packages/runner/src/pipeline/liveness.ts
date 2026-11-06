@@ -63,12 +63,8 @@ export async function prefilterLiveness(
     blocked.add(line.key);
     line.failCount = Math.min(99, line.failCount + 1);
     line.error = result.error?.slice(0, 200);
-    if (line.failCount >= 3) {
-      line.status = 'dead';
-      line.reviveAt = new Date(Date.now() + settings.deadReviveDays * 86_400_000).toISOString();
-    } else {
-      line.status = 'suspect';
-    }
+    // 轻量测活只降级，不判终态；终态必须由完整探测确认。
+    line.status = 'suspect';
   });
 
   logger.info('轻量预筛完成', { checked: candidates.length, passed, failed, skipped, blocked: blocked.size });

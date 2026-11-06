@@ -38,7 +38,7 @@ function formatSnapshot(value: string): string {
 }
 
 interface TaskPhase {
-  id: 'pending' | 'quarantine' | 'rejected';
+  id: 'pending' | 'quarantine';
   label: string;
   count: number;
   estimatedBatches: number;
@@ -83,13 +83,11 @@ const TASK_TYPE_LABEL: Record<string, string> = {
 const PHASE_DETAIL: Record<string, string> = {
   pending: '从未完整探测的线路',
   quarantine: '已到期、等待复测的线路',
-  rejected: '失效后到达复活时间的线路',
 };
 
 const PHASE_MESSAGE_KEY: Record<string, string> = {
   pending: '待测',
   quarantine: '待复测',
-  rejected: '待复活',
 };
 
 function describeScheduleResult(result: string): string {
@@ -594,7 +592,6 @@ export function Dashboard() {
               <div className="row row--wrap" style={{ gap: 8 }}>
                 <Badge>{`待测 ${tasks.data.phases.find((phase) => phase.id === 'pending')?.count ?? 0}`}</Badge>
                 <Badge>{`待复测 ${tasks.data.phases.find((phase) => phase.id === 'quarantine')?.count ?? 0}`}</Badge>
-                <Badge>{`待复活 ${tasks.data.phases.find((phase) => phase.id === 'rejected')?.count ?? 0}`}</Badge>
                 <span className="caption">抓源 {tasks.data.schedules.fetch.enabled ? `每 ${tasks.data.schedules.fetch.intervalDays} 天` : '关闭'}</span>
                 <span className="caption">发布 {tasks.data.schedules.publish.enabled ? tasks.data.schedules.publish.times : '关闭'}</span>
               </div>
