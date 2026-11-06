@@ -18,11 +18,11 @@ import { createTask, dispatchNext } from '../lib/tasks.js';
 
 export const sourceRoutes = new Hono<AppEnv>();
 
-/** refresh_hours: null = follow tiers, 0 = never, N = custom hours (24 = daily). */
-function refreshHoursOf(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') return null;
+/** refresh_hours: -1 = follow tiers, 0 = never, N = custom hours (24 = daily). */
+function refreshHoursOf(value: unknown): number {
+  if (value === null || value === undefined || value === '') return -1;
   const hours = Number(value);
-  return Number.isFinite(hours) && hours >= 0 ? hours : null;
+  return Number.isFinite(hours) ? hours : -1;
 }
 
 /** Last parse diagnostics plus the "entry count dropped" flag the UI highlights. */
@@ -620,6 +620,9 @@ sourceRoutes.patch('/:id', async (c) => {
     patch.etag = null;
     patch.last_modified = null;
     patch.last_fetch_at = null;
+  }
+  if (patch['refresh_hours'] !== undefined) {
+    patch['refresh_hours'] = refreshHoursOf(patch['refresh_hours']);
   }
   const updated = await updateSource(c.env, id, patch);
   if (!updated) return fail('没有可更新的字段');

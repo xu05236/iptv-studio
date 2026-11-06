@@ -19,6 +19,11 @@ describe('effectiveRefreshHours', () => {
     expect(effectiveRefreshHours({ refreshHours: 96, weight: 1, createdAt: old, now })).toBe(96);
   });
 
+  it('-1 与空值都表示跟随分档', () => {
+    expect(effectiveRefreshHours({ refreshHours: -1, weight: 2, createdAt: old, now })).toBe(12);
+    expect(effectiveRefreshHours({ refreshHours: null, weight: 1, createdAt: recent, now })).toBe(24);
+  });
+
   it('0 表示不自动刷新', () => {
     expect(effectiveRefreshHours({ refreshHours: 0, weight: 2, createdAt: recent, now })).toBe(0);
   });

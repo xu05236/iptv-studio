@@ -7,7 +7,7 @@ export interface RefreshInput {
 
 /**
  * 每个源的抓取间隔（小时）：
- * - null / undefined：跟随分档（收藏源 12h、7 天内新增 24h、其它 72h）
+ * - null / undefined / -1：跟随分档（收藏源 12h、7 天内新增 24h、其它 72h）
  * - 0：不自动抓取，只手动
  * - 正数：自定义小时（24 = 每天、48 = 每 2 天、72 = 每 3 天…）
  */
@@ -15,7 +15,10 @@ export function effectiveRefreshHours(input: RefreshInput): number {
   const raw = input.refreshHours;
   if (raw !== null && raw !== undefined) {
     const hours = Number(raw);
-    if (Number.isFinite(hours)) return hours <= 0 ? 0 : hours;
+    if (Number.isFinite(hours)) {
+      if (hours < 0) return tierRefreshHours(input.weight, input.createdAt, input.now);
+      return hours === 0 ? 0 : hours;
+    }
   }
   return tierRefreshHours(input.weight, input.createdAt, input.now);
 }

@@ -194,7 +194,7 @@ export async function insertSource(env: Env, input: NewSource): Promise<void> {
       input.fetchConcurrency ?? null,
       input.fetchDelayMs ?? null,
       input.contentHash ?? null,
-      input.refreshHours ?? null,
+      input.refreshHours ?? -1,
     )
     .run();
 }
