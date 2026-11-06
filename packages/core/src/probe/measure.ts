@@ -105,13 +105,13 @@ export async function measureBody(body: ReadableStream<Uint8Array>, options: Mea
   return measureReader(body.getReader(), options);
 }
 
-export async function readTextCapped(
+export async function readBytesCapped(
   source: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint8Array> | null,
   maxBytes = 512 * 1024,
   initial?: Uint8Array,
-): Promise<string> {
+): Promise<Uint8Array> {
   const reader = source === null ? null : 'getReader' in source ? source.getReader() : source;
-  if (!reader) return '';
+  if (!reader) return new Uint8Array();
   const chunks: Uint8Array[] = initial?.byteLength ? [initial] : [];
   let total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
   try {
@@ -140,7 +140,15 @@ export async function readTextCapped(
     offset += take;
     if (offset >= merged.byteLength) break;
   }
-  return new TextDecoder().decode(merged);
+  return merged;
+}
+
+export async function readTextCapped(
+  source: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint8Array> | null,
+  maxBytes = 512 * 1024,
+  initial?: Uint8Array,
+): Promise<string> {
+  return new TextDecoder().decode(await readBytesCapped(source, maxBytes, initial));
 }
 
 export function qualityFromHeight(height?: number): Quality {

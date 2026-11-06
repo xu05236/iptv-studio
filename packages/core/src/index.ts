@@ -9,6 +9,7 @@ export * from './parse/index.js';
 export * from './normalize/channels.js';
 export * from './source/filters.js';
 export * from './source/fetch.js';
+export * from './source/encoding.js';
 export * from './source/mirrors.js';
 export * from './source/adapter.js';
 export * from './source/parseReport.js';

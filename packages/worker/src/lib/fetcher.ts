@@ -13,6 +13,7 @@ export interface FetchTextResult {
   ok: boolean;
   status: number;
   text?: string;
+  encoding?: string;
   etag?: string | null;
   lastModified?: string | null;
   notModified?: boolean;
@@ -29,6 +30,7 @@ export async function fetchSourceText(url: string, options: FetchTextOptions = {
     ok: result.ok,
     status: result.status,
     text: result.text,
+    encoding: result.encoding,
     etag: result.etag,
     lastModified: result.lastModified,
     notModified: result.notModified,

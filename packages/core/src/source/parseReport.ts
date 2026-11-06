@@ -3,6 +3,8 @@ export interface SourceParseReport {
   detectedKind: string;
   entries: number;
   bytes: number;
+  /** F4: body encoding used to decode the source (utf-8 / gbk / …). */
+  encoding?: string | null;
   warnings: string[];
   /** 0 = primary URL, 1+ = which mirror answered. */
   mirrorIndex: number;

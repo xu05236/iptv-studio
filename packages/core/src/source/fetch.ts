@@ -1,4 +1,5 @@
-import { readTextCapped } from '../probe/measure.js';
+import { readBytesCapped } from '../probe/measure.js';
+import { decodeSourceText } from './encoding.js';
 
 export type FetchErrorKind = 'timeout' | 'network' | 'http_4xx' | 'http_5xx' | 'challenge';
 
@@ -37,6 +38,8 @@ export interface FetchTextResult {
   ok: boolean;
   status: number;
   text?: string;
+  /** F4: encoding actually used to decode the body (utf-8 / gbk / …). */
+  encoding?: string;
   etag?: string | null;
   lastModified?: string | null;
   notModified?: boolean;
@@ -155,11 +158,13 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
           attempts: attempt,
         };
       } else {
-        const text = await readTextCapped(response.body, options.maxBytes ?? DEFAULT_MAX_BYTES);
+        const bytes = await readBytesCapped(response.body, options.maxBytes ?? DEFAULT_MAX_BYTES);
+        const decoded = decodeSourceText(bytes, response.headers.get('content-type'));
         return {
           ok: true,
           status: response.status,
-          text,
+          text: decoded.text,
+          encoding: decoded.encoding,
           etag: response.headers.get('etag'),
           lastModified: response.headers.get('last-modified'),
           attempts: attempt,

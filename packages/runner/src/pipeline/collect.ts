@@ -16,6 +16,8 @@ export interface CollectedSource {
   /** Classification of the last failure (see FetchErrorKind). */
   errorKind?: FetchErrorKind;
   attempts?: number;
+  /** F4: body encoding used by the decoder (utf-8 / gbk / …). */
+  encoding?: string;
   /** 0 = primary URL, 1+ = which mirror answered. */
   mirrorIndex?: number;
 }
@@ -30,6 +32,7 @@ interface FetchResult {
   error?: string;
   errorKind?: FetchErrorKind;
   attempts?: number;
+  encoding?: string;
 }
 
 async function fetchPlaylist(
@@ -58,6 +61,7 @@ async function fetchPlaylist(
     error: result.error,
     errorKind: result.errorKind,
     attempts: result.attempts,
+    encoding: result.encoding,
   };
 }
 
@@ -147,6 +151,7 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
         base.fetched = true;
         usedIndex = index;
         base.mirrorIndex = index;
+        base.encoding = fetched.encoding;
         break;
       }
       errors.push(`#${index + 1} ${fetched.error ?? fetched.status}`);

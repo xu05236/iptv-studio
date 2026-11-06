@@ -66,7 +66,7 @@ export interface SourceItem {
   refresh_hours?: number;
   requestHeaders?: Record<string, string>;
   mirrorUrls?: string[];
-  parseReport?: { detectedKind: string; entries: number; bytes: number; warnings: string[]; mirrorIndex: number; fetchedAt: string; dropPercent?: number | null } | null;
+  parseReport?: { detectedKind: string; entries: number; bytes: number; encoding?: string | null; warnings: string[]; mirrorIndex: number; fetchedAt: string; dropPercent?: number | null } | null;
   parseDrop?: boolean;
   fetchMode?: string;
   progress?: { total: number; tested: number; alive: number; pending: number; pendingTotal?: number; quarantine: number; quarantineTotal?: number; rejected: number; rejectedTotal?: number; channels?: number };

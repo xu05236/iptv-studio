@@ -224,6 +224,7 @@ export function SourceDetail() {
             <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
               <div><div className="caption">条目</div><div className="title-3">{formatNumber(source.parseReport.entries)}</div></div>
               <div><div className="caption">大小</div><div className="title-3">{Math.max(1, Math.round(source.parseReport.bytes / 1024))} KB</div></div>
+              <div><div className="caption">编码</div><div className="title-3">{(source.parseReport.encoding ?? 'utf-8').toUpperCase()}</div></div>
               <div><div className="caption">抓取地址</div><div className="title-3">{source.parseReport.mirrorIndex > 0 ? `备用 #${source.parseReport.mirrorIndex}` : '主地址'}</div></div>
               <div><div className="caption">时间</div><div className="title-3">{timeAgo(source.parseReport.fetchedAt)}</div></div>
             </div>

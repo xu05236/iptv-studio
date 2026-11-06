@@ -473,6 +473,7 @@ async function syncSourceStats(
             detectedKind: item.parsed.kind,
             entries: item.parsed.entries.length,
             bytes: item.bytes,
+            encoding: item.encoding ?? null,
             warnings: (item.parsed.warnings ?? []).slice(0, 10),
             mirrorIndex: item.mirrorIndex ?? 0,
             fetchedAt: new Date().toISOString(),
