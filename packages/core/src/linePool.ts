@@ -117,6 +117,12 @@ export function buildPoolSnapshot(input: BuildPoolSnapshotInput): PoolSnapshot {
     const backup: LineEntry[] = [];
     const candidate: LineEntry[] = [];
     for (const line of lines) {
+      // 官方保底线路不参与探测，没有 lastProbeAt，直接按精品导出。
+      if (line.official) {
+        if (premium.length < target) premium.push(line);
+        else backup.push(line);
+        continue;
+      }
       // A line without a probe timestamp was never tested; the pool treats it
       // as pending, so it must not leak into premium/backup either.
       if (!line.lastProbeAt) continue;

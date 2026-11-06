@@ -159,6 +159,24 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
     text = builtinPlaylist(source.url);
     if (!text) return { ...base, error: `未知内置源 ${source.url}` };
     base.fetched = true;
+  } else if (source.fetch_mode === 'worker' && source.url && /^https?:\/\//i.test(source.url)) {
+    // F3: Worker 代拉。Actions 出口被源站/CDN 拦截时由 Worker 取正文，本地照常解析。
+    try {
+      const remote = await store.fetchRemoteSource(source.id);
+      if (remote.notModified) {
+        logger.info('源未变化 (304, Worker 代拉)', { source: source.name });
+        return { ...base, fetched: true, notModified: true };
+      }
+      if (!remote.text) return { ...base, error: remote.error ?? 'Worker 代拉失败' };
+      text = remote.text;
+      base.fetched = true;
+      base.encoding = remote.encoding;
+      base.etag = remote.etag ?? null;
+      base.lastModified = remote.lastModified ?? null;
+      if (remote.mirrorIndex) logger.info(`已使用 Worker 代拉（备用 #${remote.mirrorIndex}）`, { source: source.name });
+    } catch (error) {
+      return { ...base, error: `Worker 代拉失败：${error instanceof Error ? error.message : String(error)}` };
+    }
   } else if (source.url) {
     let requestHeaders: Record<string, string> | undefined;
     try {

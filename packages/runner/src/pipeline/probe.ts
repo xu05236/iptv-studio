@@ -126,6 +126,8 @@ export function planProbes(
   const aliveHours = Math.max(1, settings.probeAliveHours || 360);
   const perChannelCap = Math.max(1, settings.probePerChannel || 24);
   const candidates = lines.filter((line) => {
+    // 官方保底线路不参与探测：Action 出口会被 CNTV CDN 拦，判死反而误伤。
+    if (line.official) return false;
     if (UNPROBEABLE.test(line.url)) return false;
     if (line.status === 'dead' && line.failCount >= 5) return false;
 

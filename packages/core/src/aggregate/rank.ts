@@ -80,6 +80,8 @@ export function sourceReputationMap(sources: Array<Pick<SourceConfig, 'id' | 're
 }
 
 export function compareLines(a: LineEntry, b: LineEntry): number {
+  // 官方保底线路永远排在最前。
+  if (Boolean(a.official) !== Boolean(b.official)) return a.official ? -1 : 1;
   if (a.favorite !== b.favorite) return b.favorite ? 1 : -1;
   if (a.status === 'alive' && b.status !== 'alive') return -1;
   if (b.status === 'alive' && a.status !== 'alive') return 1;

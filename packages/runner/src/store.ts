@@ -110,6 +110,20 @@ export class ArtifactStore {
     if (!text) return null;
     return JSON.parse(text) as T;
   }
+
+  /** F3: 让 Worker 代拉源内容（Actions 出口被源站拦时用），正文不落存储。 */
+  fetchRemoteSource(sourceId: string): Promise<{
+    notModified?: boolean;
+    text?: string;
+    encoding?: string;
+    status?: number;
+    etag?: string | null;
+    lastModified?: string | null;
+    mirrorIndex?: number;
+    error?: string;
+  }> {
+    return this.api.post(`/api/admin/sources/${encodeURIComponent(sourceId)}/fetch`, {});
+  }
 }
 
 export interface SourceRecord {

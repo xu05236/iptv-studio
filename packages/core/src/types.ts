@@ -136,6 +136,8 @@ export interface LineEntry {
   everAlive?: boolean;
   /** 进入已淘汰终态的时间（保留 30 天后清理）。 */
   rejectedAt?: string;
+  /** 官方保底线路：不参与存活判定/不判死，导出置顶。 */
+  official?: boolean;
   region?: string;
   operator?: string;
   tags: string[];

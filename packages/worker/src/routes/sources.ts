@@ -232,6 +232,40 @@ sourceRoutes.get('/:id', async (c) => {
   return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}), mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []), fetchMode: source.fetch_mode ?? 'direct', fetchTimeoutMs: source.fetch_timeout_ms ?? 45_000, fetchConcurrency: source.fetch_concurrency ?? 1, fetchDelayMs: source.fetch_delay_ms ?? 0, lastErrorKind: source.last_error_kind ?? null, ...parseReportOf(source), enabled: source.enabled === 1 } });
 });
 
+/**
+ * F3：Worker 代拉源内容。GitHub Actions 出口被源站/CDN 拦时，源设 fetch_mode=worker，
+ * runner 调这里拿正文再在本地解析；正文只在响应里返回，不落 KV。
+ */
+sourceRoutes.post('/:id/fetch', async (c) => {
+  const source = await getSource(c.env, c.req.param('id'));
+  if (!source) return fail('直播源不存在', 404);
+  if (source.status === 'paused') return fail('源已暂停，先恢复再代拉', 409);
+  const headers = parseJsonField<Record<string, string>>(source.request_headers, {});
+  const mirrors = normalizeMirrorUrls(source.mirror_urls);
+  if (mirrors.error) return fail(mirrors.error);
+  const candidates: Array<string | null> = [source.url, ...mirrors.urls];
+  const urls = candidates.filter((url): url is string => typeof url === 'string' && /^https?:\/\//i.test(url));
+  if (!urls.length) return fail('该源没有可由 Worker 代拉的 http(s) 地址', 400);
+  const timeoutMs = clampNumber(source.fetch_timeout_ms, 2_000, 120_000, 45_000);
+  let lastError = 'Worker 代拉失败';
+  for (const [index, url] of urls.entries()) {
+    const result = await fetchSourceText(url, { headers, timeoutMs, maxBytes: 8 * 1024 * 1024 });
+    if (result.notModified) return ok({ notModified: true, mirrorIndex: index });
+    if (result.ok && result.text) {
+      return ok({
+        text: result.text,
+        encoding: result.encoding ?? 'utf-8',
+        status: result.status,
+        etag: result.etag ?? null,
+        lastModified: result.lastModified ?? null,
+        mirrorIndex: index,
+      });
+    }
+    lastError = result.error ?? `HTTP ${result.status}`;
+  }
+  return fail(`Worker 代拉失败：${lastError}`, 502, 'worker_fetch_failed');
+});
+
 sourceRoutes.get('/:id/detail', async (c) => {
   const id = c.req.param('id');
   const [source, state, fetchReport] = await Promise.all([

@@ -178,6 +178,7 @@ function normalize(
         continue;
       }
 
+      const isOfficial = sourceHasOfficialTag(source);
       const line: LineEntry = {
         key,
         sourceId: item.source.id,
@@ -190,7 +191,7 @@ function normalize(
         headers: raw.headers,
         group: raw.group,
         logo: raw.logo,
-        status: old?.status ?? 'unknown',
+        status: isOfficial ? 'alive' : old?.status ?? 'unknown',
         failCount: old?.failCount ?? 0,
         resolution: old?.resolution ?? inferResolution(`${raw.name} ${url}`),
         width: old?.width,
@@ -214,6 +215,7 @@ function normalize(
         catchupDays: raw.catchupDays,
         error: old?.error,
         favorite: old?.favorite,
+        official: old?.official ?? isOfficial,
       };
       merged.set(`${line.sourceId}|${line.urlKey}`, line);
       if (old) diff.reused++;
@@ -263,6 +265,16 @@ async function collectSourceWithRetry(source: SourceRecord, store: ArtifactStore
   } catch (error) {
     logger.warn('抓取异常', { source: source.name, error: error instanceof Error ? error.message : String(error) });
     return { source, entries: [], fetched: false, notModified: false, bytes: 0, error: '抓取失败', errorKind: 'network' };
+  }
+}
+
+function sourceHasOfficialTag(source?: SourceRecord): boolean {
+  if (!source?.tags) return false;
+  try {
+    const tags = typeof source.tags === 'string' ? JSON.parse(source.tags) : source.tags;
+    return Array.isArray(tags) && tags.map(String).includes('official');
+  } catch {
+    return false;
   }
 }
 
