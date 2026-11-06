@@ -61,6 +61,15 @@ interface CreateSourceInput {
   requestHeaders?: unknown;
   mirrorUrls?: unknown;
   fetchMode?: string;
+  fetchTimeoutMs?: number | string;
+  fetchConcurrency?: number | string;
+  fetchDelayMs?: number | string;
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(parsed)));
 }
 
 sourceRoutes.get('/', async (c) => {
@@ -108,6 +117,9 @@ sourceRoutes.get('/', async (c) => {
       requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}),
       mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []),
       fetchMode: source.fetch_mode ?? 'direct',
+      fetchTimeoutMs: source.fetch_timeout_ms ?? 45_000,
+      fetchConcurrency: source.fetch_concurrency ?? 1,
+      fetchDelayMs: source.fetch_delay_ms ?? 0,
       lastErrorKind: source.last_error_kind ?? null,
       ...parseReportOf(source),
       enabled: source.enabled === 1,
@@ -217,7 +229,7 @@ async function summarizePreview(text: string, existing: Awaited<ReturnType<typeo
 sourceRoutes.get('/:id', async (c) => {
   const source = await getSource(c.env, c.req.param('id'));
   if (!source) return fail('直播源不存在', 404);
-  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}), mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []), fetchMode: source.fetch_mode ?? 'direct', lastErrorKind: source.last_error_kind ?? null, ...parseReportOf(source), enabled: source.enabled === 1 } });
+  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}), mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []), fetchMode: source.fetch_mode ?? 'direct', fetchTimeoutMs: source.fetch_timeout_ms ?? 45_000, fetchConcurrency: source.fetch_concurrency ?? 1, fetchDelayMs: source.fetch_delay_ms ?? 0, lastErrorKind: source.last_error_kind ?? null, ...parseReportOf(source), enabled: source.enabled === 1 } });
 });
 
 sourceRoutes.get('/:id/detail', async (c) => {
@@ -267,6 +279,9 @@ sourceRoutes.get('/:id/detail', async (c) => {
       requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}),
       mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []),
       fetchMode: source.fetch_mode ?? 'direct',
+      fetchTimeoutMs: source.fetch_timeout_ms ?? 45_000,
+      fetchConcurrency: source.fetch_concurrency ?? 1,
+      fetchDelayMs: source.fetch_delay_ms ?? 0,
       lastErrorKind: source.last_error_kind ?? null,
       ...parseReportOf(source),
       enabled: source.enabled === 1,
@@ -330,6 +345,9 @@ sourceRoutes.post('/', async (c) => {
   const mirrorCheck = normalizeMirrorUrls(input.mirrorUrls);
   if (mirrorCheck.error) return fail(mirrorCheck.error);
   const fetchMode = input.fetchMode === 'worker' ? 'worker' : 'direct';
+  const fetchTimeoutMs = clampNumber(input.fetchTimeoutMs, 2_000, 120_000, 45_000);
+  const fetchConcurrency = clampNumber(input.fetchConcurrency, 1, 4, 1);
+  const fetchDelayMs = clampNumber(input.fetchDelayMs, 0, 5_000, 0);
   const tags = normalizeTags(input.tags);
 
   const existingSources = await listSources(c.env);
@@ -359,6 +377,9 @@ sourceRoutes.post('/', async (c) => {
       filters: input.filters ?? null,
       requestHeaders: requestHeaders ?? undefined,
       fetchMode,
+      fetchTimeoutMs,
+      fetchConcurrency,
+      fetchDelayMs,
       refreshHours: Number(input.refresh_hours ?? 24),
     });
     await audit(c.env, c.get('actor'), 'source.create.skip_fetch', id, { url: input.url });
@@ -434,6 +455,9 @@ sourceRoutes.post('/', async (c) => {
     filters: input.filters ?? null,
     requestHeaders: requestHeaders ?? undefined,
     fetchMode,
+    fetchTimeoutMs,
+    fetchConcurrency,
+    fetchDelayMs,
     contentHash,
     refreshHours: Number(input.refresh_hours ?? 24),
   });
@@ -525,6 +549,19 @@ sourceRoutes.patch('/:id', async (c) => {
     patch.etag = null;
     patch.last_modified = null;
     patch.last_fetch_at = null;
+  }
+  // F5: per-source fetch parameters (timeout / mirror concurrency / polite delay).
+  if (patch['fetchTimeoutMs'] !== undefined) {
+    patch['fetch_timeout_ms'] = clampNumber(patch['fetchTimeoutMs'], 2_000, 120_000, 45_000);
+    delete patch['fetchTimeoutMs'];
+  }
+  if (patch['fetchConcurrency'] !== undefined) {
+    patch['fetch_concurrency'] = clampNumber(patch['fetchConcurrency'], 1, 4, 1);
+    delete patch['fetchConcurrency'];
+  }
+  if (patch['fetchDelayMs'] !== undefined) {
+    patch['fetch_delay_ms'] = clampNumber(patch['fetchDelayMs'], 0, 5_000, 0);
+    delete patch['fetchDelayMs'];
   }
   // A filter change must be re-applied to the full source text. Drop the
   // conditional-request validators and the refresh timestamp so the next

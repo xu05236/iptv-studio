@@ -41,12 +41,13 @@ async function fetchPlaylist(
   lastModified?: string | null,
   conditional = true,
   headers?: Record<string, string>,
+  timeoutMs = 45_000,
 ): Promise<FetchResult> {
   const result = await fetchText(url, {
     etag: conditional ? etag : null,
     lastModified: conditional ? lastModified : null,
     headers,
-    timeoutMs: 45_000,
+    timeoutMs,
     maxBytes: 24 * 1024 * 1024,
     retries: 2,
     retryDelayMs: 800,
@@ -63,6 +64,44 @@ async function fetchPlaylist(
     attempts: result.attempts,
     encoding: result.encoding,
   };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * F5: 按 `fetch_concurrency` 并发尝试同源的多个地址，取第一个成功（ok / 304）；
+ * 全部失败时按地址顺序返回第一个错误，保持与顺序尝试一致的错误优先级。
+ */
+async function firstAttempt(
+  attempts: Array<() => Promise<FetchResult>>,
+  startIndex: number,
+): Promise<{ index: number; result: FetchResult }> {
+  return await new Promise((resolve) => {
+    let pending = attempts.length;
+    const failures: Array<{ index: number; result: FetchResult }> = [];
+    if (!pending) {
+      resolve({ index: startIndex, result: { ok: false, status: 0, error: '没有可用地址' } });
+      return;
+    }
+    attempts.forEach((run, offset) => {
+      const index = startIndex + offset;
+      run()
+        .then((result) => {
+          if (result.ok || result.notModified) {
+            resolve({ index, result });
+            return;
+          }
+          failures.push({ index, result });
+          if (--pending === 0) resolve(failures.sort((a, b) => a.index - b.index)[0]);
+        })
+        .catch(() => {
+          failures.push({ index, result: { ok: false, status: 0, error: '抓取异常', errorKind: 'network' } });
+          if (--pending === 0) resolve(failures.sort((a, b) => a.index - b.index)[0]);
+        });
+    });
+  });
 }
 
 /**
@@ -128,18 +167,33 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
     } catch {
       requestHeaders = undefined;
     }
+    // F5: per-source fetch parameters (timeout / concurrency / polite delay).
+    const timeoutMs = clamp(Number(source.fetch_timeout_ms) || 45_000, 2_000, 120_000);
+    const concurrency = clamp(Math.floor(Number(source.fetch_concurrency) || 1), 1, 4);
+    const delayMs = clamp(Number(source.fetch_delay_ms) || 0, 0, 5_000);
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
     const candidates = [source.url, ...parseMirrorUrls(source.mirror_urls)];
     const errors: string[] = [];
     let usedIndex = 0;
-    for (let index = 0; index < candidates.length; index++) {
-      const conditional = index === 0 && !forceFetch;
-      const fetched = await fetchPlaylist(
-        candidates[index],
-        conditional ? source.etag : null,
-        conditional ? source.last_modified : null,
-        conditional,
-        requestHeaders,
+    for (let start = 0; start < candidates.length; start += concurrency) {
+      const batch = candidates.slice(start, start + concurrency);
+      const outcome = await firstAttempt(
+        batch.map((url, offset) => {
+          const index = start + offset;
+          const conditional = index === 0 && !forceFetch;
+          return () => fetchPlaylist(
+            url,
+            conditional ? source.etag : null,
+            conditional ? source.last_modified : null,
+            conditional,
+            requestHeaders,
+            timeoutMs,
+          );
+        }),
+        start,
       );
+      const fetched = outcome.result;
+      const index = outcome.index;
       if (fetched.notModified) {
         logger.info('源未变化 (304)', { source: source.name });
         return { ...base, fetched: true, notModified: true };

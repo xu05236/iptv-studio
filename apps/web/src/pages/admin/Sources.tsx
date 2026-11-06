@@ -142,6 +142,9 @@ export function Sources() {
   const [requestHeaders, setRequestHeaders] = useState('');
   const [mirrorUrls, setMirrorUrls] = useState('');
   const [fetchMode, setFetchMode] = useState('direct');
+  const [fetchTimeoutMs, setFetchTimeoutMs] = useState('45');
+  const [fetchConcurrency, setFetchConcurrency] = useState('1');
+  const [fetchDelayMs, setFetchDelayMs] = useState('0');
   const [healthSort, setHealthSort] = useState(false);
   const [attentionOnly, setAttentionOnly] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -213,6 +216,9 @@ export function Sources() {
         requestHeaders: headers ?? {},
         mirrorUrls: mirrorList,
         fetchMode,
+        fetchTimeoutMs: Number(fetchTimeoutMs) * 1000 || 45_000,
+        fetchConcurrency: Number(fetchConcurrency) || 1,
+        fetchDelayMs: Number(fetchDelayMs) || 0,
       });
     },
     onSuccess: () => {
@@ -589,7 +595,7 @@ export function Sources() {
                 <Button size="sm" title="检查解析" loading={probe.isPending} onClick={() => probe.mutate(source.id)}>检查</Button>
                 <Button size="sm" title="抽样测速" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}>测速</Button>
                 <Button size="sm" title="复活本源的已淘汰线路" loading={revive.isPending} onClick={() => revive.mutate(source.id)}>复活</Button>
-                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); }}>过滤</Button>
+                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); setFetchTimeoutMs(String(Math.round((source.fetchTimeoutMs ?? 45_000) / 1000))); setFetchConcurrency(String(source.fetchConcurrency ?? 1)); setFetchDelayMs(String(source.fetchDelayMs ?? 0)); }}>过滤</Button>
                 <Button size="sm" title="删除本源" loading={remove.isPending} onClick={() => { if (confirm(`删除「${source.name}」？该源的线路会一起移除。`)) remove.mutate(source.id); }}>删除</Button>
               </div>
             </Card>
@@ -733,6 +739,18 @@ export function Sources() {
           <Field label="备用地址" hint="主地址失败（404/超时/5xx）时按顺序尝试，每行一个，最多 5 个。">
             <textarea className="textarea mono" rows={3} value={mirrorUrls} onChange={(event) => setMirrorUrls(event.target.value)} placeholder={'https://mirror.example/list.m3u'} />
           </Field>
+          <div className="sheet-section">抓取参数（高级）</div>
+          <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+            <Field label="超时（秒）" hint="该源单独快速失败，不拖整轮；默认 45 秒。">
+              <input className="input" type="number" min={2} max={120} value={fetchTimeoutMs} onChange={(event) => setFetchTimeoutMs(event.target.value)} placeholder="45" />
+            </Field>
+            <Field label="并发" hint="同一源主/备地址并行尝试数；默认 1（顺序）。">
+              <input className="input" type="number" min={1} max={4} value={fetchConcurrency} onChange={(event) => setFetchConcurrency(event.target.value)} placeholder="1" />
+            </Field>
+            <Field label="间隔（毫秒）" hint="抓取该源前的礼貌等待；默认 0。">
+              <input className="input" type="number" min={0} max={5000} value={fetchDelayMs} onChange={(event) => setFetchDelayMs(event.target.value)} placeholder="0" />
+            </Field>
+          </div>
         </div>
       </Sheet>
 

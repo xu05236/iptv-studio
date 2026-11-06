@@ -9,6 +9,9 @@ export interface SourceRow {
   kind: string;
   url: string | null;
   mirror_urls: string | null;
+  fetch_timeout_ms: number | null;
+  fetch_concurrency: number | null;
+  fetch_delay_ms: number | null;
   origin: string;
   enabled: number;
   priority: number;
@@ -148,14 +151,17 @@ export interface NewSource {
   requestHeaders?: unknown;
   mirrorUrls?: string[] | null;
   fetchMode?: string | null;
+  fetchTimeoutMs?: number | null;
+  fetchConcurrency?: number | null;
+  fetchDelayMs?: number | null;
   contentHash?: string | null;
   refreshHours?: number;
 }
 
 export async function insertSource(env: Env, input: NewSource): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO sources (id, name, kind, url, mirror_urls, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, request_headers, fetch_mode, content_hash, refresh_hours, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+    `INSERT INTO sources (id, name, kind, url, mirror_urls, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, request_headers, fetch_mode, fetch_timeout_ms, fetch_concurrency, fetch_delay_ms, content_hash, refresh_hours, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
   )
     .bind(
       input.id,
@@ -174,6 +180,9 @@ export async function insertSource(env: Env, input: NewSource): Promise<void> {
       input.filters ? JSON.stringify(input.filters) : null,
       input.requestHeaders && Object.keys(input.requestHeaders as Record<string, unknown>).length ? JSON.stringify(input.requestHeaders) : null,
       input.fetchMode ?? 'direct',
+      input.fetchTimeoutMs ?? null,
+      input.fetchConcurrency ?? null,
+      input.fetchDelayMs ?? null,
       input.contentHash ?? null,
       input.refreshHours ?? 24,
     )
@@ -206,6 +215,9 @@ const SOURCE_COLUMNS: Record<string, string> = {
   request_headers: 'request_headers',
   mirror_urls: 'mirror_urls',
   fetch_mode: 'fetch_mode',
+  fetch_timeout_ms: 'fetch_timeout_ms',
+  fetch_concurrency: 'fetch_concurrency',
+  fetch_delay_ms: 'fetch_delay_ms',
   content_hash: 'content_hash',
   refresh_hours: 'refresh_hours',
 };

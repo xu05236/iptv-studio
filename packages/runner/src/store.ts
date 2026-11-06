@@ -137,6 +137,10 @@ export interface SourceRecord {
   request_headers?: string | Record<string, string> | null;
   mirror_urls?: string | null;
   fetch_mode?: string | null;
+  /** F5: per-source fetch parameters. */
+  fetch_timeout_ms?: number | null;
+  fetch_concurrency?: number | null;
+  fetch_delay_ms?: number | null;
   created_at?: string | null;
   filters?: string | { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number } | null;
 }
