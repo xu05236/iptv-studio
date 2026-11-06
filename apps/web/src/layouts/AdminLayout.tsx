@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
+  Activity,
   CalendarClock,
   ClipboardList,
   Gauge,
@@ -37,6 +38,7 @@ const GROUPS = [
     links: [
       { to: '/admin/probe', label: '检测中心', icon: SlidersHorizontal, end: false },
       { to: '/admin/subscriptions', label: '订阅与导出', icon: Share2, end: false },
+      { to: '/admin/events', label: '运营事件', icon: Activity, end: false },
     ],
   },
   {
@@ -59,6 +61,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/epg': 'EPG 节目单',
   '/admin/probe': '检测中心',
   '/admin/subscriptions': '订阅与导出',
+  '/admin/events': '运营事件',
   '/admin/runs': '运行与日志',
   '/admin/rules': '规则',
   '/admin/settings': '设置',

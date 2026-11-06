@@ -138,6 +138,8 @@ export function Rules() {
   const { show } = useToast();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewText, setPreviewText] = useState('');
   const [form, setForm] = useState<RuleForm>(EMPTY);
   const set = <K extends keyof RuleForm>(key: K, value: RuleForm[K]): void => setForm((current) => ({ ...current, [key]: value }));
 
@@ -171,6 +173,14 @@ export function Rules() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const preview = useMutation({
+    mutationFn: () =>
+      api.post<{ items: Array<{ input: string; name: string; group: string; matched: string[] }> }>('/api/admin/rules/preview', {
+        names: previewText.split('\n').map((line) => line.trim()).filter(Boolean),
+      }),
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const items = [...(rules.data?.items ?? [])].sort((a, b) => b.priority - a.priority || a.name.localeCompare(b.name, 'zh-CN'));
 
   return (
@@ -182,8 +192,50 @@ export function Rules() {
         actions={<Button variant="primary" onClick={() => { setForm(EMPTY); setOpen(true); }}><Plus size={15} /> 新建规则</Button>}
       />
 
-      {rules.isLoading ? <Skeleton height={160} radius={16} /> : null}
+      <Card>
+        <div className="row row--between" style={{ alignItems: 'center' }}>
+          <div>
+            <div className="title-3">规则预览</div>
+            <div className="caption">粘贴一批频道名（每行一个），看看会被分到哪个组、会不会被规则命中。</div>
+          </div>
+          <Button onClick={() => setPreviewOpen((value) => !value)}>{previewOpen ? '收起' : '打开预览'}</Button>
+        </div>
+        {previewOpen ? (
+          <div style={{ marginTop: 10 }}>
+            <textarea
+              className="input"
+              rows={5}
+              style={{ width: '100%', fontFamily: 'monospace' }}
+              placeholder={'CCTV-1 综合\n湖南卫视高清\n[V6] 深圳卫视 1080P'}
+              value={previewText}
+              onChange={(event) => setPreviewText(event.target.value)}
+            />
+            <div className="row" style={{ gap: 8, marginTop: 8, alignItems: 'center' }}>
+              <Button variant="primary" loading={preview.isPending} onClick={() => preview.mutate()}>开始预览</Button>
+              <span className="caption">最多 100 行，只做名称清洗/分组/规则匹配，不联网。</span>
+            </div>
+            {preview.data ? (
+              <table className="table" style={{ marginTop: 10 }}>
+                <thead>
+                  <tr><th>原始名称</th><th>清洗后名称</th><th>分组</th><th>命中规则</th></tr>
+                </thead>
+                <tbody>
+                  {preview.data.items.map((item, index) => (
+                    <tr key={`${item.input}-${index}`}>
+                      <td>{item.input}</td>
+                      <td>{item.name}</td>
+                      <td>{item.group}</td>
+                      <td className="caption">{item.matched.length ? item.matched.join(', ') : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+          </div>
+        ) : null}
+      </Card>
 
+      {rules.isLoading ? <Skeleton height={160} radius={16} /> : null}
       {!rules.isLoading && !items.length ? (
         <Card className="rule-empty">
           <div className="rule-empty__icon"><Filter size={20} /></div>

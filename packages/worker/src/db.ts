@@ -246,7 +246,7 @@ export async function deleteSource(env: Env, id: string): Promise<void> {
 // ---------------------------------------------------------------- channels
 
 export async function listChannels(env: Env): Promise<ChannelRow[]> {
-  const { results } = await env.DB.prepare('SELECT * FROM channels ORDER BY sort ASC, name ASC').all<ChannelRow>();
+  const { results } = await env.DB.prepare('SELECT * FROM channels ORDER BY CASE WHEN sort IS NULL THEN 1 ELSE 0 END, sort ASC, name ASC').all<ChannelRow>();
   return results;
 }
 
@@ -703,11 +703,66 @@ export async function insertFeedback(env: Env, row: FeedbackRow): Promise<void> 
     .run();
 }
 
-export async function listFeedback(env: Env, status: string | null, limit = 50): Promise<FeedbackRow[]> {
-  const query = status && status !== 'all'
-    ? env.DB.prepare('SELECT * FROM feedback WHERE status = ? ORDER BY created_at DESC LIMIT ?').bind(status, limit)
-    : env.DB.prepare('SELECT * FROM feedback ORDER BY created_at DESC LIMIT ?').bind(limit);
-  const { results } = await query.all<FeedbackRow>();
+export async function listFeedback(
+  env: Env,
+  status: string | null,
+  limit = 50,
+  options: { offset?: number; q?: string } = {},
+): Promise<FeedbackRow[]> {
+  const offset = Math.max(0, Number(options.offset) || 0);
+  const q = (options.q ?? '').trim();
+  const clauses: string[] = [];
+  const binds: Array<string | number> = [];
+  if (status && status !== 'all') {
+    clauses.push('status = ?');
+    binds.push(status);
+  }
+  if (q) {
+    clauses.push('(message LIKE ? OR channel_id LIKE ? OR source_id LIKE ? OR entry_key LIKE ?)');
+    const like = `%${q}%`;
+    binds.push(like, like, like, like);
+  }
+  const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
+  const { results } = await env.DB.prepare(`SELECT * FROM feedback${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+    .bind(...binds, limit, offset)
+    .all<FeedbackRow>();
+  return results;
+}
+
+export async function getFeedback(env: Env, id: string): Promise<FeedbackRow | null> {
+  return env.DB.prepare('SELECT * FROM feedback WHERE id = ?').bind(id).first<FeedbackRow>();
+}
+
+export interface AuditRow {
+  id: number;
+  at: string;
+  actor: string | null;
+  action: string;
+  target: string | null;
+  detail: string | null;
+}
+
+export async function listAudit(
+  env: Env,
+  options: { limit?: number; offset?: number; q?: string; action?: string } = {},
+): Promise<AuditRow[]> {
+  const limit = Math.min(200, Math.max(1, Number(options.limit) || 50));
+  const offset = Math.max(0, Number(options.offset) || 0);
+  const clauses: string[] = [];
+  const binds: Array<string | number> = [];
+  if (options.action) {
+    clauses.push('action = ?');
+    binds.push(options.action);
+  }
+  if (options.q) {
+    clauses.push('(action LIKE ? OR actor LIKE ? OR target LIKE ? OR detail LIKE ?)');
+    const like = `%${options.q}%`;
+    binds.push(like, like, like, like);
+  }
+  const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
+  const { results } = await env.DB.prepare(`SELECT * FROM audit${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
+    .bind(...binds, limit, offset)
+    .all<AuditRow>();
   return results;
 }
 

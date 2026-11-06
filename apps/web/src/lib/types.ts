@@ -68,6 +68,7 @@ export interface SourceItem {
   mirrorUrls?: string[];
   parseReport?: { detectedKind: string; entries: number; bytes: number; encoding?: string | null; warnings: string[]; mirrorIndex: number; fetchedAt: string; dropPercent?: number | null } | null;
   parseDrop?: boolean;
+  feedbackOpen?: number;
   fetchMode?: string;
   fetchTimeoutMs?: number;
   fetchConcurrency?: number;

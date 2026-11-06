@@ -579,6 +579,9 @@ export function Sources() {
               {source.parseDrop ? (
                 <div className="source-card__error">解析条数较上轮下降 {source.parseReport?.dropPercent ?? 0}%（{formatNumber(source.parseReport?.entries ?? 0)} 条）</div>
               ) : null}
+              {source.feedbackOpen ? (
+                <div className="source-card__error">{source.feedbackOpen} 条待处理报障 · 信誉扣 {source.feedbackOpen * 5}</div>
+              ) : null}
               {source.last_error ? (
                 <div className="source-card__error">
                   {source.lastErrorKind ? `[${errorKindLabel(source.lastErrorKind)}] ` : ''}

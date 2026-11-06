@@ -20,6 +20,7 @@ const SubscriptionsAdmin = lazy(() => import('./pages/admin/SubscriptionsAdmin')
 const Runs = lazy(() => import('./pages/admin/Runs').then((module) => ({ default: module.Runs })));
 const SettingsPage = lazy(() => import('./pages/admin/Settings').then((module) => ({ default: module.SettingsPage })));
 const Rules = lazy(() => import('./pages/admin/Rules').then((module) => ({ default: module.Rules })));
+const Events = lazy(() => import('./pages/admin/Events').then((module) => ({ default: module.Events })));
 
 export function App() {
   return (
@@ -52,6 +53,7 @@ export function App() {
           <Route path="runs" element={<Runs />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="rules" element={<Rules />} />
+          <Route path="events" element={<Events />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

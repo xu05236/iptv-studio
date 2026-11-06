@@ -73,12 +73,14 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 sourceRoutes.get('/', async (c) => {
-  const [sources, state, channels, fetchReport] = await Promise.all([
+  const [sources, state, channels, fetchReport, feedbackRows] = await Promise.all([
     listSources(c.env),
     getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json'),
     listChannels(c.env),
     getJson<{ generatedAt?: string; sources?: Array<{ sourceId: string; added: number; reused: number; retained: number; disappeared: number; skippedRejected: number }> }>(c.env, 'state/fetch-report.json'),
+    c.env.DB.prepare("SELECT source_id, COUNT(*) AS total FROM feedback WHERE status = 'open' AND source_id IS NOT NULL GROUP BY source_id").all<{ source_id: string; total: number }>(),
   ]);
+  const feedbackOpen = new Map((feedbackRows.results ?? []).map((row) => [row.source_id, Number(row.total) || 0]));
   const reportBySource = new Map((fetchReport?.sources ?? []).map((item) => [item.sourceId, item]));
   const validChannels = new Set(channels.map((channel) => channel.id));
   const unprobeable = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
@@ -125,6 +127,8 @@ sourceRoutes.get('/', async (c) => {
       enabled: source.enabled === 1,
       progress: { ...(progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0 }), channels: channelSets.get(source.id)?.size ?? 0 },
       report: reportBySource.get(source.id) ?? null,
+      feedbackOpen: feedbackOpen.get(source.id) ?? 0,
+      reputation: Math.max(0, Number(source.reputation ?? 0) - (feedbackOpen.get(source.id) ?? 0) * 5),
     })),
     reportGeneratedAt: fetchReport?.generatedAt ?? null,
   });

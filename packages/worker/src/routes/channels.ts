@@ -169,6 +169,9 @@ channelRoutes.get('/page', async (c) => {
   const index = await loadIndex(c.env);
   if (!index) return ok({ items: [], total: 0, offset, limit });
 
+  const sortRows = await c.env.DB.prepare('SELECT id, sort FROM channels WHERE sort IS NOT NULL AND sort <> 0').all<{ id: string; sort: number }>();
+  const sortMap = new Map(sortRows.results.map((row) => [row.id, row.sort]));
+
   const filtered = index.channels
     .filter((channel) => {
       const channelGroup = channel.group?.trim() || '其他';
@@ -178,7 +181,12 @@ channelRoutes.get('/page', async (c) => {
       if (q && !channel.name.toLowerCase().includes(q) && !channel.id.includes(q)) return false;
       return true;
     })
-    .sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
+    .sort((a, b) => {
+      const left = sortMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+      const right = sortMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+      if (left !== right) return left - right;
+      return a.group.localeCompare(b.group) || a.name.localeCompare(b.name);
+    });
 
   const total = filtered.length;
   const page = filtered.slice(offset, offset + limit);
@@ -223,6 +231,50 @@ channelRoutes.get('/page', async (c) => {
     offset,
     limit,
   });
+});
+
+channelRoutes.post('/reorder', async (c) => {
+  const body = await readJson<{ ids?: string[]; start?: number }>(c);
+  const ids = (Array.isArray(body?.ids) ? body.ids : []).filter((id): id is string => typeof id === 'string').slice(0, 500);
+  if (!ids.length) return fail('缺少频道 id');
+  const start = Math.max(1, Number(body?.start) || 1);
+  for (let offset = 0; offset < ids.length; offset += 40) {
+    const chunk = ids.slice(offset, offset + 40);
+    await c.env.DB.batch(
+      chunk.map((id, index) =>
+        c.env.DB.prepare("UPDATE channels SET sort = ?, updated_at = datetime('now') WHERE id = ?").bind(start + offset + index, id),
+      ),
+    );
+  }
+  await audit(c.env, c.get('actor'), 'channels.reorder', 'channels', { count: ids.length, start });
+  return ok({ updated: ids.length });
+});
+
+channelRoutes.post('/rename-batch', async (c) => {
+  const body = await readJson<{ ids?: string[]; find?: string; replace?: string }>(c);
+  const ids = (Array.isArray(body?.ids) ? body.ids : []).filter((id): id is string => typeof id === 'string').slice(0, 300);
+  const find = String(body?.find ?? '').trim();
+  const replace = String(body?.replace ?? '');
+  if (!ids.length) return fail('缺少频道 id');
+  if (!find) return fail('缺少要查找的文字');
+  if (find.length > 40 || replace.length > 80) return fail('查找/替换文字过长');
+  let updated = 0;
+  for (let offset = 0; offset < ids.length; offset += 40) {
+    const chunk = ids.slice(offset, offset + 40);
+    const results = (await c.env.DB.batch(
+      chunk.map((id) =>
+        c.env.DB.prepare("UPDATE channels SET name = replace(name, ?, ?), updated_at = datetime('now') WHERE id = ? AND instr(name, ?) > 0").bind(
+          find,
+          replace,
+          id,
+          find,
+        ),
+      ),
+    )) as unknown as Array<{ meta?: { changes?: number } }>;
+    updated += results.reduce((sum, result) => sum + Number(result.meta?.changes ?? 0), 0);
+  }
+  await audit(c.env, c.get('actor'), 'channels.rename_batch', 'channels', { count: updated, find });
+  return ok({ updated });
 });
 
 channelRoutes.post('/bulk-group', async (c) => {

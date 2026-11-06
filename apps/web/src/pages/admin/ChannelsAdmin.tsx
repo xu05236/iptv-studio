@@ -65,6 +65,9 @@ export function ChannelsAdmin() {
   const [aliasInput, setAliasInput] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState('');
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameFind, setRenameFind] = useState('');
+  const [renameReplace, setRenameReplace] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [conflictsOpen, setConflictsOpen] = useState(false);
@@ -172,6 +175,40 @@ export function ChannelsAdmin() {
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
+
+  const renameBatch = useMutation({
+    mutationFn: () => api.post<{ updated: number }>('/api/admin/channels/rename-batch', { ids: [...selected], find: renameFind.trim(), replace: renameReplace }),
+    onSuccess: (result) => {
+      show(`已改名 ${result.updated} 个频道`);
+      setSelected(new Set());
+      setRenameOpen(false);
+      setRenameFind('');
+      setRenameReplace('');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'channels'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const reorder = useMutation({
+    mutationFn: (ids: string[]) => api.post<{ updated: number }>('/api/admin/channels/reorder', { ids, start: (page - 1) * pageSize + 1 }),
+    onSuccess: () => {
+      show('排序已保存');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'channels'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const moveSelected = (direction: -1 | 1) => {
+    const ids = items.map((channel) => channel.id);
+    const picked = ids.filter((id) => selected.has(id));
+    if (!picked.length) return;
+    const rest = ids.filter((id) => !selected.has(id));
+    const firstIndex = ids.findIndex((id) => selected.has(id));
+    const target = Math.max(0, Math.min(rest.length, firstIndex + direction));
+    const next = [...rest];
+    next.splice(target, 0, ...picked);
+    reorder.mutate(next);
+  };
 
   const update = useMutation({
     mutationFn: () => api.patch(`/api/admin/channels/${editing?.id}`, {
@@ -332,8 +369,18 @@ export function ChannelsAdmin() {
             <Badge tone="blue">已选 {selected.size} 个频道</Badge>
             <input className="input grow" value={bulkTarget} onChange={(event) => setBulkTarget(event.target.value)} placeholder="目标分组，例如：我的收藏" />
             <Button loading={bulkGroup.isPending} onClick={() => bulkGroup.mutate()}>移动分组</Button>
+            <Button variant="ghost" loading={reorder.isPending} onClick={() => moveSelected(-1)}>上移</Button>
+            <Button variant="ghost" loading={reorder.isPending} onClick={() => moveSelected(1)}>下移</Button>
+            <Button variant="ghost" onClick={() => setRenameOpen((open) => !open)}>批量改名</Button>
             <Button variant="ghost" onClick={() => setSelected(new Set())}>取消选择</Button>
           </div>
+          {renameOpen ? (
+            <div className="row row--wrap" style={{ gap: 8, alignItems: 'center', marginTop: 8 }}>
+              <input className="input" value={renameFind} onChange={(event) => setRenameFind(event.target.value)} placeholder="查找文字，例如：高清" />
+              <input className="input" value={renameReplace} onChange={(event) => setRenameReplace(event.target.value)} placeholder="替换为（留空即删除）" />
+              <Button loading={renameBatch.isPending} onClick={() => renameBatch.mutate()}>应用改名</Button>
+            </div>
+          ) : null}
         </Card>
       ) : null}
 

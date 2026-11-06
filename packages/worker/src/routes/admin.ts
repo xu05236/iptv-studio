@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { mapPool, probeLiveness, probeStream, type AppSettings, type LineEntry, type Rule } from '@iptv/core';
+import { classifyGroup, compileRules, displayName, mapPool, probeLiveness, probeStream, type AppSettings, type LineEntry, type Rule } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   applySourceStats,
@@ -8,6 +8,8 @@ import {
   deleteRule,
   getRun,
   insertFeedback,
+  getFeedback,
+  listAudit,
   listFeedback,
   listRules,
   listRuns,
@@ -394,6 +396,43 @@ adminRoutes.post('/rules', async (c) => {
   };
   await upsertRule(c.env, row);
   return ok({ rule: row });
+});
+
+adminRoutes.post('/rules/preview', async (c) => {
+  const body = await readJson<{ names?: string[] }>(c);
+  const names = (Array.isArray(body?.names) ? body.names : [])
+    .map((name) => String(name).trim())
+    .filter(Boolean)
+    .slice(0, 100);
+  if (!names.length) return fail('请先粘贴频道名，每行一个');
+  const rows = await listRules(c.env);
+  const rules: Rule[] = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    enabled: row.enabled === 1,
+    priority: row.priority,
+    match: parseJsonField<{ match?: Rule['match']; actions?: Rule['actions'] }>(row.spec, {}).match ?? {},
+    actions: parseJsonField<{ match?: Rule['match']; actions?: Rule['actions'] }>(row.spec, {}).actions ?? {},
+  }));
+  const compiled = compileRules(rules);
+  const items = names.map((input, index) => {
+    const name = displayName(input);
+    const group = classifyGroup(input);
+    const channel = { id: `preview-${index}`, name, group, tvgId: undefined };
+    const line = {
+      name: input,
+      url: 'http://preview.invalid/live.m3u8',
+      protocol: 'hls' as const,
+      resolution: 'unknown' as const,
+      speedKbps: 0,
+      sourceId: 'preview',
+      tags: [] as string[],
+      status: 'unknown' as const,
+    };
+    const matched = compiled.filter((rule) => rule.matches({ channel, line })).map((rule) => rule.rule.id);
+    return { input, name, group, matched };
+  });
+  return ok({ items, rules: rules.map((rule) => ({ id: rule.id, name: rule.name, enabled: rule.enabled })) });
 });
 
 adminRoutes.delete('/rules/:id', async (c) => {
@@ -815,8 +854,88 @@ adminRoutes.post('/tasks/:id/progress', async (c) => {
 
 adminRoutes.get('/feedback', async (c) => {
   const status = c.req.query('status') ?? 'open';
-  const feedback = await listFeedback(c.env, status, 100);
+  const q = c.req.query('q') ?? '';
+  const limit = Math.min(200, Math.max(1, Number(c.req.query('limit') ?? 100) || 100));
+  const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0);
+  const feedback = await listFeedback(c.env, status, limit, { q, offset });
   return ok({ items: feedback });
+});
+
+adminRoutes.post('/feedback/:id/probe', async (c) => {
+  const feedback = await getFeedback(c.env, c.req.param('id'));
+  if (!feedback) return fail('报障记录不存在', 404);
+  if (!feedback.entry_key) return fail('该报障没有关联线路，无法转探测');
+  const task = await createTask(c.env, {
+    type: 'probe-lines',
+    source: 'manual',
+    priority: 90,
+    payload: { line_keys: feedback.entry_key, phase: 'pending', force: 'true', budget: '1', source_id: '' },
+  });
+  const dispatched = await dispatchNext(c.env);
+  await updateFeedback(c.env, feedback.id, 'resolved');
+  await audit(c.env, c.get('actor'), 'feedback.probe', feedback.id, { task: task.id, lineKey: feedback.entry_key });
+  return ok({ taskId: task.id, message: dispatched.message });
+});
+
+adminRoutes.get('/audit', async (c) => {
+  const limit = Math.min(200, Math.max(1, Number(c.req.query('limit') ?? 50) || 50));
+  const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0);
+  const q = c.req.query('q') ?? '';
+  const action = c.req.query('action') ?? '';
+  const items = await listAudit(c.env, { limit, offset, q, action });
+  return ok({ items });
+});
+
+function normalizeFailureText(text: string): string {
+  return text
+    .replace(/https?:\/\/[^\s"'<>]+/gi, '<地址>')
+    .replace(/\b\d{2,}\b/g, '<数字>')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+}
+
+function failureStage(text: string): string {
+  if (/播放列表|解析|0 条|not_playlist/i.test(text)) return '解析';
+  if (/EPG|节目单|xmltv/i.test(text)) return '节目单';
+  if (/探测|probe|测活/i.test(text)) return '探测';
+  if (/发布|publish/i.test(text)) return '发布';
+  return '抓取';
+}
+
+adminRoutes.get('/insights/failures', async (c) => {
+  const days = Math.min(30, Math.max(1, Number(c.req.query('days') ?? 7) || 7));
+  const [sourceRows, runRows] = await Promise.all([
+    c.env.DB.prepare("SELECT id, last_error FROM sources WHERE last_error IS NOT NULL AND last_error <> ''").all<{ id: string; last_error: string }>(),
+    c.env.DB.prepare("SELECT error FROM runs WHERE error IS NOT NULL AND error <> '' AND started_at >= datetime('now', ?) ORDER BY started_at DESC LIMIT 500")
+      .bind(`-${days} days`)
+      .all<{ error: string }>(),
+  ]);
+  const buckets = new Map<string, { pattern: string; stage: string; count: number; sources: Set<string>; example: string }>();
+  const push = (message: string, sourceId?: string) => {
+    const pattern = normalizeFailureText(message);
+    if (!pattern) return;
+    const stage = failureStage(pattern);
+    const key = `${stage}|${pattern}`;
+    const bucket = buckets.get(key) ?? { pattern, stage, count: 0, sources: new Set<string>(), example: message.slice(0, 200) };
+    bucket.count += 1;
+    if (sourceId) bucket.sources.add(sourceId);
+    buckets.set(key, bucket);
+  };
+  for (const row of runRows.results ?? []) push(row.error);
+  for (const row of sourceRows.results ?? []) push(row.last_error, row.id);
+  const categories = [...buckets.values()]
+    .map((bucket) => ({ pattern: bucket.pattern, stage: bucket.stage, count: bucket.count, sources: [...bucket.sources], example: bucket.example }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 12);
+  const byStage = new Map<string, number>();
+  for (const category of categories) byStage.set(category.stage, (byStage.get(category.stage) ?? 0) + category.count);
+  return ok({
+    days,
+    total: categories.reduce((sum, item) => sum + item.count, 0),
+    categories,
+    byStage: [...byStage.entries()].map(([stage, count]) => ({ stage, count })),
+  });
 });
 
 adminRoutes.post('/feedback/:id/status', async (c) => {
