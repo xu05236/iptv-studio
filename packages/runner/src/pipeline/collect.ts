@@ -59,7 +59,20 @@ function refreshHoursFor(source: SourceRecord): number {
   return effectiveRefreshHours({ refreshHours: source.refresh_hours, weight: source.weight, createdAt: source.created_at });
 }
 
-/** Fetch one configured source (remote URL or R2-stored upload) and parse it. */
+function parseMirrorUrls(value: SourceRecord['mirror_urls']): string[] {
+  if (!value) return [];
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((url): url is string => typeof url === 'string' && /^https?:\/\//i.test(url));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch one configured source (remote URL or R2-stored upload) and parse it.
+ */
 export async function collectSource(source: SourceRecord, store: ArtifactStore, logger: RunLogger): Promise<CollectedSource> {
   const base: CollectedSource = {
     source,
@@ -101,19 +114,39 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
     } catch {
       requestHeaders = undefined;
     }
-    const fetched = await fetchPlaylist(source.url, source.etag, source.last_modified, !forceFetch, requestHeaders);
-    if (fetched.notModified) {
-      logger.info('源未变化 (304)', { source: source.name });
-      return { ...base, fetched: true, notModified: true };
+    const candidates = [source.url, ...parseMirrorUrls(source.mirror_urls)];
+    const errors: string[] = [];
+    let usedIndex = 0;
+    for (let index = 0; index < candidates.length; index++) {
+      const conditional = index === 0 && !forceFetch;
+      const fetched = await fetchPlaylist(
+        candidates[index],
+        conditional ? source.etag : null,
+        conditional ? source.last_modified : null,
+        conditional,
+        requestHeaders,
+      );
+      if (fetched.notModified) {
+        logger.info('源未变化 (304)', { source: source.name });
+        return { ...base, fetched: true, notModified: true };
+      }
+      if (fetched.ok && fetched.text) {
+        text = fetched.text;
+        base.etag = index === 0 ? fetched.etag ?? null : null;
+        base.lastModified = index === 0 ? fetched.lastModified ?? null : null;
+        base.fetched = true;
+        usedIndex = index;
+        break;
+      }
+      errors.push(`#${index + 1} ${fetched.error ?? fetched.status}`);
     }
-    if (!fetched.ok || !fetched.text) {
-      logger.warn('抓取失败', { source: source.name, error: fetched.error });
-      return { ...base, error: fetched.error ?? '抓取失败', etag: fetched.etag, lastModified: fetched.lastModified };
+    if (!text) {
+      logger.warn('抓取失败', { source: source.name, error: errors.join('；') });
+      return { ...base, error: errors.join('；') || '抓取失败' };
     }
-    text = fetched.text;
-    base.etag = fetched.etag ?? null;
-    base.lastModified = fetched.lastModified ?? null;
-    base.fetched = true;
+    if (usedIndex > 0) {
+      logger.warn('主地址失败，已使用备用地址', { source: source.name, used: usedIndex + 1, errors });
+    }
   } else {
     return { ...base, error: '源没有地址和内容' };
   }

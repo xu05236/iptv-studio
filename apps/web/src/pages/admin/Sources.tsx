@@ -131,6 +131,7 @@ export function Sources() {
   const [activeSource, setActiveSource] = useState<SourceItem | null>(null);
   const [lineResults, setLineResults] = useState<Array<{ name?: string; url: string; result: { ok: boolean; speedKbps?: number; resolution?: string; error?: string } }> | null>(null);
   const [requestHeaders, setRequestHeaders] = useState('');
+  const [mirrorUrls, setMirrorUrls] = useState('');
   const [fetchMode, setFetchMode] = useState('direct');
   const [healthSort, setHealthSort] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>('grid');
@@ -189,10 +190,16 @@ export function Sources() {
           throw new Error(`请求设置不是合法 JSON：${error instanceof Error ? error.message : String(error)}`);
         }
       }
+      const mirrorList = mirrorUrls
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, 5);
       return api.patch(`/api/admin/sources/${filterSource?.id}`, {
         filters: buildFilters(filterForm) ?? {},
         refresh_hours: Number(refreshHours) || 24,
         requestHeaders: headers ?? {},
+        mirrorUrls: mirrorList,
         fetchMode,
       });
     },
@@ -476,7 +483,7 @@ export function Sources() {
                 <Button size="sm" loading={probe.isPending} onClick={() => probe.mutate(source.id)}><RefreshCw size={13} /> 检查解析</Button>
                 <Button size="sm" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}><Zap size={13} /> 抽样测速</Button>
                 <Button size="sm" loading={revive.isPending} onClick={() => revive.mutate(source.id)}><RefreshCw size={13} /> 复活淘汰</Button>
-                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setFetchMode(source.fetchMode ?? 'direct'); }}><SlidersHorizontal size={13} /> 过滤</Button>
+                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); }}><SlidersHorizontal size={13} /> 过滤</Button>
                 <Button size="sm" variant="ghost" onClick={() => { if (confirm(`删除「${source.name}」？`)) remove.mutate(source.id); }}><Trash2 size={13} /> 删除</Button>
               </div>
             </Card>
@@ -616,6 +623,9 @@ export function Sources() {
               <option value="direct">直连（GitHub Actions）</option>
               <option value="worker">Worker 代拉（F3）</option>
             </select>
+          </Field>
+          <Field label="备用地址" hint="主地址失败（404/超时/5xx）时按顺序尝试，每行一个，最多 5 个。">
+            <textarea className="textarea mono" rows={3} value={mirrorUrls} onChange={(event) => setMirrorUrls(event.target.value)} placeholder={'https://mirror.example/list.m3u'} />
           </Field>
         </div>
       </Sheet>

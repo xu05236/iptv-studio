@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { isDueForProbe, mapPool, normalizeUrlForDedupe, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters } from '@iptv/core';
+import { isDueForProbe, mapPool, normalizeMirrorUrls, normalizeUrlForDedupe, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   deleteSource,
@@ -33,6 +33,7 @@ interface CreateSourceInput {
   filters?: SourceFilters;
   refresh_hours?: number;
   requestHeaders?: unknown;
+  mirrorUrls?: unknown;
   fetchMode?: string;
 }
 
@@ -74,6 +75,7 @@ sourceRoutes.get('/', async (c) => {
       tags: parseJsonField<string[]>(source.tags, []),
       filters: parseJsonField<SourceFilters>(source.filters, {}),
       requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}),
+      mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []),
       fetchMode: source.fetch_mode ?? 'direct',
       enabled: source.enabled === 1,
       progress: progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, quarantine: 0, rejected: 0 },
@@ -182,7 +184,7 @@ async function summarizePreview(text: string, existing: Awaited<ReturnType<typeo
 sourceRoutes.get('/:id', async (c) => {
   const source = await getSource(c.env, c.req.param('id'));
   if (!source) return fail('直播源不存在', 404);
-  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}), fetchMode: source.fetch_mode ?? 'direct', enabled: source.enabled === 1 } });
+  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}), mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []), fetchMode: source.fetch_mode ?? 'direct', enabled: source.enabled === 1 } });
 });
 
 sourceRoutes.get('/:id/detail', async (c) => {
@@ -230,6 +232,7 @@ sourceRoutes.get('/:id/detail', async (c) => {
       tags: parseJsonField<string[]>(source.tags, []),
       filters: parseJsonField<SourceFilters>(source.filters, {}),
       requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}),
+      mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []),
       fetchMode: source.fetch_mode ?? 'direct',
       enabled: source.enabled === 1,
     },
@@ -289,6 +292,8 @@ sourceRoutes.post('/', async (c) => {
   const headerCheck = sanitizeSourceHeaders(input.requestHeaders);
   if (!headerCheck.ok) return fail(headerCheck.error ?? '请求设置不合法');
   const requestHeaders = Object.keys(headerCheck.headers).length ? headerCheck.headers : null;
+  const mirrorCheck = normalizeMirrorUrls(input.mirrorUrls);
+  if (mirrorCheck.error) return fail(mirrorCheck.error);
   const fetchMode = input.fetchMode === 'worker' ? 'worker' : 'direct';
 
   const existingSources = await listSources(c.env);
@@ -306,6 +311,7 @@ sourceRoutes.post('/', async (c) => {
       name: pendingName,
       kind: input.kind ?? 'auto',
       url: input.url,
+      mirrorUrls: mirrorCheck.urls,
       origin: 'remote',
       enabled: input.enabled === false ? 0 : 1,
       priority: Number(input.priority ?? 100),
@@ -379,6 +385,7 @@ sourceRoutes.post('/', async (c) => {
     name,
     kind: input.kind ?? 'auto',
     url: input.url ?? null,
+    mirrorUrls: mirrorCheck.urls,
     origin,
     enabled: input.enabled === false ? 0 : 1,
     priority: Number(input.priority ?? 100),
@@ -467,6 +474,16 @@ sourceRoutes.patch('/:id', async (c) => {
   if (patch['fetchMode'] !== undefined) {
     patch['fetch_mode'] = patch['fetchMode'] === 'worker' ? 'worker' : 'direct';
     delete patch['fetchMode'];
+  }
+  if (patch['mirrorUrls'] !== undefined) {
+    const mirrorCheck = normalizeMirrorUrls(patch['mirrorUrls']);
+    if (mirrorCheck.error) return fail(mirrorCheck.error);
+    patch['mirror_urls'] = mirrorCheck.urls.length ? JSON.stringify(mirrorCheck.urls) : null;
+    delete patch['mirrorUrls'];
+    // Mirrors change which body we may get; force a fresh fetch next round.
+    patch.etag = null;
+    patch.last_modified = null;
+    patch.last_fetch_at = null;
   }
   // A filter change must be re-applied to the full source text. Drop the
   // conditional-request validators and the refresh timestamp so the next

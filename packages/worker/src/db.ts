@@ -8,6 +8,7 @@ export interface SourceRow {
   name: string;
   kind: string;
   url: string | null;
+  mirror_urls: string | null;
   origin: string;
   enabled: number;
   priority: number;
@@ -143,6 +144,7 @@ export interface NewSource {
   notes?: string | null;
   filters?: unknown;
   requestHeaders?: unknown;
+  mirrorUrls?: string[] | null;
   fetchMode?: string | null;
   contentHash?: string | null;
   refreshHours?: number;
@@ -150,14 +152,15 @@ export interface NewSource {
 
 export async function insertSource(env: Env, input: NewSource): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO sources (id, name, kind, url, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, request_headers, fetch_mode, content_hash, refresh_hours, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+    `INSERT INTO sources (id, name, kind, url, mirror_urls, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, request_headers, fetch_mode, content_hash, refresh_hours, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
   )
     .bind(
       input.id,
       input.name,
       input.kind,
       input.url ?? null,
+      input.mirrorUrls?.length ? JSON.stringify(input.mirrorUrls) : null,
       input.origin,
       input.enabled ?? 1,
       input.priority ?? 100,
@@ -198,6 +201,7 @@ const SOURCE_COLUMNS: Record<string, string> = {
   alive_count: 'alive_count',
   filters: 'filters',
   request_headers: 'request_headers',
+  mirror_urls: 'mirror_urls',
   fetch_mode: 'fetch_mode',
   content_hash: 'content_hash',
   refresh_hours: 'refresh_hours',
