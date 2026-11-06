@@ -25,6 +25,24 @@ function parseReportOf(row: { parse_report?: string | null }): { parseReport: So
   return { parseReport: report, parseDrop: Number.isFinite(drop) && drop >= PARSE_DROP_THRESHOLD };
 }
 
+const MAX_SOURCE_TAGS = 8;
+
+function normalizeTags(input: unknown): string[] {
+  const raw = Array.isArray(input)
+    ? input
+    : typeof input === 'string'
+      ? input.split(/[,，\n]/)
+      : [];
+  const tags: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const tag = item.trim().slice(0, 24);
+    if (tag && !tags.includes(tag)) tags.push(tag);
+    if (tags.length >= MAX_SOURCE_TAGS) break;
+  }
+  return tags;
+}
+
 interface CreateSourceInput {
   name?: string;
   url?: string;
@@ -39,6 +57,7 @@ interface CreateSourceInput {
   skipFetch?: boolean;
   filters?: SourceFilters;
   refresh_hours?: number;
+  tags?: unknown;
   requestHeaders?: unknown;
   mirrorUrls?: unknown;
   fetchMode?: string;
@@ -309,6 +328,7 @@ sourceRoutes.post('/', async (c) => {
   const mirrorCheck = normalizeMirrorUrls(input.mirrorUrls);
   if (mirrorCheck.error) return fail(mirrorCheck.error);
   const fetchMode = input.fetchMode === 'worker' ? 'worker' : 'direct';
+  const tags = normalizeTags(input.tags);
 
   const existingSources = await listSources(c.env);
   if (input.url) {
@@ -333,6 +353,7 @@ sourceRoutes.post('/', async (c) => {
       operator: input.operator ?? null,
       r2Key: null,
       notes: input.notes ?? '等待采集器抓取',
+      tags: tags.length ? JSON.stringify(tags) : undefined,
       filters: input.filters ?? null,
       requestHeaders: requestHeaders ?? undefined,
       fetchMode,
@@ -407,6 +428,7 @@ sourceRoutes.post('/', async (c) => {
     operator: input.operator ?? null,
     r2Key,
     notes: input.notes ?? null,
+    tags: tags.length ? JSON.stringify(tags) : undefined,
     filters: input.filters ?? null,
     requestHeaders: requestHeaders ?? undefined,
     fetchMode,
@@ -484,6 +506,9 @@ sourceRoutes.patch('/:id', async (c) => {
     patch.etag = null;
     patch.last_modified = null;
     patch.last_fetch_at = null;
+  }
+  if (patch['tags'] !== undefined) {
+    patch['tags'] = JSON.stringify(normalizeTags(patch['tags']));
   }
   if (patch['fetchMode'] !== undefined) {
     patch['fetch_mode'] = patch['fetchMode'] === 'worker' ? 'worker' : 'direct';

@@ -143,6 +143,8 @@ export function Sources() {
   const [fetchMode, setFetchMode] = useState('direct');
   const [healthSort, setHealthSort] = useState(false);
   const [attentionOnly, setAttentionOnly] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [tagFilter, setTagFilter] = useState('');
   const [view, setView] = useState<'grid' | 'list'>('grid');
 
   const { data, isLoading } = useQuery({
@@ -253,6 +255,31 @@ export function Sources() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const bulk = useMutation({
+    mutationFn: async (action: { kind: 'enable' | 'disable' | 'delete' | 'tag' | 'priority'; tag?: string; priority?: number }) => {
+      const ids = [...selected];
+      if (action.kind === 'delete') {
+        await Promise.all(ids.map((id) => api.del(`/api/admin/sources/${id}`)));
+        return;
+      }
+      await Promise.all(ids.map((id) => {
+        if (action.kind === 'tag') {
+          const source = data?.items.find((item) => item.id === id);
+          const tags = [...new Set([...(source?.tags ?? []), action.tag ?? ''])].filter(Boolean);
+          return api.patch(`/api/admin/sources/${id}`, { tags });
+        }
+        if (action.kind === 'priority') return api.patch(`/api/admin/sources/${id}`, { priority: action.priority ?? 100 });
+        return api.patch(`/api/admin/sources/${id}`, { enabled: action.kind === 'enable' ? 1 : 0 });
+      }));
+    },
+    onSuccess: () => {
+      show('批量操作完成');
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const probe = useMutation({
     mutationFn: (id: string) => api.post<ProbeSummary>(`/api/admin/sources/${id}/probe`),
     onSuccess: (result, id) => {
@@ -279,7 +306,7 @@ export function Sources() {
   });
 
   const items = useMemo(() => {
-    const all = data?.items ?? [];
+    const all = (data?.items ?? []).filter((source) => !tagFilter || (source.tags ?? []).includes(tagFilter));
     const base = attentionOnly ? all.filter(needsAttention) : all;
     const favorite = (source: SourceItem): number => (source.weight >= 2 ? 1 : 0);
     const added = (source: SourceItem): number => Date.parse(source.created_at) || 0;
@@ -295,8 +322,13 @@ export function Sources() {
       }),
     );
     return [...base].sort((a, b) => attention(b) - attention(a) || favorite(b) - favorite(a) || added(b) - added(a) || (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
-  }, [data, healthSort, health.data, attentionOnly]);
+  }, [data, healthSort, health.data, attentionOnly, tagFilter]);
   const attentionCount = useMemo(() => (data?.items ?? []).filter(needsAttention).length, [data]);
+  const allTags = useMemo(() => {
+    const tags = new Set<string>();
+    for (const source of data?.items ?? []) for (const tag of source.tags ?? []) tags.add(tag);
+    return [...tags].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+  }, [data]);
   const sites = useMemo(() => [...new Set(items.map(sourceSite))], [items]);
   const siteCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -376,6 +408,39 @@ export function Sources() {
         </div>
       ) : null}
 
+      {allTags.length ? (
+        <div className="row row--wrap" style={{ gap: 6, alignItems: 'center' }}>
+          <span className="caption">标签：</span>
+          <Button size="sm" variant={tagFilter ? 'ghost' : 'primary'} onClick={() => setTagFilter('')}>全部</Button>
+          {allTags.map((tag) => (
+            <Button key={tag} size="sm" variant={tagFilter === tag ? 'primary' : 'ghost'} onClick={() => setTagFilter(tagFilter === tag ? '' : tag)}>{tag}</Button>
+          ))}
+        </div>
+      ) : null}
+
+      {selected.size ? (
+        <Card>
+          <div className="row row--wrap" style={{ gap: 8, alignItems: 'center' }}>
+            <Badge tone="orange">已选 {selected.size} 个源</Badge>
+            <Button size="sm" loading={bulk.isPending} onClick={() => bulk.mutate({ kind: 'enable' })}>批量启用</Button>
+            <Button size="sm" loading={bulk.isPending} onClick={() => bulk.mutate({ kind: 'disable' })}>批量停用</Button>
+            <Button size="sm" loading={bulk.isPending} onClick={() => {
+              const value = window.prompt('输入优先级（数字越小越靠前，默认 100）', '100');
+              const priority = Number(value);
+              if (value?.trim() && Number.isFinite(priority)) bulk.mutate({ kind: 'priority', priority });
+            }}>改优先级</Button>
+            <Button size="sm" loading={bulk.isPending} onClick={() => {
+              const value = window.prompt('输入标签名（逗号分隔只取第一个，最多 8 个）');
+              if (value?.trim()) bulk.mutate({ kind: 'tag', tag: value.split(/[,，]/)[0].trim() });
+            }}>加标签</Button>
+            <Button size="sm" variant="ghost" loading={bulk.isPending} onClick={() => {
+              if (window.confirm(`确认删除选中的 ${selected.size} 个源？`)) bulk.mutate({ kind: 'delete' });
+            }}>批量删除</Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>取消选择</Button>
+          </div>
+        </Card>
+      ) : null}
+
       {health.data?.items.length ? (
         <details className="source-health">
           <summary className="source-health__summary">
@@ -448,10 +513,22 @@ export function Sources() {
           return (
             <Card className={`source-card source-card--${cardTone}`} key={source.id}>
               <div className="source-card__head">
+                <input
+                  type="checkbox"
+                  aria-label={`选择 ${source.name}`}
+                  checked={selected.has(source.id)}
+                  onChange={() => {
+                    const next = new Set(selected);
+                    if (next.has(source.id)) next.delete(source.id); else next.add(source.id);
+                    setSelected(next);
+                  }}
+                  style={{ marginRight: 8, flexShrink: 0 }}
+                />
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="row row--wrap" style={{ gap: 6 }}>
                     <Link to={`/admin/sources/${source.id}`} className="source-card__name truncate">{source.name}</Link>
                     {source.weight >= 2 ? <Badge tone="orange">收藏</Badge> : null}
+                    {(source.tags ?? []).slice(0, 3).map((tag) => <Badge key={tag} tone="default">{tag}</Badge>)}
                     {source.status === 'degraded' ? <Badge tone="red">抓取异常</Badge> : null}
                     {source.status === 'paused' ? <Badge tone="orange">已暂停</Badge> : null}
                   </div>
