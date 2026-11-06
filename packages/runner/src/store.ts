@@ -167,7 +167,9 @@ export async function loadRemoteConfig(api: ApiClient): Promise<RemoteConfig> {
 
   return {
     settings: settingsResponse.settings,
-    sources: sourcesResponse.items.filter((source) => source.enabled === true || source.enabled === 1),
+    sources: sourcesResponse.items.filter(
+      (source) => (source.enabled === true || source.enabled === 1) && source.status !== 'paused',
+    ),
     channels: channelsResponse.items,
     aliases: aliasesResponse.aliases,
     rules: rulesResponse.items.map((rule) => ({

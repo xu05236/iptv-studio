@@ -26,10 +26,18 @@ export function entryKey(sourceId: string, urlKey: string): string {
 }
 
 /**
- * Stable bucket index for sharded storage. Both the runner (writing) and the
- * Worker (reading) must agree, so it lives in core.
+ * Number of KV shard buckets. The runner writes and the Worker reads, so both
+ * must use the same constant. 8 larger buckets stay far below the 24MB value
+ * limit while halving the number of KV writes per publish (see QUOTA-PLAN).
  */
-export function bucketOf(id: string, buckets = 64): number {
+export const BUCKET_COUNT = 8;
+
+/**
+ * Stable bucket index for sharded storage. Both the runner (writing) and the
+ * Worker (reading) must agree, so it lives in core. Readers still fall back to
+ * the legacy 16/64 layouts while old snapshots are being replaced.
+ */
+export function bucketOf(id: string, buckets = BUCKET_COUNT): number {
   return fnv1a32(id) % Math.max(1, buckets);
 }
 

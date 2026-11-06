@@ -1,6 +1,7 @@
 import {
   aggregateChannel,
   applyRules,
+  BUCKET_COUNT,
   bucketOf,
   channelLogo,
   channelStats,
@@ -309,7 +310,7 @@ export async function publish(
   // the 24MB value limit and halve the number of writes per publish.
   const buckets = new Map<number, typeof output.shards>();
   for (const shard of output.shards) {
-    const index = bucketOf(shard.id, 8);
+    const index = bucketOf(shard.id, BUCKET_COUNT);
     const list = buckets.get(index) ?? [];
     list.push(shard);
     buckets.set(index, list);

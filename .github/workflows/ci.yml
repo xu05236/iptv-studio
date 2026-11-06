@@ -1,9 +1,12 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# Push to main is already validated by deploy.yml (typecheck + test + build run
+# before deploying). Keeping a second push workflow would spend the free
+# 2,000 Actions minutes/month twice for the same commit.
 
 jobs:
   check:

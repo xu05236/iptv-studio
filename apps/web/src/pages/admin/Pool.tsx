@@ -110,7 +110,7 @@ export function Pool() {
 
   const tree = useQuery({
     queryKey: ['admin', 'pool', 'tree'],
-    queryFn: () => api.get<{ countries: PoolTreeCountry[] }>('/api/admin/pool/tree'),
+    queryFn: () => api.get<{ countries: PoolTreeCountry[]; snapshot?: { generatedAt?: string | null; channels?: number } }>('/api/admin/pool/tree'),
   });
 
   const subscriptions = useQuery({
@@ -270,6 +270,15 @@ export function Pool() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const rebuildSnapshot = useMutation({
+    mutationFn: () => api.post<{ message?: string }>('/api/admin/runs/dispatch', { command: 'export' }),
+    onSuccess: (result) => {
+      show(result?.message ?? '已派发重建快照任务');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const exportPool = useMutation({
     mutationFn: async () => {
       const token = getToken();
@@ -384,12 +393,19 @@ export function Pool() {
         actions={
           <>
             <Button loading={tree.isFetching || lines.isFetching} onClick={() => { void tree.refetch(); void lines.refetch(); }}><RefreshCw size={15} /> 刷新</Button>
+            <Button loading={rebuildSnapshot.isPending} onClick={() => rebuildSnapshot.mutate()}><RefreshCw size={15} /> 重建快照</Button>
             <Button loading={exportPool.isPending} onClick={() => exportPool.mutate()}><Download size={15} /> 导出筛选</Button>
             <Button loading={saveSubscription.isPending} onClick={() => saveSubscription.mutate()}><Layers3 size={15} /> 保存为订阅</Button>
             <Button onClick={() => setTombstonesOpen(true)}><Ban size={15} /> 墓碑</Button>
           </>
         }
       />
+
+      <div className="caption">
+        {tree.data?.snapshot?.generatedAt
+          ? `池快照：${timeAgo(tree.data.snapshot.generatedAt)} · ${tree.data.snapshot.channels ?? 0} 个频道 · 订阅导出按此快照的池分类`
+          : '池快照尚未生成：发布一次或点「重建快照」后生成'}
+      </div>
 
       <Card className="pool-browse">
         <div className="pool-browse__head">

@@ -215,8 +215,17 @@ async function loadPool(env: Env) {
 }
 
 poolRoutes.get('/tree', async (c) => {
-  const { tree } = await loadPool(c.env);
-  return ok({ countries: tree });
+  const [{ tree }, snapshot] = await Promise.all([
+    loadPool(c.env),
+    getJson<{ generatedAt?: string; channels?: Record<string, unknown> }>(c.env, 'state/pool.json'),
+  ]);
+  return ok({
+    countries: tree,
+    snapshot: {
+      generatedAt: snapshot?.generatedAt ?? null,
+      channels: snapshot?.channels ? Object.keys(snapshot.channels).length : 0,
+    },
+  });
 });
 
 poolRoutes.get('/lines', async (c) => {

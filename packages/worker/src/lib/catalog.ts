@@ -1,5 +1,5 @@
 import type { ChannelIndex, ChannelConfig, LineEntry, PoolSnapshot } from '@iptv/core';
-import { bucketOf } from '@iptv/core';
+import { BUCKET_COUNT, bucketOf } from '@iptv/core';
 import type { Env } from '../env.js';
 import { getJson } from './store.js';
 
@@ -37,15 +37,17 @@ export async function loadIndex(env: Env): Promise<ChannelIndex | null> {
 }
 
 export async function loadChannelShard(env: Env, channelId: string): Promise<ChannelShard | null> {
-  const bucket = await getJson<{ channels: ChannelShard[] }>(env, `state/bucket/${bucketOf(channelId, 16)}.json`);
-  const found = bucket?.channels.find((item) => item.channel.id === channelId);
-  if (found) return found;
-
-  // Migration fallback: before the first publish with 16 buckets, the old
-  // 64-bucket layout is still the only complete copy.
-  if (bucketOf(channelId, 16) !== bucketOf(channelId, 64)) {
-    const legacy = await getJson<{ channels: ChannelShard[] }>(env, `state/bucket/${bucketOf(channelId, 64)}.json`);
-    return legacy?.channels.find((item) => item.channel.id === channelId) ?? null;
+  // The runner writes BUCKET_COUNT (8) buckets. Try that first, then the
+  // legacy 16/64 layouts so details keep working while a fresh publish rolls
+  // out. Only missing channels pay the extra reads.
+  const tried = new Set<number>();
+  for (const count of [BUCKET_COUNT, 16, 64]) {
+    const index = bucketOf(channelId, count);
+    if (tried.has(index)) continue;
+    tried.add(index);
+    const bucket = await getJson<{ channels: ChannelShard[] }>(env, `state/bucket/${index}.json`);
+    const found = bucket?.channels.find((item) => item.channel.id === channelId);
+    if (found) return found;
   }
   return null;
 }

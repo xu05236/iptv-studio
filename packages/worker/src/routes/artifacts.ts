@@ -1,12 +1,33 @@
 import { Hono } from 'hono';
-import type { AppEnv } from '../env.js';
+import type { AppEnv, Env } from '../env.js';
 import { getSubscriptionByToken } from '../db.js';
 import { fail } from '../lib/http.js';
+import { getRuntimeJson } from '../lib/runtime-state.js';
 import { extensionFor, contentTypeFor, hashId, type PlaylistFormat } from '@iptv/core';
 import { renderSubscription, subscriptionFromRow } from '../lib/playlist.js';
 import { serveArtifact, serveArtifactOr404, cacheResponse, putArtifact } from '../lib/store.js';
 
 export const artifactRoutes = new Hono<AppEnv>();
+
+/**
+ * Self-heal write-through is only a cache warm-up, never a correctness
+ * requirement. On the KV free tier (1k writes/day) a popular subscription
+ * would otherwise rewrite the same key on every request. Keep one write per
+ * key per minute and stop writing once the daily quota is nearly spent.
+ */
+const SELF_HEAL_COOLDOWN_MS = 60_000;
+const selfHealAt = new Map<string, number>();
+let quotaCache: { at: number; writes: number } | null = null;
+
+async function kvWritesToday(env: Env): Promise<number> {
+  const now = Date.now();
+  if (quotaCache && now - quotaCache.at < 60_000) return quotaCache.writes;
+  const usage = await getRuntimeJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
+  const today = new Date().toISOString().slice(0, 10);
+  const writes = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
+  quotaCache = { at: now, writes };
+  return writes;
+}
 
 function baseUrl(c: { req: { url: string }; env: { PUBLIC_BASE_URL?: string } }): string {
   return (c.env.PUBLIC_BASE_URL || new URL(c.req.url).origin).replace(/\/+$/, '');
@@ -90,9 +111,17 @@ artifactRoutes.get('/sub/:file', async (c) => {
   // KV read instead of a full catalog parse. Pool subscriptions are skipped:
   // their content changes with overrides, so the snapshot must stay live.
   if (!poolDriven) {
-    c.executionCtx.waitUntil(
-      putArtifact(c.env, prebuilt, rendered.body, contentTypeFor(config.format)).catch(() => undefined),
-    );
+    const now = Date.now();
+    if (now - (selfHealAt.get(prebuilt) ?? 0) >= SELF_HEAL_COOLDOWN_MS) {
+      selfHealAt.set(prebuilt, now);
+      if (selfHealAt.size > 500) selfHealAt.clear();
+      c.executionCtx.waitUntil(
+        (async () => {
+          if (await kvWritesToday(c.env) >= 900) return;
+          await putArtifact(c.env, prebuilt, rendered.body, contentTypeFor(config.format));
+        })().catch(() => undefined),
+      );
+    }
   }
 
   const response = new Response(rendered.body, {

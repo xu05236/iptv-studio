@@ -387,7 +387,7 @@ export function Sources() {
           const pendingTotal = source.progress?.pendingTotal ?? source.progress?.pending ?? 0;
           const quarantineDue = source.progress?.quarantine ?? 0;
           const quarantineTotal = source.progress?.quarantineTotal ?? source.progress?.quarantine ?? 0;
-          const cardTone = !source.enabled ? 'orange' : source.status === 'degraded' || source.last_error ? 'red' : (source.alive_count ?? 0) > 0 ? 'green' : 'default';
+          const cardTone = !source.enabled ? 'orange' : source.status === 'paused' ? 'orange' : source.status === 'degraded' || source.last_error ? 'red' : (source.alive_count ?? 0) > 0 ? 'green' : 'default';
           return (
             <Card className={`source-card source-card--${cardTone}`} key={source.id}>
               <div className="source-card__head">
@@ -396,6 +396,7 @@ export function Sources() {
                     <span className="source-card__name truncate">{source.name}</span>
                     {source.weight >= 2 ? <Badge tone="orange">收藏</Badge> : null}
                     {source.status === 'degraded' ? <Badge tone="red">抓取异常</Badge> : null}
+                    {source.status === 'paused' ? <Badge tone="orange">已暂停</Badge> : null}
                   </div>
                   <div className="row row--wrap" style={{ gap: 5, marginTop: 6 }}>
                     <Badge tone="blue">{sourceSite(source)}</Badge>

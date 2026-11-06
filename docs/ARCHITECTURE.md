@@ -65,7 +65,7 @@ Source ──(url)──▶ RawEntry ──resolve()──▶ LineEntry ──de
 | `out/catalog.json` | 导出用目录：频道 + 已排序的候选线路 |
 | `out/epg.xml` | 合并后的 XMLTV |
 | `state/index.json` | 频道索引（列表页、统计） |
-| `state/bucket/<n>.json` | 64 个分桶，每桶约 30 个频道的线路 + 今明节目（避免 KV 写放大） |
+| `state/bucket/<n>.json` | 8 个分桶（读侧兼容旧 16/64 布局），每桶约 1/8 频道的线路 + 今明节目（避免 KV 写放大） |
 | `state/lines.json` | 全量线路状态（下一轮继承用，含 dead） |
 | `state/prev.json` | 上一次目录（diff 基线） |
 | `state/guide.json` / `state/now.json` | 24h 节目表 / 正在播出 |

@@ -495,7 +495,13 @@ sourceRoutes.post('/:id/toggle', async (c) => {
   const id = c.req.param('id');
   const source = await getSource(c.env, id);
   if (!source) return fail('直播源不存在', 404);
-  await updateSource(c.env, id, { enabled: source.enabled === 1 ? 0 : 1 });
+  const enabling = source.enabled !== 1;
+  // Re-enabling a source that was auto-paused by repeated failures also clears
+  // the paused status, otherwise the collector would keep skipping it.
+  await updateSource(c.env, id, {
+    enabled: enabling ? 1 : 0,
+    ...(enabling && source.status === 'paused' ? { status: 'active', consecutive_failures: 0 } : {}),
+  });
   return ok({ source: await getSource(c.env, id) });
 });
 

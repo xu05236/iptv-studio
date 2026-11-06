@@ -268,12 +268,17 @@ adminRoutes.post('/runs/dispatch', async (c) => {
   const defaultBudget = force ? Math.max(6000, settings.probeBudget || 1200) : settings.probeBudget || 1200;
 
   // Hard guard against accidentally crossing the daily KV write quota.
-  const usage = await getRuntimeJson<{ kv?: { day?: string; writes?: number } }>(c.env, 'state/usage.json');
+  const usage = await getRuntimeJson<{ kv?: { day?: string; writes?: number }; d1?: { day?: string; rowsWritten?: number } }>(c.env, 'state/usage.json');
   const today = new Date().toISOString().slice(0, 10);
   const kvWrites = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
   if (kvWrites >= 920) {
     await audit(c.env, c.get('actor'), 'run.dispatch_blocked', 'kv-quota', { kvWrites });
     return fail(`KV 今日已写入 ${kvWrites}/1000，已暂停触发采集/导出，避免发布失败。请等 UTC 00:00 额度重置。`, 429, 'kv_quota');
+  }
+  const d1Writes = usage?.d1?.day === today ? Number(usage.d1.rowsWritten ?? 0) : 0;
+  if (d1Writes >= 90_000) {
+    await audit(c.env, c.get('actor'), 'run.dispatch_blocked', 'd1-quota', { d1Writes });
+    return fail(`D1 今日已写入 ${d1Writes}/100000 行，已暂停触发任务。请等 UTC 00:00 额度重置。`, 429, 'd1_quota');
   }
 
   // GitHub rejects any input that is not declared in the workflow file, so only

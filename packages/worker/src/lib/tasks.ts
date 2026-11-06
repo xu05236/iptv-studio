@@ -391,11 +391,33 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
 
   // Global quota guard: keep the task queued instead of burning a dispatch.
   const today = new Date().toISOString().slice(0, 10);
-  const usage = await getRuntimeJson<{ kv?: { day?: string; writes?: number } }>(env, 'state/usage.json');
+  const month = today.slice(0, 7);
+  const usage = await getRuntimeJson<{
+    kv?: { day?: string; writes?: number };
+    d1?: { day?: string; rowsWritten?: number };
+    github?: { month?: string; minutes?: number };
+  }>(env, 'state/usage.json');
   const writes = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
   if (writes >= 920) {
     if (changed) await saveTasks(env, tasks);
     return { task: next, message: `KV 写入 ${writes}/1000，任务保持排队` };
+  }
+  const d1Writes = usage?.d1?.day === today ? Number(usage.d1.rowsWritten ?? 0) : 0;
+  if (d1Writes >= 90_000) {
+    if (changed) await saveTasks(env, tasks);
+    return { task: next, message: `D1 今日已写入 ${d1Writes}/100000 行，任务保持排队` };
+  }
+  const ghMinutes = usage?.github?.month?.startsWith(month) ? Number(usage.github.minutes ?? 0) : 0;
+  if (ghMinutes >= 1_600 && next.source !== 'manual') {
+    if (changed) await saveTasks(env, tasks);
+    return { task: next, message: `GitHub Actions 本月已用 ${ghMinutes}/2000 分钟，自动任务保持排队（可手动触发）` };
+  }
+  const scheduledToday = tasks.filter(
+    (task) => task.source === 'schedule' && (task.createdAt ?? '').slice(0, 10) === today,
+  ).length;
+  if (next.source === 'schedule' && scheduledToday >= 20) {
+    if (changed) await saveTasks(env, tasks);
+    return { task: next, message: `今日自动派发已达 ${scheduledToday}/20 次，任务保持排队` };
   }
 
   next.status = 'running';

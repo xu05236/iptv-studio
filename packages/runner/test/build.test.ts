@@ -3,6 +3,7 @@ import { buildArtifacts } from '../src/pipeline/publish.js';
 import type { ArtifactStore } from '../src/store.js';
 import {
   BUILTIN_CHANNELS,
+  BUCKET_COUNT,
   ChannelRegistry,
   DEFAULT_SETTINGS,
   bucketOf,
@@ -122,7 +123,7 @@ describe('publish', () => {
 
     expect(written['out/catalog.json']).toContain('"cctv1"');
     expect(written['state/index.json']).toContain('"totalChannels"');
-    expect(written[`state/bucket/${bucketOf('cctv1', 8)}.json`]).toContain('"lines"');
+    expect(written[`state/bucket/${bucketOf('cctv1', BUCKET_COUNT)}.json`]).toContain('"lines"');
     expect(written['out/epg.xml']).toContain('<tv>');
     expect(written['logs/2026-10-27/run-3.jsonl']).toContain('"ok":true');
   });

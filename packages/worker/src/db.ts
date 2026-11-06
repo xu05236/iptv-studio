@@ -181,6 +181,7 @@ const SOURCE_COLUMNS: Record<string, string> = {
   tags: 'tags',
   notes: 'notes',
   status: 'status',
+  consecutive_failures: 'consecutive_failures',
   reputation: 'reputation',
   tier: 'tier',
   r2_key: 'r2_key',
@@ -726,11 +727,15 @@ export async function applySourceStats(
     if (!before) continue;
     const empty = stat.fetched && !stat.error && stat.parsed === 0;
     const failures = stat.fetched && !stat.error && stat.parsed > 0 ? 0 : before.consecutive_failures + 1;
-    // Permanently broken sources should not linger in the list. Delete them
-    // after five consecutive failures; orphan line cleanup removes leftovers.
+    // Sources that keep failing must not linger as "active" and burn a fetch
+    // slot every run. Keep the row instead of deleting it: the admin UI needs
+    // it to show why the source stopped and to let the user resume it.
     if (failures >= 5) {
-      statements.push(env.DB.prepare('DELETE FROM sources WHERE id = ?').bind(stat.sourceId));
-      statements.push(env.DB.prepare('DELETE FROM source_stats WHERE source_id = ?').bind(stat.sourceId));
+      statements.push(
+        env.DB.prepare(
+          `UPDATE sources SET status = 'paused', consecutive_failures = ?, updated_at = datetime('now') WHERE id = ?`,
+        ).bind(failures, stat.sourceId),
+      );
       continue;
     }
     const status = failures >= 3 || empty ? 'degraded' : 'active';
