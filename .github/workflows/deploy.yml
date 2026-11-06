@@ -30,23 +30,57 @@ jobs:
       - run: npm ci --no-audit --no-fund
 
       - name: Typecheck & test
+        id: checks
+        continue-on-error: true
         run: |
-          npm run typecheck
-          npm test
+          set -o pipefail
+          npm run typecheck 2>&1 | tee /tmp/checks.log
+          npm test 2>&1 | tee -a /tmp/checks.log
 
       - name: Build web
-        run: npm run build
+        id: build
+        if: steps.checks.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee /tmp/build.log
 
       - name: Apply D1 migrations
+        id: migrate
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npm run db:migrate -w @iptv/worker
+        run: |
+          set -o pipefail
+          npm run db:migrate -w @iptv/worker 2>&1 | tee /tmp/migrate.log
 
       - name: Deploy
+        id: deploy
+        if: steps.migrate.outcome == 'success'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/worker
           command: deploy
+
+      - name: Report failure to the admin inbox
+        if: always() && (steps.checks.outcome == 'failure' || steps.build.outcome == 'failure' || steps.migrate.outcome == 'failure' || steps.deploy.outcome == 'failure')
+        env:
+          SITE: https://iptv.xu05236.dpdns.org
+        run: |
+          msg=""
+          for f in checks build migrate; do
+            if [ -f "/tmp/$f.log" ]; then
+              msg="$msg [$f] $(tail -c 160 "/tmp/$f.log" | tr '\n' ' ' | tr -d '"')"
+            fi
+          done
+          curl -s -X POST "$SITE/api/public/feedback" \
+            -H 'content-type: application/json' \
+            --data-binary "{\"channelId\":\"ci-deploy\",\"entryKey\":\"ci-deploy\",\"kind\":\"ci\",\"message\":\"${msg:0:480}\"}" || true
+
+      - name: Mark the run failed
+        if: always() && (steps.checks.outcome == 'failure' || steps.build.outcome == 'failure' || steps.migrate.outcome == 'failure' || steps.deploy.outcome == 'failure')
+        run: exit 1
