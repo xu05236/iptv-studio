@@ -707,7 +707,7 @@ export function Dashboard() {
                     </div>
                   </>
                 ) : (
-                  <div className="caption" style={{ marginTop: 10 }}>用量工作流每 6 小时更新一次</div>
+                  <div className="caption" style={{ marginTop: 10 }}>采集结束自动更新用量快照，也可以手动刷新</div>
                 )}
                 <div className="caption" style={{ marginTop: 6 }}>私有仓库免费 2000 分钟/月，按运行时长估算，账单日重置</div>
               </Card>
