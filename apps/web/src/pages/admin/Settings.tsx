@@ -259,10 +259,13 @@ export function SettingsPage() {
           <div className="list">
             <div className="list__row"><span className="grow">启用定时抓源（新源建议手动触发）</span><Switch checked={form.autoFetchEnabled ?? true} onChange={(value) => set('autoFetchEnabled', value)} /></div>
           </div>
+          <Field label="抓取间隔（天）" hint="1 = 每天按下面的时段抓；2 = 每 2 天；3/4/7 同理。只在时段到点、且距上次抓源已满 N 天时才会执行">
+            <input className="input" inputMode="numeric" value={form.fetchIntervalDays ?? 1} onChange={(event) => set('fetchIntervalDays', Math.max(1, Number(event.target.value) || 1))} />
+          </Field>
           <Field label="抓取时段（北京时间）" hint="固定定时或自定义多时段：可填 1 个或多个时刻，逗号分隔，例如 06:30 或 06:30,12:30,18:30；到点只抓源，新线路进 pending 后由分批探测处理">
             <input className="input" value={form.fetchTimes ?? '06:30'} onChange={(event) => set('fetchTimes', event.target.value)} />
           </Field>
-          <div className="caption">单源覆盖：采集站 → 过滤 / 更新策略 → 更新间隔（留空跟随分档，0 = 不自动重抓）。分档规则：7 天内新源 24 小时、重点源（权重 ≥ 2）12 小时、其它 72 小时。</div>
+          <div className="caption">单源覆盖：采集站 → 过滤 / 更新策略 → 更新间隔（留空跟随分档，0 = 不自动重抓，24 = 每天，48 = 每 2 天）。分档规则：7 天内新源 24 小时、重点源（权重 ≥ 2）12 小时、其它 72 小时。</div>
 
           <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>每日发布</div>
           <div className="list">

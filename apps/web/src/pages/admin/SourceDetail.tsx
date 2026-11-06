@@ -249,7 +249,7 @@ export function SourceDetail() {
         </div>
         <div className="stack stack--tight">
           <div className="caption">抓取方式：{source.fetchMode === 'worker' ? 'Worker 代拉' : '直连'}</div>
-          <div className="caption">更新档位：{source.refresh_hours ? `自定义 ${source.refresh_hours} 小时` : '跟随分档（12 / 24 / 72 小时）'}</div>
+          <div className="caption">更新档位：{source.refresh_hours != null ? (source.refresh_hours > 0 && source.refresh_hours % 24 === 0 ? `每 ${source.refresh_hours / 24} 天` : source.refresh_hours === 0 ? '不自动重抓' : `自定义 ${source.refresh_hours} 小时`) : '跟随分档（12 / 24 / 72 小时）'}</div>
           <pre className="code">{JSON.stringify(source.requestHeaders ?? {}, null, 2)}</pre>
         </div>
       </Card>

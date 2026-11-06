@@ -439,6 +439,20 @@ async function runFetchWatch(env: Env, settings: AppSettings, now: number): Prom
   const state = await getRuntimeJson<IntervalState>(env, 'state/fetch-schedule.json');
   if (state?.result?.startsWith('skipped') && state.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
   if (state?.lastRunAt && Date.parse(state.lastRunAt) >= slot) return false;
+  // Global cadence: 1 = every day at the slots above, 2 = every two days, etc.
+  const intervalDays = Math.max(1, Math.floor(Number(settings.fetchIntervalDays) || 1));
+  if (intervalDays > 1 && state?.lastRunAt) {
+    const elapsed = now - Date.parse(state.lastRunAt);
+    if (elapsed < (intervalDays - 0.05) * 86_400_000) {
+      const nextSlot = nextScheduledAt(times, now + 60_000) ?? now + 86_400_000;
+      await putRuntimeJson(env, 'state/fetch-schedule.json', {
+        lastRunAt: state.lastRunAt,
+        nextRunAt: new Date(nextSlot).toISOString(),
+        result: `idle: every ${intervalDays} day(s)`,
+      });
+      return false;
+    }
+  }
   const sources = await listSources(env);
   const hasDue = sources.some((item) => {
     if (item.enabled !== 1) return false;

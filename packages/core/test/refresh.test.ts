@@ -8,13 +8,15 @@ const old = new Date(now - 30 * 86_400_000).toISOString();
 describe('effectiveRefreshHours', () => {
   it('跟随分档：收藏 12h、新增 24h、普通 72h', () => {
     expect(effectiveRefreshHours({ weight: 2, createdAt: old, now })).toBe(12);
-    expect(effectiveRefreshHours({ weight: 1, createdAt: recent, now })).toBe(24);
+    expect(effectiveRefreshHours({ refreshHours: null, weight: 1, createdAt: recent, now })).toBe(24);
     expect(effectiveRefreshHours({ weight: 1, createdAt: old, now })).toBe(72);
   });
 
-  it('自定义值优先，24 视为跟随分档', () => {
+  it('自定义值优先，24 小时也按自定义处理（每天一次）', () => {
     expect(effectiveRefreshHours({ refreshHours: 36, weight: 1, createdAt: old, now })).toBe(36);
-    expect(effectiveRefreshHours({ refreshHours: 24, weight: 2, createdAt: old, now })).toBe(12);
+    expect(effectiveRefreshHours({ refreshHours: 24, weight: 2, createdAt: old, now })).toBe(24);
+    expect(effectiveRefreshHours({ refreshHours: 48, weight: 1, createdAt: old, now })).toBe(48);
+    expect(effectiveRefreshHours({ refreshHours: 96, weight: 1, createdAt: old, now })).toBe(96);
   });
 
   it('0 表示不自动刷新', () => {

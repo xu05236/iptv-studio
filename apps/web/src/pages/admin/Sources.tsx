@@ -130,7 +130,7 @@ export function Sources() {
   const [content, setContent] = useState('');
   const [kind, setKind] = useState('auto');
   const [skipFetch, setSkipFetch] = useState(false);
-  const [refreshHours, setRefreshHours] = useState('24');
+  const [refreshHours, setRefreshHours] = useState('');
   const [filterSource, setFilterSource] = useState<SourceItem | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [filterForm, setFilterForm] = useState({ groups: '', excludeGroups: '', keywords: '', excludeKeywords: '', maxEntries: '' });
@@ -179,7 +179,7 @@ export function Sources() {
       content: mode === 'url' ? undefined : content,
       kind,
       skipFetch: mode === 'url' ? skipFetch : undefined,
-      refresh_hours: Number(refreshHours) || 24,
+      refresh_hours: refreshHours.trim() === '' ? null : Number(refreshHours),
       filters: buildFilters(filterForm),
       region: region.trim() || undefined,
       operator: operator.trim() || undefined,
@@ -187,7 +187,7 @@ export function Sources() {
     onSuccess: (result) => {
       show(`已添加，解析到 ${result.summary?.entries ?? 0} 条`);
       setOpen(false);
-      setName(''); setUrl(''); setContent(''); setKind('auto'); setRegion(''); setOperator(''); setSkipFetch(false); setFilterForm(EMPTY_FILTER_FORM); setPreview(null); setRefreshHours('24');
+      setName(''); setUrl(''); setContent(''); setKind('auto'); setRegion(''); setOperator(''); setSkipFetch(false); setFilterForm(EMPTY_FILTER_FORM); setPreview(null); setRefreshHours('');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
@@ -212,7 +212,7 @@ export function Sources() {
         .slice(0, 5);
       return api.patch(`/api/admin/sources/${filterSource?.id}`, {
         filters: buildFilters(filterForm) ?? {},
-        refresh_hours: Number(refreshHours) || 24,
+        refresh_hours: refreshHours.trim() === '' ? null : Number(refreshHours),
         requestHeaders: headers ?? {},
         mirrorUrls: mirrorList,
         fetchMode,
@@ -562,7 +562,7 @@ export function Sources() {
               </div>
 
               <div className="source-card__meta">
-                更新 {timeAgo(source.last_ok_at)} · {source.refresh_hours && source.refresh_hours !== 24 ? `每 ${source.refresh_hours}h` : '跟随分档（12/24/72h）'}
+                更新 {timeAgo(source.last_ok_at)} · {source.refresh_hours != null ? (source.refresh_hours > 0 && source.refresh_hours % 24 === 0 ? `每 ${source.refresh_hours / 24} 天` : source.refresh_hours === 0 ? '不自动重抓' : `每 ${source.refresh_hours}h`) : '跟随分档（12/24/72h）'}
                 {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
               </div>
               <div className="source-card__meta">
@@ -598,7 +598,7 @@ export function Sources() {
                 <Button size="sm" title="检查解析" loading={probe.isPending} onClick={() => probe.mutate(source.id)}>检查</Button>
                 <Button size="sm" title="抽样测速" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}>测速</Button>
                 <Button size="sm" title="复活本源的已淘汰线路" loading={revive.isPending} onClick={() => revive.mutate(source.id)}>复活</Button>
-                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(String(source.refresh_hours ?? 24)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); setFetchTimeoutMs(String(Math.round((source.fetchTimeoutMs ?? 45_000) / 1000))); setFetchConcurrency(String(source.fetchConcurrency ?? 1)); setFetchDelayMs(String(source.fetchDelayMs ?? 0)); }}>过滤</Button>
+                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(source.refresh_hours == null ? '' : String(source.refresh_hours)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); setFetchTimeoutMs(String(Math.round((source.fetchTimeoutMs ?? 45_000) / 1000))); setFetchConcurrency(String(source.fetchConcurrency ?? 1)); setFetchDelayMs(String(source.fetchDelayMs ?? 0)); }}>过滤</Button>
                 <Button size="sm" title="删除本源" loading={remove.isPending} onClick={() => { if (confirm(`删除「${source.name}」？该源的线路会一起移除。`)) remove.mutate(source.id); }}>删除</Button>
               </div>
             </Card>
@@ -691,8 +691,8 @@ export function Sources() {
           <div className="sheet-section">线路过滤</div>
           <FilterFields form={filterForm} onChange={setFilterForm} />
           <div className="sheet-section">抓取策略</div>
-          <Field label="更新间隔（小时）" hint="留空或 24 = 跟随分档（7 天内新源 24h、重点源 12h、其它 72h）；0 = 不自动重抓；其它数字 = 自定义小时数">
-            <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="24（跟随分档）" />
+          <Field label="更新间隔（小时）" hint="留空 = 跟随分档（7 天内新源 24h、重点源 12h、其它 72h）；0 = 不自动重抓；24 = 每天；48 = 每 2 天；72 = 每 3 天；96 = 每 4 天；其它数字 = 自定义小时">
+            <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="留空（跟随分档）" />
           </Field>
           {mode !== 'url' && content ? <div className="caption"><Upload size={12} /> 已读取 {content.length.toLocaleString()} 字符</div> : null}
           {preview ? (
@@ -723,8 +723,8 @@ export function Sources() {
           <div className="sheet-section">过滤规则</div>
           <FilterFields form={filterForm} onChange={setFilterForm} />
           <div className="sheet-section">更新策略</div>
-          <Field label="更新间隔（小时）" hint="留空或 24 = 跟随分档（7 天内新源 24h、重点源 12h、其它 72h）；0 = 不自动重抓；其它数字 = 自定义小时数">
-            <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="24（跟随分档）" />
+          <Field label="更新间隔（小时）" hint="留空 = 跟随分档（7 天内新源 24h、重点源 12h、其它 72h）；0 = 不自动重抓；24 = 每天；48 = 每 2 天；72 = 每 3 天；96 = 每 4 天；其它数字 = 自定义小时">
+            <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="留空（跟随分档）" />
           </Field>
           <div className="sheet-section">请求设置</div>
           <details className="stack">

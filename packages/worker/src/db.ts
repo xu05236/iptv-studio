@@ -27,7 +27,7 @@ export interface SourceRow {
   last_error_kind: string | null;
   entry_count: number;
   alive_count: number;
-  refresh_hours: number;
+  refresh_hours: number | null;
   reputation: number;
   tier: string;
   consecutive_failures: number;
@@ -165,7 +165,7 @@ export interface NewSource {
   fetchConcurrency?: number | null;
   fetchDelayMs?: number | null;
   contentHash?: string | null;
-  refreshHours?: number;
+  refreshHours?: number | null;
 }
 
 export async function insertSource(env: Env, input: NewSource): Promise<void> {
@@ -194,7 +194,7 @@ export async function insertSource(env: Env, input: NewSource): Promise<void> {
       input.fetchConcurrency ?? null,
       input.fetchDelayMs ?? null,
       input.contentHash ?? null,
-      input.refreshHours ?? 24,
+      input.refreshHours ?? null,
     )
     .run();
 }

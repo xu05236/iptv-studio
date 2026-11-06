@@ -18,6 +18,13 @@ import { createTask, dispatchNext } from '../lib/tasks.js';
 
 export const sourceRoutes = new Hono<AppEnv>();
 
+/** refresh_hours: null = follow tiers, 0 = never, N = custom hours (24 = daily). */
+function refreshHoursOf(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const hours = Number(value);
+  return Number.isFinite(hours) && hours >= 0 ? hours : null;
+}
+
 /** Last parse diagnostics plus the "entry count dropped" flag the UI highlights. */
 function parseReportOf(row: { parse_report?: string | null }): { parseReport: SourceParseReport | null; parseDrop: boolean } {
   const report = parseJsonField<SourceParseReport | null>(row.parse_report, null);
@@ -56,7 +63,7 @@ interface CreateSourceInput {
   /** Store a remote URL without fetching it now; the runner fetches it later. */
   skipFetch?: boolean;
   filters?: SourceFilters;
-  refresh_hours?: number;
+  refresh_hours?: number | null;
   tags?: unknown;
   requestHeaders?: unknown;
   mirrorUrls?: unknown;
@@ -418,7 +425,7 @@ sourceRoutes.post('/', async (c) => {
       fetchTimeoutMs,
       fetchConcurrency,
       fetchDelayMs,
-      refreshHours: Number(input.refresh_hours ?? 24),
+      refreshHours: refreshHoursOf(input.refresh_hours),
     });
     await audit(c.env, c.get('actor'), 'source.create.skip_fetch', id, { url: input.url });
     const task = await createTask(c.env, {
@@ -497,7 +504,7 @@ sourceRoutes.post('/', async (c) => {
     fetchConcurrency,
     fetchDelayMs,
     contentHash,
-    refreshHours: Number(input.refresh_hours ?? 24),
+    refreshHours: refreshHoursOf(input.refresh_hours),
   });
 
   await updateSource(c.env, id, {

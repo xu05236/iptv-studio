@@ -413,7 +413,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   probePausedPhases: '',
   autoFetchEnabled: true,
   fetchTimes: '06:30',
-  fetchIntervalDays: 7,
+  fetchIntervalDays: 1,
   autoPublishEnabled: true,
   autoPublishTimes: '08:30',
   autoPublishIntervalHours: 6,

@@ -63,7 +63,7 @@ export interface SourceItem {
   status: string;
   consecutive_failures?: number;
   notes: string | null;
-  refresh_hours?: number;
+  refresh_hours?: number | null;
   requestHeaders?: Record<string, string>;
   mirrorUrls?: string[];
   parseReport?: { detectedKind: string; entries: number; bytes: number; encoding?: string | null; warnings: string[]; mirrorIndex: number; fetchedAt: string; dropPercent?: number | null } | null;
