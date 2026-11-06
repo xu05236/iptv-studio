@@ -19,6 +19,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +50,7 @@ jobs:
         id: migrate
         if: steps.build.outcome == 'success'
         continue-on-error: true
+        timeout-minutes: 3
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -59,6 +61,7 @@ jobs:
       - name: Deploy
         id: deploy
         if: steps.migrate.outcome == 'success'
+        timeout-minutes: 10
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -74,10 +77,11 @@ jobs:
           msg=""
           for f in checks build migrate; do
             if [ -f "/tmp/$f.log" ]; then
-              msg="$msg [$f] $(tail -c 160 "/tmp/$f.log" | tr '\n' ' ' | tr -d '"')"
+              line=$(grep -m 3 -E 'ERROR|✘' "/tmp/$f.log" | tail -n 3 | tr '\n' ' ' | tr -d '"' | cut -c1-200)
+              msg="$msg [$f] $line"
             fi
           done
-          curl -s -X POST "$SITE/api/public/feedback" \
+          curl -s --max-time 20 -X POST "$SITE/api/public/feedback" \
             -H 'content-type: application/json' \
             --data-binary "{\"channelId\":\"ci-deploy\",\"entryKey\":\"ci-deploy\",\"kind\":\"ci\",\"message\":\"${msg:0:480}\"}" || true
 
