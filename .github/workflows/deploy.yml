@@ -51,6 +51,9 @@ jobs:
         env:
           GITHUB_SHA: ${{ github.sha }}
 
+      - name: Sync migration manifest
+        run: node scripts/gen-migrations.mjs
+
       - name: Apply D1 migrations
         id: migrate
         if: steps.build.outcome == 'success'

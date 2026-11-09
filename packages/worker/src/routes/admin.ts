@@ -37,6 +37,7 @@ import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
 import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, nextDueFetchSlot, nextScheduledAt, parseCollectTimes } from '../lib/schedule.js';
 import { sourceMetaMap } from '../lib/source.js';
 import { summarizeCoverage, type GuideLike } from '../lib/epgCoverage.js';
+import { MIGRATION_FILES } from '../lib/migrations.generated.js';
 
 export const adminRoutes = new Hono<AppEnv>();
 
@@ -58,6 +59,22 @@ adminRoutes.get('/storage/sizes', async (c) => {
     items.push({ key, bytes: value ? new TextEncoder().encode(value).length : 0 });
   }
   return ok({ items, totalBytes: items.reduce((sum, item) => sum + item.bytes, 0) });
+});
+
+adminRoutes.get('/db/migrations', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
+  const applied = results.map((row) => row.name);
+  const expected = [...MIGRATION_FILES];
+  const missing = expected.filter((name) => !applied.includes(name));
+  const extra = applied.filter((name) => !expected.includes(name));
+  return ok({
+    applied: applied.length,
+    expected: expected.length,
+    ok: missing.length === 0 && extra.length === 0,
+    missing,
+    extra,
+    last: applied.at(-1) ?? null,
+  });
 });
 
 adminRoutes.get('/epg/coverage', async (c) => {
