@@ -69,6 +69,16 @@ function defaults(input: Record<string, unknown>, id: string): SubscriptionRow {
 subscriptionRoutes.get('/', async (c) => {
   const rows = await listSubscriptions(c.env);
   const catalog = await loadCatalog(c.env);
+  const usageBySub = new Map<string, { requests: number; bytes: number }>();
+  if (c.env.DB) {
+    const { results } = await c.env.DB.prepare(
+      `SELECT t.subscription_id AS id, COALESCE(SUM(u.requests), 0) AS requests, COALESCE(SUM(u.bytes), 0) AS bytes
+       FROM relay_usage u JOIN subscription_tokens t ON t.token = u.token
+       WHERE u.day >= date('now', '-6 days')
+       GROUP BY t.subscription_id`,
+    ).all<{ id: string; requests: number; bytes: number }>();
+    for (const usage of results) usageBySub.set(usage.id, { requests: usage.requests, bytes: usage.bytes });
+  }
   return ok({
     items: rows.map((row) => {
       const config = subscriptionFromRow(row);
@@ -83,6 +93,7 @@ subscriptionRoutes.get('/', async (c) => {
         showRegionSuffix: row.show_region_suffix === 1,
         includeEpg: row.include_epg === 1,
         matchedChannels: matched,
+        usage7d: usageBySub.get(row.id) ?? null,
         links: links(c, row),
       };
     }),

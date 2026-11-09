@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Filter, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -140,6 +140,8 @@ export function Rules() {
   const [open, setOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewText, setPreviewText] = useState('');
+  const [watching, setWatching] = useState(false);
+  const [watchStart, setWatchStart] = useState(0);
   const [form, setForm] = useState<RuleForm>(EMPTY);
   const set = <K extends keyof RuleForm>(key: K, value: RuleForm[K]): void => setForm((current) => ({ ...current, [key]: value }));
 
@@ -193,14 +195,30 @@ export function Rules() {
           rules: Array<{ id: string; note: string; matchedLines: number; excludedLines: number; affectedChannels: number }>;
         } | null;
       }>('/api/admin/rules/preview-report'),
-    refetchInterval: 60_000,
+    refetchInterval: watching ? 15_000 : false,
   });
 
   const runLinePreview = useMutation({
     mutationFn: () => api.post('/api/admin/runs', { command: 'rules-preview' }),
-    onSuccess: () => show('已派发线路级预览，约 5 分钟后点「刷新结果」'),
+    onSuccess: () => {
+      setWatchStart(Date.now());
+      setWatching(true);
+      show('已派发线路级预览，跑完会自动刷新');
+    },
     onError: (error: Error) => show(error.message, 'error'),
   });
+
+  useEffect(() => {
+    if (!watching) return;
+    const generated = linePreview.data?.report?.generatedAt;
+    if (generated && Date.parse(generated) >= watchStart) {
+      setWatching(false);
+      show('线路级预览已完成');
+      return;
+    }
+    const timer = setTimeout(() => setWatching(false), 10 * 60_000);
+    return () => clearTimeout(timer);
+  }, [watching, watchStart, linePreview.data]);
 
   const items = [...(rules.data?.items ?? [])].sort((a, b) => b.priority - a.priority || a.name.localeCompare(b.name, 'zh-CN'));
 

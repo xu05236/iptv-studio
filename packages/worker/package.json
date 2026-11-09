@@ -9,7 +9,6 @@
     "typecheck": "tsc --noEmit",
     "db:migrate:local": "wrangler d1 migrations apply iptv-studio --local",
     "db:migrate": "wrangler d1 migrations apply iptv-studio --remote",
-    "db:mark-drift": "wrangler d1 execute iptv-studio --remote --command \"INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0014_run_task_id.sql')\"",
     "db:studio": "wrangler d1 execute iptv-studio --local --command \"select name from sqlite_master where type='table'\""
   },
   "dependencies": {

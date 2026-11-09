@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import {
   Activity,
   CalendarClock,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
+import { api } from '../lib/api';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { UsageAlert } from '../components/UsageAlert';
 
@@ -69,6 +71,20 @@ const PAGE_TITLES: Record<string, string> = {
 
 export function AdminLayout() {
   const { logout } = useAuth();
+  const [version, setVersion] = useState<{ shortCommit?: string; deployedAt?: string | null } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<{ shortCommit: string; deployedAt: string | null }>('/api/version')
+      .then((data) => {
+        if (alive) setVersion(data);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
   const navigate = useNavigate();
   const location = useLocation();
   const currentTitle = PAGE_TITLES[location.pathname] ?? '管理后台';
@@ -109,6 +125,11 @@ export function AdminLayout() {
         </div>
 
         <div className="sidebar__footer">
+          {version?.shortCommit ? (
+            <div className="caption" title={version.deployedAt ? `部署于 ${version.deployedAt}` : undefined} style={{ padding: '0 10px 6px' }}>
+              版本 {version.shortCommit}
+            </div>
+          ) : null}
           <NavLink to="/" className="sidebar__link">
             <Tv size={17} /> 返回前台
           </NavLink>

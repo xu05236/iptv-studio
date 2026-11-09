@@ -154,3 +154,16 @@ describe('next fetch slot with an N-day cadence', () => {
     expect(nextDueFetchSlot(times, null, 2, now)).toBe(Date.parse('2026-11-10T01:30:00Z'));
   });
 });
+
+describe('cross-midnight fetch slots', () => {
+  const times = parseCollectTimes('23:30');
+  const now = Date.parse('2026-11-09T02:00:00Z'); // 10:00 Beijing
+
+  it('rolls to tonight when the slot has not passed yet', () => {
+    expect(nextDueFetchSlot(times, '2026-11-08T15:30:00Z', 1, now)).toBe(Date.parse('2026-11-09T15:30:00Z'));
+  });
+
+  it('respects a two-day cadence across midnight', () => {
+    expect(nextDueFetchSlot(times, '2026-11-07T15:30:00Z', 2, now)).toBe(Date.parse('2026-11-09T15:30:00Z'));
+  });
+});

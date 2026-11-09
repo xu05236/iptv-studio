@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, CalendarClock, Save, ShieldAlert, SlidersHorizontal, Wrench } from 'lucide-react';
+import { Activity, CalendarClock, HardDrive, Save, ShieldAlert, SlidersHorizontal, Wrench } from 'lucide-react';
 import type { AppSettings } from '@iptv/core';
 import { api } from '../../lib/api';
 import type { SettingsResponse } from '../../lib/types';
@@ -37,6 +37,17 @@ export function SettingsPage() {
       result: string | null;
       liveness: { enabled: boolean; times: string; nextAt: string | null; lastRunAt: string | null; lastScheduledAt: string | null; result: string | null };
     }>('/api/admin/schedule'),
+  });
+
+  const storage = useQuery({
+    queryKey: ['admin', 'storage-sizes'],
+    queryFn: () =>
+      api.get<{
+        items: Array<{ key: string; bytes: number }>;
+        totalBytes: number;
+        thresholds: { warnMb: number; blockMb: number };
+        lastPublish: { generatedAt?: string } | null;
+      }>('/api/admin/storage/sizes'),
   });
 
   const maintenance = useMutation({
@@ -355,6 +366,30 @@ export function SettingsPage() {
             <Button size="sm" variant="glass" loading={maintenance.isPending} onClick={() => maintenance.mutate('logos')}>清理旧值</Button>
           </div>
         </div>
+      </Card>
+
+      <Card>
+        <div className="settings-card__head">
+          <span className="settings-card__icon"><HardDrive size={17} /></span>
+          <div><div className="title-3">容量与发布</div><div className="caption">各发布产物大小；单对象超过 15MB 告警、22MB 阻断发布（KV 单值上限 25MB）</div></div>
+        </div>
+        <div className="list" style={{ marginTop: 10 }}>
+          {(storage.data?.items ?? []).map((item) => (
+            <div className="list__row" key={item.key}>
+              <div className="grow"><div className="list__title mono">{item.key}</div></div>
+              <div className="caption" style={{ color: item.bytes > 15 * 1024 * 1024 ? 'var(--danger)' : undefined }}>
+                {(item.bytes / 1024 / 1024).toFixed(2)} MB
+              </div>
+            </div>
+          ))}
+          {!storage.data?.items.length ? <div className="caption">{storage.isLoading ? '读取中…' : '暂无数据'}</div> : null}
+        </div>
+        {storage.data ? (
+          <div className="caption" style={{ marginTop: 8 }}>
+            合计 {(storage.data.totalBytes / 1024 / 1024).toFixed(1)} MB
+            {storage.data.lastPublish?.generatedAt ? ` · 上次发布体积记录于 ${storage.data.lastPublish.generatedAt}` : ''}
+          </div>
+        ) : null}
       </Card>
 
       <Button block variant="primary" className="save-bar" loading={save.isPending} onClick={() => save.mutate()}>保存全部设置</Button>

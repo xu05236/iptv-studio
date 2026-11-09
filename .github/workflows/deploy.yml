@@ -64,7 +64,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
-          npm run db:mark-drift -w @iptv/worker 2>&1 | tee /tmp/mark.log
           npm run db:migrate -w @iptv/worker 2>&1 | tee /tmp/migrate.log
 
       - name: Deploy

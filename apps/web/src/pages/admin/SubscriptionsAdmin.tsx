@@ -336,6 +336,10 @@ export function SubscriptionsAdmin() {
               <div><strong>{item.matchedChannels ?? 0}</strong><span>匹配频道</span></div>
               <div><strong>{displayLineLimit(item.max_lines_per_channel)}</strong><span>每频道线路</span></div>
               <div><strong>{item.includeEpg ? '含' : '不含'}</strong><span>EPG</span></div>
+              <div>
+                <strong>{item.usage7d ? `${item.usage7d.requests}` : '—'}</strong>
+                <span>7天中继请求{item.usage7d ? ` · ${(item.usage7d.bytes / 1024 / 1024).toFixed(1)}MB` : ''}</span>
+              </div>
             </div>
             {item.max_lines_per_channel === 0 ? (
               <div className="subscription-warning">当前每频道输出全部线路。相同频道名下播放器会作为多线路频道处理，可在播放器内切换线路。</div>

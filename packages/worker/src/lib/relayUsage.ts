@@ -9,7 +9,9 @@ export interface RelayUsageRow {
 
 const buffer = new Map<string, RelayUsageRow>();
 let lastFlush = 0;
+let lastRecordAt = 0;
 const FLUSH_INTERVAL_MS = 5 * 60_000;
+const IDLE_GAP_MS = 2 * 60_000;
 const MAX_BUFFER = 100;
 
 export function relayUsageKey(token: string, day: string): string {
@@ -27,6 +29,11 @@ export function recordRelayUsage(
   bytes: number,
 ): void {
   if (!env.DB || !token) return;
+  const now = Date.now();
+  // After a quiet period, flush the previous session's counters before they can
+  // be lost to an isolate shutdown.
+  const idleFlush = lastRecordAt > 0 && now - lastRecordAt > IDLE_GAP_MS && buffer.size > 0;
+  lastRecordAt = now;
   const day = new Date().toISOString().slice(0, 10);
   const key = relayUsageKey(token, day);
   const row = buffer.get(key) ?? { token, day, requests: 0, bytes: 0 };
@@ -34,8 +41,7 @@ export function recordRelayUsage(
   row.bytes += Math.max(0, bytes);
   buffer.set(key, row);
 
-  const now = Date.now();
-  if (buffer.size >= MAX_BUFFER || (buffer.size > 0 && now - lastFlush >= FLUSH_INTERVAL_MS)) {
+  if (idleFlush || buffer.size >= MAX_BUFFER || (buffer.size > 0 && now - lastFlush >= FLUSH_INTERVAL_MS)) {
     const rows = [...buffer.values()];
     buffer.clear();
     lastFlush = now;
