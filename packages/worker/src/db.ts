@@ -115,6 +115,7 @@ export interface RunRow {
   bytes: number;
   duration_ms: number;
   warnings: string;
+  message: string | null;
   error: string | null;
   log_key: string | null;
   actor: string | null;
@@ -729,17 +730,61 @@ export async function getRun(env: Env, id: string): Promise<RunRow | null> {
   return env.DB.prepare('SELECT * FROM runs WHERE id = ?').bind(id).first<RunRow>();
 }
 
+/**
+ * Placeholder run row created the moment a task is dispatched, so the run
+ * history and the task board never disagree about whether something started.
+ * The runner later replaces it with the real report (same task id).
+ */
+export async function upsertPlaceholderRun(
+  env: Env,
+  input: { taskId: string; trigger: string; status: 'running' | 'failed'; error?: string | null },
+): Promise<void> {
+  if (!env.DB) return;
+  await ensureRunTaskColumn(env);
+  const now = new Date().toISOString();
+  const finished = input.status === 'running' ? null : now;
+  await env.DB.prepare(
+    `INSERT INTO runs (id, task_id, trigger, status, started_at, finished_at, sources, channels, lines, alive, dead, probed, bytes, duration_ms, warnings, message, error, log_key, actor)
+     VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, '[]', '已派发，等待 runner 上报', ?, NULL, 'system')
+     ON CONFLICT(id) DO UPDATE SET
+       task_id = excluded.task_id, trigger = excluded.trigger, status = excluded.status,
+       finished_at = excluded.finished_at, message = excluded.message, error = excluded.error`,
+  )
+    .bind(`task:${input.taskId}`, input.taskId, input.trigger, input.status, now, finished, input.error ?? null)
+    .run();
+}
+
+/** Mirror a task transition into its placeholder run (no-op if a real run replaced it). */
+export async function finishPlaceholderRun(env: Env, taskId: string, status: string, error?: string | null): Promise<void> {
+  if (!env.DB) return;
+  await env.DB.prepare(
+    `UPDATE runs SET status = ?, finished_at = ?, error = COALESCE(?, error) WHERE id = ?`,
+  )
+    .bind(status, new Date().toISOString(), error ?? null, `task:${taskId}`)
+    .run()
+    .catch(() => undefined);
+}
+
+export async function deletePlaceholderRun(env: Env, taskId: string): Promise<void> {
+  if (!env.DB) return;
+  await env.DB.prepare('DELETE FROM runs WHERE id = ?')
+    .bind(`task:${taskId}`)
+    .run()
+    .catch(() => undefined);
+}
+
 export async function upsertRun(env: Env, report: RunReport): Promise<void> {
   await ensureRunTaskColumn(env);
+  if (report.taskId) await deletePlaceholderRun(env, report.taskId);
   await env.DB.prepare(
-    `INSERT INTO runs (id, task_id, trigger, status, started_at, finished_at, sources, channels, lines, alive, dead, probed, bytes, duration_ms, warnings, error, log_key, actor)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO runs (id, task_id, trigger, status, started_at, finished_at, sources, channels, lines, alive, dead, probed, bytes, duration_ms, warnings, message, error, log_key, actor)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        task_id = COALESCE(excluded.task_id, runs.task_id),
        status = excluded.status, finished_at = excluded.finished_at, sources = excluded.sources,
        channels = excluded.channels, lines = excluded.lines, alive = excluded.alive, dead = excluded.dead,
        probed = excluded.probed, bytes = excluded.bytes, duration_ms = excluded.duration_ms,
-       warnings = excluded.warnings, error = excluded.error, log_key = COALESCE(excluded.log_key, runs.log_key)`,
+       warnings = excluded.warnings, message = COALESCE(excluded.message, runs.message), error = excluded.error, log_key = COALESCE(excluded.log_key, runs.log_key)`,
   )
     .bind(
       report.id,
@@ -757,6 +802,7 @@ export async function upsertRun(env: Env, report: RunReport): Promise<void> {
       report.bytes,
       report.durationMs,
       JSON.stringify(report.warnings ?? []),
+      report.message ?? null,
       report.error ?? null,
       report.logKey ?? null,
       report.actor ?? null,

@@ -4,7 +4,7 @@ import type { Env } from '../env.js';
 import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 import { dispatchWorkflow, listWorkflowRuns } from './github.js';
-import { loadSettings } from '../db.js';
+import { deletePlaceholderRun, finishPlaceholderRun, loadSettings, upsertPlaceholderRun } from '../db.js';
 
 export type TaskSource = 'schedule' | 'manual' | 'detection' | 'source' | 'cli';
 export type TaskStatus = 'scheduled' | 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
@@ -287,7 +287,11 @@ async function reconcileRunningTasks(env: Env, tasks: Task[]): Promise<void> {
     if (!run) {
       if (age > 10 * 60_000) {
         const retry = retryTask(tasks, task, '未找到 GitHub run');
-        if (!retry) await notifyTaskFailure(env, task, task.message);
+        if (retry) await deletePlaceholderRun(env, task.id);
+        else {
+          await finishPlaceholderRun(env, task.id, 'failed', task.message);
+          await notifyTaskFailure(env, task, task.message);
+        }
       }
       continue;
     }
@@ -296,11 +300,19 @@ async function reconcileRunningTasks(env: Env, tasks: Task[]): Promise<void> {
       if (run.conclusion === 'success') task.lastHeartbeatAt = new Date().toISOString();
       else {
         const retry = retryTask(tasks, task, `GitHub run ${run.conclusion ?? '失败'}`);
-        if (!retry) await notifyTaskFailure(env, task, task.message);
+        if (retry) await deletePlaceholderRun(env, task.id);
+        else {
+          await finishPlaceholderRun(env, task.id, 'failed', task.message);
+          await notifyTaskFailure(env, task, task.message);
+        }
       }
     } else if (run.status === 'queued' && age > 15 * 60_000) {
       const retry = retryTask(tasks, task, 'GitHub run 排队超时');
-      if (!retry) await notifyTaskFailure(env, task, task.message);
+      if (retry) await deletePlaceholderRun(env, task.id);
+      else {
+        await finishPlaceholderRun(env, task.id, 'failed', task.message);
+        await notifyTaskFailure(env, task, task.message);
+      }
     } else {
       task.lastHeartbeatAt = new Date().toISOString();
     }
@@ -318,13 +330,19 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
   task.message = taskMessage;
   if (status === 'done' && task.progress.total > 0) task.progress.done = task.progress.total;
   task.finishedAt = new Date().toISOString();
+  await finishPlaceholderRun(env, taskId, status === 'failed' ? 'failed' : 'success', taskMessage);
   if (status === 'done' && task.type === 'publish') {
     await putRuntimeJson(env, 'state/auto-publish-after-probe.json', { at: task.finishedAt, taskId: task.id });
   }
   if (status === 'failed' && (task.retryCount ?? 0) < MAX_RETRIES && isTransientFailure(taskMessage)) {
     const retry = retryTask(tasks, task, taskMessage);
     await saveTasks(env, tasks);
-    if (retry) await notifyTaskFailure(env, retry, `任务失败，已自动重试：${taskMessage}`);
+    if (retry) {
+      await deletePlaceholderRun(env, task.id);
+      await notifyTaskFailure(env, retry, `任务失败，已自动重试：${taskMessage}`);
+    } else {
+      await notifyTaskFailure(env, task, task.message);
+    }
     return;
   }
   await saveTasks(env, tasks);
@@ -453,8 +471,11 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
     next.status = 'failed';
     next.message = result.message;
     next.finishedAt = new Date().toISOString();
+    await upsertPlaceholderRun(env, { taskId: next.id, trigger: next.source, status: 'failed', error: result.message });
   } else {
     next.message = '已派发';
+    next.runId = `task:${next.id}`;
+    await upsertPlaceholderRun(env, { taskId: next.id, trigger: next.source, status: 'running' });
   }
   next.lastHeartbeatAt = new Date().toISOString();
   await saveTasks(env, tasks);
@@ -488,16 +509,19 @@ async function mutateTaskCore(env: Env, id: string, action: string): Promise<str
     task.status = 'cancelled';
     task.finishedAt = new Date().toISOString();
     task.message = '已取消';
+    await finishPlaceholderRun(env, task.id, 'cancelled', '已取消');
   } else if (action === 'auto-fail') {
     if (task.status !== 'running') return '只有运行中的任务可以自动结束';
     task.status = 'failed';
     task.finishedAt = new Date().toISOString();
     task.message = '自动结束：运行超过 90 分钟无进展';
+    await finishPlaceholderRun(env, task.id, 'failed', task.message);
   } else if (action === 'force-fail') {
     if (task.status !== 'running') return '只有运行中的任务可以强制结束';
     task.status = 'failed';
     task.finishedAt = new Date().toISOString();
     task.message = '手动强制结束';
+    await finishPlaceholderRun(env, task.id, 'failed', task.message);
   } else if (action === 'run-now') {
     if (task.status === 'running') return '任务已在运行';
     task.status = 'queued';
@@ -518,6 +542,7 @@ async function mutateTaskCore(env: Env, id: string, action: string): Promise<str
     task.progress.done = 0;
     task.finishedAt = undefined;
     task.message = '已重新入队';
+    await deletePlaceholderRun(env, task.id);
   } else {
     return '未知操作';
   }

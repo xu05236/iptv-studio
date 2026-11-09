@@ -362,7 +362,11 @@ adminRoutes.post('/runs', async (c) => {
   if (!report || !report['id']) return fail('缺少运行 ID');
   await upsertRun(c.env, report as never);
   if (typeof report['taskId'] === 'string') {
-    await finishTask(c.env, report['taskId'], report['status'] === 'failed' ? 'failed' : 'done', typeof report['error'] === 'string' ? report['error'] : undefined);
+    const failed = report['status'] === 'failed';
+    const message = failed
+      ? (typeof report['error'] === 'string' ? report['error'] : undefined)
+      : (typeof report['message'] === 'string' ? report['message'] : undefined);
+    await finishTask(c.env, report['taskId'], failed ? 'failed' : 'done', message);
     // Start the next queued/retried task immediately instead of waiting up to
     // five minutes for the next scheduler tick.
     await dispatchNext(c.env);
@@ -845,6 +849,7 @@ adminRoutes.patch('/tasks/:id', async (c) => {
   const body = await readJson<{ action?: string }>(c);
   if (!body?.action) return fail('缺少 action');
   const message = await mutateTask(c.env, c.req.param('id'), body.action);
+  await audit(c.env, c.get('actor'), `task.${body.action}`, c.req.param('id'));
   return ok({ message });
 });
 

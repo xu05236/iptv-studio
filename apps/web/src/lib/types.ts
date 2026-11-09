@@ -102,6 +102,7 @@ export interface RunItem {
   warnings: string[];
   error: string | null;
   log_key: string | null;
+  message?: string | null;
 }
 
 export interface AdminStats {

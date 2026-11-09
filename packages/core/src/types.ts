@@ -448,6 +448,8 @@ export interface RunReport {
   bytes: number;
   durationMs: number;
   warnings: string[];
+  /** Human summary shown in the task center and run lists. */
+  message?: string;
   error?: string;
   logKey?: string;
   actor?: string;

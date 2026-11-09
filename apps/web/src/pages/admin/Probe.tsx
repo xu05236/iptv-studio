@@ -350,7 +350,7 @@ export function Probe() {
                     <span className="run-row__title">{run.task_label ?? run.task_type ?? '运行记录'}</span>
                     <Badge>{run.trigger}</Badge>
                   </div>
-                  {run.task_message ? <div className="caption run-row__message">{run.task_message}</div> : null}
+                  {(run.message ?? run.task_message) ? <div className="caption run-row__message">{run.message ?? run.task_message}</div> : null}
                   {run.task_failure_reason ? <div className="caption task-failure">失败原因：{run.task_failure_reason}</div> : null}
                 </div>
                 <div className="run-row__metrics">

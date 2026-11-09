@@ -314,7 +314,8 @@ async function finishRun(
   api: ApiClient,
   report: RunReport,
 ): Promise<void> {
-  await api.post('/api/admin/runs', { ...report, taskId: report.taskId ?? process.env.TASK_ID ?? undefined }).catch((error) => {
+  const message = report.message ?? (lastProgressMessage || undefined);
+  await api.post('/api/admin/runs', { ...report, message, taskId: report.taskId ?? process.env.TASK_ID ?? undefined }).catch((error) => {
     console.error('上报运行结果失败', error);
   });
 }
@@ -1229,15 +1230,15 @@ let lastProgressDone = -1;
 let lastProgressMessage = '';
 
 async function reportTaskProgress(api: ApiClient, done: number, total: number, message?: string): Promise<void> {
+  const messageChanged = Boolean(message) && message !== lastProgressMessage;
+  if (message) lastProgressMessage = message;
   const taskId = process.env.TASK_ID;
   if (!taskId) return;
   const now = Date.now();
   const final = total > 0 && done >= total;
-  const messageChanged = Boolean(message) && message !== lastProgressMessage;
   if (!final && !messageChanged && now - lastProgressAt < 10_000 && done - lastProgressDone < 50) return;
   lastProgressAt = now;
   lastProgressDone = done;
-  if (message) lastProgressMessage = message;
   await api.post(`/api/admin/tasks/${taskId}/progress`, { done, total, message }).catch(() => undefined);
 }
 
