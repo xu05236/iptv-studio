@@ -46,6 +46,11 @@ jobs:
           set -o pipefail
           npm run build 2>&1 | tee /tmp/build.log
 
+      - name: Stamp build version
+        run: node scripts/stamp-version.mjs
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+
       - name: Apply D1 migrations
         id: migrate
         if: steps.build.outcome == 'success'

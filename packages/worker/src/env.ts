@@ -11,6 +11,8 @@ export interface Env {
   PUBLIC_BASE_URL?: string;
 
   GITHUB_REPO?: string;
+  COMMIT_SHA?: string;
+  DEPLOYED_AT?: string;
   GITHUB_TOKEN?: string;
   GITHUB_WORKFLOW?: string;
   GITHUB_REF?: string;

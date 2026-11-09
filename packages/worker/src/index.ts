@@ -19,6 +19,17 @@ import { dispatchWorkflow } from './lib/github.js';
 
 const app = new Hono<AppEnv>();
 
+app.get('/api/version', (c) => {
+  const commit = c.env.COMMIT_SHA ?? 'dev';
+  return ok({
+    commit,
+    shortCommit: commit.slice(0, 7),
+    deployedAt: c.env.DEPLOYED_AT || null,
+    version: VERSION,
+    environment: c.env.ENVIRONMENT ?? 'development',
+  });
+});
+
 app.get('/api/health', (c) =>
   ok({
     ok: true,
