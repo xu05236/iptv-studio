@@ -40,6 +40,26 @@ import { summarizeCoverage, type GuideLike } from '../lib/epgCoverage.js';
 
 export const adminRoutes = new Hono<AppEnv>();
 
+adminRoutes.get('/storage/sizes', async (c) => {
+  const keys = [
+    'state/lines.json',
+    'state/probe.json',
+    'state/line-index.json',
+    'out/index.json',
+    'out/catalog.json',
+    'state/pool.json',
+    'state/pool-stats.json',
+    'out/epg.xml',
+    'state/epg-unmatched.json',
+  ];
+  const items: Array<{ key: string; bytes: number }> = [];
+  for (const key of keys) {
+    const value = await c.env.KV.get(key);
+    items.push({ key, bytes: value ? new TextEncoder().encode(value).length : 0 });
+  }
+  return ok({ items, totalBytes: items.reduce((sum, item) => sum + item.bytes, 0) });
+});
+
 adminRoutes.get('/epg/coverage', async (c) => {
   const [index, guide] = await Promise.all([loadIndex(c.env), loadGuide(c.env)]);
   if (!index) return ok({ total: 0, covered: 0, percent: 0, missing: [], missingTotal: 0, filteredTotal: 0, offset: 0, limit: 100 });
