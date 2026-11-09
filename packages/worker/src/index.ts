@@ -18,6 +18,7 @@ import { handleTelegramUpdate, runTelegramCommands, verifyTelegramSecret } from 
 import { dispatchWorkflow } from './lib/github.js';
 
 const app = new Hono<AppEnv>();
+export { app };
 
 app.get('/api/version', (c) => {
   const commit = c.env.COMMIT_SHA ?? 'dev';

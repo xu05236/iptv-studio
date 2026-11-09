@@ -20,6 +20,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
+    "smoke": "node scripts/smoke.mjs",
     "deploy": "npm run build && npm run deploy -w @iptv/worker",
     "db:migrate:local": "npm run db:migrate:local -w @iptv/worker",
     "db:migrate": "npm run db:migrate -w @iptv/worker",
