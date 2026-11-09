@@ -13,7 +13,7 @@ for (const [name, path] of checks) {
     console.log(`${response.ok ? 'ok  ' : 'FAIL'} ${name} ${response.status} ${url}`);
     if (!response.ok) failed++;
     if (name === 'version') {
-      const body = (await response.json().catch(() => null)) as { shortCommit?: string; deployedAt?: string } | null;
+      const body = await response.json().catch(() => null);
       console.log(`     commit=${body?.shortCommit ?? '?'} deployedAt=${body?.deployedAt ?? '?'}`);
     }
   } catch (error) {
