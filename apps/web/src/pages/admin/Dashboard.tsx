@@ -124,6 +124,17 @@ function taskEta(task: TaskItem): string {
   return `已运行 ${Math.max(0, Math.floor(elapsedSec / 60))} 分钟`;
 }
 
+function Pager({ page, pages, onChange }: { page: number; pages: number; onChange: (page: number) => void }) {
+  if (pages <= 1) return null;
+  return (
+    <div className="row" style={{ gap: 8, justifyContent: 'center', marginTop: 8 }}>
+      <Button size="sm" variant="ghost" disabled={page <= 0} onClick={() => onChange(page - 1)}>上一页</Button>
+      <span className="caption">第 {page + 1} / {pages} 页</span>
+      <Button size="sm" variant="ghost" disabled={page >= pages - 1} onClick={() => onChange(page + 1)}>下一页</Button>
+    </div>
+  );
+}
+
 export function Dashboard() {
   const queryClient = useQueryClient();
   const { show } = useToast();
@@ -259,7 +270,16 @@ export function Dashboard() {
     .sort((a, b) => b.priority - a.priority || a.createdAt.localeCompare(b.createdAt));
   const recentTasks = taskItems
     .filter((task) => task.status === 'done' || task.status === 'failed' || task.status === 'cancelled')
-    .slice(0, 5);
+    .slice(0, 30);
+  const QUEUE_PAGE_SIZE = 5;
+  const [queuePage, setQueuePage] = useState(0);
+  const [recentPage, setRecentPage] = useState(0);
+  const queuePages = Math.max(1, Math.ceil(queuedTasks.length / QUEUE_PAGE_SIZE));
+  const recentPages = Math.max(1, Math.ceil(recentTasks.length / QUEUE_PAGE_SIZE));
+  const queuePageSafe = Math.min(queuePage, queuePages - 1);
+  const recentPageSafe = Math.min(recentPage, recentPages - 1);
+  const visibleQueued = queuedTasks.slice(queuePageSafe * QUEUE_PAGE_SIZE, queuePageSafe * QUEUE_PAGE_SIZE + QUEUE_PAGE_SIZE);
+  const visibleRecent = recentTasks.slice(recentPageSafe * QUEUE_PAGE_SIZE, recentPageSafe * QUEUE_PAGE_SIZE + QUEUE_PAGE_SIZE);
 
   const movePhase = (index: number, delta: number): void => {
     const board = tasks.data;
@@ -533,7 +553,7 @@ export function Dashboard() {
                   <span className="caption">手动/检测优先</span>
                 </div>
                 <div className="task-list">
-                  {queuedTasks.map((task, index) => {
+                  {visibleQueued.map((task, index) => {
                     const tone = task.status === 'paused' ? 'orange' : task.source === 'source' ? 'green' : task.source === 'manual' || task.source === 'detection' ? 'blue' : 'default';
                     return (
                     <div className={`task-item task-item--${tone}`} key={task.id}>
@@ -551,8 +571,8 @@ export function Dashboard() {
                         </div>
                       </div>
                       <div className="task-item__actions">
-                        <Button size="sm" variant="ghost" disabled={index === 0} title="提升" onClick={() => taskAction.mutate({ id: task.id, action: 'move-up' })}><ArrowUp size={14} /></Button>
-                        <Button size="sm" variant="ghost" disabled={index === queuedTasks.length - 1} title="延后" onClick={() => taskAction.mutate({ id: task.id, action: 'move-down' })}><ArrowDown size={14} /></Button>
+                        <Button size="sm" variant="ghost" disabled={queuePageSafe * QUEUE_PAGE_SIZE + index === 0} title="提升" onClick={() => taskAction.mutate({ id: task.id, action: 'move-up' })}><ArrowUp size={14} /></Button>
+                        <Button size="sm" variant="ghost" disabled={queuePageSafe * QUEUE_PAGE_SIZE + index === queuedTasks.length - 1} title="延后" onClick={() => taskAction.mutate({ id: task.id, action: 'move-down' })}><ArrowDown size={14} /></Button>
                         <Button size="sm" variant="ghost" title={task.status === 'paused' ? '恢复' : '暂停'} onClick={() => taskAction.mutate({ id: task.id, action: task.status === 'paused' ? 'resume' : 'pause' })}>{task.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}</Button>
                         <Button size="sm" variant="ghost" title="取消" onClick={() => taskAction.mutate({ id: task.id, action: 'cancel' })}>取消</Button>
                         <Button size="sm" variant="glass" title="插到队首" onClick={() => taskAction.mutate({ id: task.id, action: 'run-now' })}>插队</Button>
@@ -561,6 +581,7 @@ export function Dashboard() {
                     );
                   })}
                   {!queuedTasks.length ? <div className="task-empty">队列为空</div> : null}
+                  <Pager page={queuePageSafe} pages={queuePages} onChange={setQueuePage} />
                 </div>
               </div>
             </div>
@@ -568,10 +589,10 @@ export function Dashboard() {
             <div className="task-section">
               <div className="task-section__head">
                 <span>最近完成</span>
-                <span className="caption">保留最近 30 条</span>
+                <span className="caption">默认 5 条，最多 30 条</span>
               </div>
               <div className="task-list">
-                {recentTasks.map((task) => (
+                {visibleRecent.map((task) => (
                   <div className={`task-item task-item--${task.status === 'done' ? 'green' : task.status === 'failed' ? 'red' : 'orange'}`} key={task.id}>
                     <div className="grow">
                       <div className="row row--wrap" style={{ gap: 6 }}>
@@ -590,6 +611,7 @@ export function Dashboard() {
                   </div>
                 ))}
                 {!recentTasks.length ? <div className="task-empty">还没有完成记录</div> : null}
+                <Pager page={recentPageSafe} pages={recentPages} onChange={setRecentPage} />
               </div>
             </div>
 

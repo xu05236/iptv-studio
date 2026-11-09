@@ -20,6 +20,8 @@ export interface CollectedSource {
   encoding?: string;
   /** 0 = primary URL, 1+ = which mirror answered. */
   mirrorIndex?: number;
+  /** 被源过滤规则丢弃的条目数。 */
+  filtered?: number;
 }
 
 interface FetchResult {
@@ -264,6 +266,7 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
     fetched: true,
     parsed: { ...parsed, entries: filtered.entries },
     entries: filtered.entries,
+    filtered: filtered.dropped,
     bytes: text.length,
     ...(parsed.entries.length === 0 ? { error: '内容不是播放列表（解析出 0 条）', errorKind: 'not_playlist' as FetchErrorKind } : {}),
   };

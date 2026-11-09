@@ -525,12 +525,6 @@ async function fetchPhase(
   const collected = await collectAll(targetSources, store, logger, (done, total, label) => {
     void reportTaskProgress(api, done, total, label ? `抓取 ${label}` : '抓取采集站');
   });
-  await reportTaskProgress(
-    api,
-    targetSources.length,
-    targetSources.length,
-    `抓取完成 · ${targetSources.length}/${targetSources.length} 个源 · 用时 ${Math.max(1, Math.round((Date.now() - startedMs) / 1000))}s`,
-  );
   const registry = buildRegistry(remote);
   const sources = new Map(remote.sources.map((source) => [source.id, source]));
   const retentionDays = Math.max(0, envNumber('LINE_RETENTION_DAYS') ?? settings.lineRetentionDays ?? 30);
@@ -543,6 +537,23 @@ async function fetchPhase(
   const pruned = pruneOrphanLines(remote, normalized.lines);
   const lines = pruned.lines;
   if (pruned.removed) logger.warn('已剔除孤儿线路', { removed: pruned.removed });
+  const okSources = collected.filter((item) => !item.error).length;
+  const failedSources = collected.length - okSources;
+  const channelCount = new Set(lines.map((line) => line.channelId)).size;
+  const added = normalized.report.reduce((sum, item) => sum + item.added, 0);
+  const reused = normalized.report.reduce((sum, item) => sum + item.reused, 0);
+  const filtered = collected.reduce((sum, item) => sum + (item.filtered ?? 0), 0);
+  const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedMs) / 1000));
+  const summary = [
+    `抓源 ${okSources}/${collected.length} 源成功${failedSources ? `（${failedSources} 失败）` : ''}`,
+    `频道 ${channelCount}`,
+    `线路 ${lines.length}`,
+    `新增 ${added}`,
+    `复用 ${reused}`,
+    ...(filtered ? [`过滤 ${filtered}`] : []),
+    `用时 ${elapsedSeconds}s`,
+  ].join(' · ');
+  await reportTaskProgress(api, collected.length, collected.length, summary);
   logger.info('线路归一完成', { lines: lines.length, sourceId: sourceId || undefined });
   const stats = poolStatsFor(remote, lines);
   await store.put('state/pool-stats.json', JSON.stringify(stats), 'application/json');
