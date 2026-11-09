@@ -229,6 +229,16 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
   };
 }
 
+export const ARTIFACT_WARN_BYTES = 15 * 1024 * 1024;
+export const ARTIFACT_BLOCK_BYTES = 22 * 1024 * 1024;
+
+/** 15MB 告警、22MB 阻断（KV 单值上限 25MB）。 */
+export function artifactSizeLevel(bytes: number): 'ok' | 'warn' | 'block' {
+  if (bytes > ARTIFACT_BLOCK_BYTES) return 'block';
+  if (bytes > ARTIFACT_WARN_BYTES) return 'warn';
+  return 'ok';
+}
+
 export async function publish(
   store: ArtifactStore,
   output: BuildOutput,
@@ -244,32 +254,35 @@ export async function publish(
     options.onProgress?.(artifactCount, artifactTotal, message);
   };
 
-  await store.put('out/catalog.json', JSON.stringify(output.catalog), json);
-  step('catalog.json');
-  await store.put('state/index.json', JSON.stringify(output.index), json);
-  step('state/index.json');
-  const linesPayload = JSON.stringify({ generatedAt: options.generatedAt, lines: options.lines });
-  if (new TextEncoder().encode(linesPayload).byteLength > 20 * 1024 * 1024) {
+  const sizes: Array<{ key: string; bytes: number }> = [];
+  const check = (key: string, payload: string): string => {
+    const bytes = new TextEncoder().encode(payload).byteLength;
+    sizes.push({ key, bytes });
+    const level = artifactSizeLevel(bytes);
+    if (level === 'block') {
+      throw new Error(`产物 ${key} 为 ${(bytes / 1024 / 1024).toFixed(1)}MB，超过 22MB 上限，已拒绝发布（KV 单值上限 25MB）`);
+    }
+    if (level === 'warn') {
+      logger.warn('产物偏大，接近 KV 单值上限', { key, mb: Math.round((bytes / 1024 / 1024) * 10) / 10, blockMb: 22 });
+    }
+    return payload;
+  };
+
+  const catalogBody = check('out/catalog.json', JSON.stringify(output.catalog));
+  const indexBody = check('state/index.json', JSON.stringify(output.index));
+  let linesBody = JSON.stringify({ generatedAt: options.generatedAt, lines: options.lines });
+  if (new TextEncoder().encode(linesBody).byteLength > 20 * 1024 * 1024) {
     logger.warn('线路状态接近 KV 24MB 上限，将丢弃已失效超过 24 小时的墓碑线路');
     const cutoff = Date.now() - 24 * 3_600_000;
     const trimmed = options.lines.filter(
       (line) => line.status !== 'dead' || !line.lastProbeAt || new Date(line.lastProbeAt).getTime() > cutoff,
     );
-    await store.put('state/lines.json', JSON.stringify({ generatedAt: options.generatedAt, lines: trimmed }), json);
-  } else {
-    await store.put('state/lines.json', linesPayload, json);
+    linesBody = JSON.stringify({ generatedAt: options.generatedAt, lines: trimmed });
   }
-  step('state/lines.json');
-  await store.put('state/guide.json', JSON.stringify(output.guide), json);
-  await store.put('state/now.json', JSON.stringify({ generatedAt: options.generatedAt, channels: output.now }), json);
-  step('guide/now');
-  // Subscriptions render from this compact snapshot (tested-alive lines only):
-  // it keeps the Worker's hot path small and carries channel metadata for M3U.
-  if (options.poolSnapshot) {
-    await store.put('state/pool.json', JSON.stringify(options.poolSnapshot), json);
-    step('state/pool.json');
-    objects++;
-  }
+  linesBody = check('state/lines.json', linesBody);
+  const guideBody = check('state/guide.json', JSON.stringify(output.guide));
+  const nowBody = check('state/now.json', JSON.stringify({ generatedAt: options.generatedAt, channels: output.now }));
+  const poolBody = options.poolSnapshot ? check('state/pool.json', JSON.stringify(options.poolSnapshot)) : null;
   const probeItems = output.shards.flatMap((shard) =>
     shard.data.lines.map((line) => ({
       key: line.key,
@@ -292,23 +305,46 @@ export async function publish(
       headers: line.headers,
     })),
   );
-  await store.put('state/probe.json', JSON.stringify({ generatedAt: options.generatedAt, items: probeItems }), json);
+  const probeBody = check('state/probe.json', JSON.stringify({ generatedAt: options.generatedAt, items: probeItems }));
   // F6: 中继热路径用的紧凑索引（key → url + 请求头）。单值一次写，刻意不按 hash 分片；
   // 中继侧不再解析整份 probe.json（20MB 级，单请求 CPU 必超 10ms）。
   const lineIndex = probeItems.map((item) => ({ key: item.key, url: item.url, headers: item.headers }));
-  await store.put('state/line-index.json', JSON.stringify({ generatedAt: options.generatedAt, items: lineIndex }), json);
+  const lineIndexBody = check('state/line-index.json', JSON.stringify({ generatedAt: options.generatedAt, items: lineIndex }));
+
+  const epgBytes = options.epgXml ? new TextEncoder().encode(options.epgXml).byteLength : 0;
+  if (epgBytes > 15 * 1024 * 1024) {
+    logger.warn('EPG 产物偏大', { mb: Math.round((epgBytes / 1024 / 1024) * 10) / 10 });
+  }
+  const epgBody = options.epgXml && epgBytes <= 24 * 1024 * 1024 ? options.epgXml : null;
+  if (options.epgXml && !epgBody) {
+    logger.warn('EPG 超过 KV 单值 24MB 限制，已跳过发布', { mb: Math.round(epgBytes / 1024 / 1024) });
+  }
+
+  await store.put('out/catalog.json', catalogBody, json);
+  step('catalog.json');
+  await store.put('state/index.json', indexBody, json);
+  step('state/index.json');
+  await store.put('state/lines.json', linesBody, json);
+  step('state/lines.json');
+  await store.put('state/guide.json', guideBody, json);
+  await store.put('state/now.json', nowBody, json);
+  step('guide/now');
+  // Subscriptions render from this compact snapshot (tested-alive lines only):
+  // it keeps the Worker's hot path small and carries channel metadata for M3U.
+  if (poolBody) {
+    await store.put('state/pool.json', poolBody, json);
+    step('state/pool.json');
+    objects++;
+  }
+  await store.put('state/probe.json', probeBody, json);
+  await store.put('state/line-index.json', lineIndexBody, json);
   step('state/line-index.json');
   objects += 7;
 
-  if (options.epgXml) {
-    const bytes = new TextEncoder().encode(options.epgXml).byteLength;
-    if (bytes > 24 * 1024 * 1024) {
-      logger.warn('EPG 超过 KV 单值 24MB 限制，已跳过发布', { mb: Math.round(bytes / 1024 / 1024) });
-    } else {
-      await store.put('out/epg.xml', options.epgXml, 'application/xml; charset=utf-8');
-      step('out/epg.xml');
-      objects++;
-    }
+  if (epgBody) {
+    await store.put('out/epg.xml', epgBody, 'application/xml; charset=utf-8');
+    step('out/epg.xml');
+    objects++;
   }
 
   // KV free tier allows 1k writes/day. 8 larger buckets are still well below
@@ -321,7 +357,12 @@ export async function publish(
     buckets.set(index, list);
   }
   await mapPool([...buckets.entries()], 4, async ([index, shards]) => {
-    await store.put(`state/bucket/${index}.json`, JSON.stringify({ channels: shards.map((shard) => shard.data) }), json);
+    const payload = JSON.stringify({ channels: shards.map((shard) => shard.data) });
+    const bytes = new TextEncoder().encode(payload).byteLength;
+    if (bytes > 15 * 1024 * 1024) {
+      logger.warn('频道分片偏大，接近 KV 单值上限', { bucket: index, mb: Math.round((bytes / 1024 / 1024) * 10) / 10 });
+    }
+    await store.put(`state/bucket/${index}.json`, payload, json);
     step(`bucket ${index + 1}/${buckets.size}`);
   });
   objects += buckets.size;
@@ -329,8 +370,9 @@ export async function publish(
   const day = options.generatedAt.slice(0, 10);
   await store.put(`snapshots/${day}/catalog.json`, JSON.stringify(output.catalog), json);
   await store.put(`logs/${day}/${options.runId}.jsonl`, options.log, 'application/x-ndjson; charset=utf-8');
+  await store.put('state/publish-sizes.json', JSON.stringify({ generatedAt: options.generatedAt, items: sizes }), json);
   step('log');
-  objects += 2;
+  objects += 3;
 
   // Rollback snapshots are created manually from the admin UI; publishing must
   // not spend 5 extra KV writes on every run.

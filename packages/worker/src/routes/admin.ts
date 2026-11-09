@@ -58,7 +58,13 @@ adminRoutes.get('/storage/sizes', async (c) => {
     const value = await c.env.KV.get(key);
     items.push({ key, bytes: value ? new TextEncoder().encode(value).length : 0 });
   }
-  return ok({ items, totalBytes: items.reduce((sum, item) => sum + item.bytes, 0) });
+  const lastPublish = await getJson<{ generatedAt?: string; items?: Array<{ key: string; bytes: number }> }>(c.env, 'state/publish-sizes.json');
+  return ok({
+    items,
+    totalBytes: items.reduce((sum, item) => sum + item.bytes, 0),
+    thresholds: { warnMb: 15, blockMb: 22 },
+    lastPublish: lastPublish ?? null,
+  });
 });
 
 adminRoutes.get('/db/migrations', async (c) => {
