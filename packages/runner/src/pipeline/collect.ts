@@ -47,28 +47,40 @@ async function fetchPlaylist(
   timeoutMs = 45_000,
   insecure = false,
 ): Promise<FetchResult> {
-  const result = await fetchText(url, {
-    etag: conditional ? etag : null,
-    lastModified: conditional ? lastModified : null,
-    headers,
-    timeoutMs,
-    maxBytes: 24 * 1024 * 1024,
-    retries: 2,
-    retryDelayMs: 800,
-    fetchImpl: insecure ? insecureFetch : undefined,
-  });
-  return {
-    ok: result.ok,
-    status: result.status,
-    text: result.text,
-    etag: result.etag,
-    lastModified: result.lastModified,
-    notModified: result.notModified,
-    error: result.error,
-    errorKind: result.errorKind,
-    attempts: result.attempts,
-    encoding: result.encoding,
+  const attempt = async (skipVerify: boolean): Promise<FetchResult> => {
+    const result = await fetchText(url, {
+      etag: conditional ? etag : null,
+      lastModified: conditional ? lastModified : null,
+      headers,
+      timeoutMs,
+      maxBytes: 24 * 1024 * 1024,
+      retries: 2,
+      retryDelayMs: 800,
+      fetchImpl: skipVerify ? insecureFetch : undefined,
+    });
+    return {
+      ok: result.ok,
+      status: result.status,
+      text: result.text,
+      etag: result.etag,
+      lastModified: result.lastModified,
+      notModified: result.notModified,
+      error: result.error,
+      errorKind: result.errorKind,
+      attempts: result.attempts,
+      encoding: result.encoding,
+    };
   };
+  let result = await attempt(insecure);
+  // Many IPTV hosts serve playlists over https with an expired or mismatched
+  // certificate. A TLS failure used to leave the source failing (and eventually
+  // paused) forever; retry once without certificate verification, which is the
+  // same effect as the per-source 「允许证书错误」toggle.
+  if (!insecure && result.errorKind === 'tls') {
+    const recovered = await attempt(true);
+    if (recovered.ok || recovered.notModified) result = recovered;
+  }
+  return result;
 }
 
 function clamp(value: number, min: number, max: number): number {

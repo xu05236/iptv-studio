@@ -183,6 +183,11 @@ export function SourceDetail() {
             <div><div className="caption">消失</div><div className="title-3">{formatNumber(report.disappeared)}</div></div>
           </div>
         ) : <div className="task-empty">还没有抓取对比记录，源重抓后会出现在这里。</div>}
+        {report ? (
+          <div className="caption" style={{ marginTop: 10 }}>
+            口径：新增/复用是这一轮解析到的线路；跳过已淘汰是已淘汰线路再次出现、不会回池；消失是上游这一轮没出现的线路，其中仍在保留期内的会继续留在池中（保留）。这些数字和上方线路池的「待测/待复测/已淘汰」不是同一口径，不能直接相加。
+          </div>
+        ) : null}
       </Card>
 
       <Card>

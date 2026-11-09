@@ -158,7 +158,10 @@ export function Sources() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'sources'],
-    queryFn: () => api.get<{ items: SourceItem[] }>('/api/admin/sources'),
+    queryFn: () => api.get<{ items: SourceItem[]; reportGeneratedAt?: string | null }>('/api/admin/sources'),
+    // A fetch task finishes in the background; keep the cards' 「更新」 times
+    // from going stale while the page stays open.
+    refetchInterval: 30_000,
   });
 
   const health = useQuery({
@@ -598,9 +601,8 @@ export function Sources() {
                 {source.progress?.channels ? ` · 贡献 ${formatNumber(source.progress.channels)} 个频道` : ''}
               </div>
               {source.report ? (
-                <div className="source-card__meta">
-                  上次对比 · 新增 {source.report.added} · 复用 {source.report.reused} · 跳过淘汰 {source.report.skippedRejected} · 消失 {source.report.disappeared}
-                  {source.report.retained ? ` · 保留 ${source.report.retained}` : ''}
+                <div className="source-card__meta" title="最近一轮抓取的差异统计，与线路池的待测/待复测/已淘汰不是同一口径">
+                  上次对比{data?.reportGeneratedAt ? `（${timeAgo(data.reportGeneratedAt)}）` : ''} · 解析 {source.report.added + source.report.reused + source.report.skippedRejected} 条 · 新增 {source.report.added} · 复用 {source.report.reused} · 跳过淘汰 {source.report.skippedRejected} · 上游消失 {source.report.disappeared}{source.report.retained ? `（保留 ${source.report.retained}）` : ''}
                 </div>
               ) : null}
               {source.parseDrop ? (
