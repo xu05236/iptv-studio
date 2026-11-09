@@ -27,5 +27,6 @@ export const MIGRATION_FILES: string[] = [
   "0026_run_message.sql",
   "0027_source_allow_insecure_tls.sql",
   "0028_relay_usage.sql",
-  "0029_backfill_0014.sql"
+  "0029_backfill_0014.sql",
+  "0030_custom_pools.sql"
 ];

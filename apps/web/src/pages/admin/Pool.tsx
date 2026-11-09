@@ -91,6 +91,9 @@ export function Pool() {
   const { show } = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkPool, setBulkPool] = useState('backup');
+  const [bulkCustomPool, setBulkCustomPool] = useState('');
+  const [customPool, setCustomPool] = useState('');
+  const [poolName, setPoolName] = useState('');
   const [country, setCountry] = useState('');
   const [group, setGroup] = useState('');
   const [channelId, setChannelId] = useState('');
@@ -127,6 +130,11 @@ export function Pool() {
     queryKey: ['admin', 'pool', 'tombstones'],
     queryFn: () => api.get<{ items: Array<{ url: string; channel_id?: string | null; reason?: string | null; created_at: string }> }>('/api/admin/pool/tombstones'),
     enabled: tombstonesOpen,
+  });
+
+  const customPools = useQuery({
+    queryKey: ['admin', 'custom-pools'],
+    queryFn: () => api.get<{ items: Array<{ id: string; name: string; count: number }> }>('/api/admin/pools'),
   });
 
   const poolTotals = useMemo(() => {
@@ -169,6 +177,7 @@ export function Pool() {
     if (subscriptionId) value.set('subscriptionId', subscriptionId);
     if (sourceId) value.set('sourceId', sourceId);
     if (pool) value.set('pool', pool);
+    if (customPool) value.set('customPool', customPool);
     if (transport) value.set('transport', transport);
     if (resolution) value.set('resolution', resolution);
     if (minSpeedKbps) value.set('minSpeed', minSpeedKbps);
@@ -178,7 +187,7 @@ export function Pool() {
       value.set('order', sortOrder);
     }
     return value.toString();
-  }, [country, group, channelId, subscriptionId, sourceId, pool, transport, resolution, minSpeedKbps, search, page, pageSize, sortField, sortOrder]);
+  }, [country, group, channelId, subscriptionId, sourceId, pool, customPool, transport, resolution, minSpeedKbps, search, page, pageSize, sortField, sortOrder]);
 
   const lines = useQuery({
     queryKey: ['admin', 'pool', 'lines', params],
@@ -330,6 +339,46 @@ export function Pool() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const createPool = useMutation({
+    mutationFn: (name: string) => api.post<{ pool: { id: string; name: string } }>('/api/admin/pools', { name }),
+    onSuccess: () => {
+      show('已创建池');
+      setPoolName('');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'custom-pools'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const renamePool = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.patch(`/api/admin/pools/${id}`, { name }),
+    onSuccess: () => {
+      show('已改名');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'custom-pools'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const deletePool = useMutation({
+    mutationFn: (id: string) => api.del(`/api/admin/pools/${id}`),
+    onSuccess: () => {
+      show('池已删除，线路不受影响');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'custom-pools'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
+  const addToCustomPool = useMutation({
+    mutationFn: ({ id, keys }: { id: string; keys: string[] }) => api.post<{ added: number }>(`/api/admin/pools/${id}/lines`, { keys }),
+    onSuccess: (result) => {
+      show(`已加入池：新增 ${result.added} 条`);
+      setSelected(new Set());
+      setBulkCustomPool('');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'custom-pools'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const saveSubscription = useMutation({
     mutationFn: () => {
       const name = window.prompt('订阅名称', `线路池订阅 ${new Date().toISOString().slice(0, 10)}`);
@@ -384,6 +433,7 @@ export function Pool() {
     setSubscriptionId('');
     setSourceId('');
     setPool('');
+    setCustomPool('');
     setResolution('');
     setTransport('');
     setMinSpeed('');
@@ -507,6 +557,13 @@ export function Pool() {
             </select>
           </label>
           <label className="stack stack--tight grow">
+            <span className="caption">自定义池</span>
+            <select className="input" value={customPool} onChange={(event) => { setCustomPool(event.target.value); resetPage(); }}>
+              <option value="">全部</option>
+              {(customPools.data?.items ?? []).map((item) => <option key={item.id} value={item.id}>{item.name} ({item.count})</option>)}
+            </select>
+          </label>
+          <label className="stack stack--tight grow">
             <span className="caption">分辨率 ≥</span>
             <select className="input" value={resolution} onChange={(event) => { setResolution(event.target.value); resetPage(); }}>
               <option value="">不限</option>
@@ -534,6 +591,29 @@ export function Pool() {
           </label>
         </div>
         </details>
+      </Card>
+
+      <Card className="pool-filters">
+        <div className="pool-filters__head">
+          <div>
+            <div className="title-3">自定义池</div>
+            <div className="caption">自己命名，勾选下方线路后「加入池」；订阅里可任意组合这些池合并导出</div>
+          </div>
+        </div>
+        <div className="row row--wrap" style={{ gap: 8, marginTop: 10, alignItems: 'center' }}>
+          <input className="input" style={{ maxWidth: 220 }} value={poolName} onChange={(event) => setPoolName(event.target.value)} placeholder="新池名称，例如 央视精品" />
+          <Button loading={createPool.isPending} disabled={!poolName.trim()} onClick={() => createPool.mutate(poolName.trim())}>添加池</Button>
+        </div>
+        <div className="row row--wrap" style={{ gap: 8, marginTop: 10 }}>
+          {(customPools.data?.items ?? []).map((item) => (
+            <div key={item.id} className="row" style={{ gap: 6, padding: '6px 10px', border: '1px solid var(--sep)', borderRadius: 10 }}>
+              <button type="button" className="chip" onClick={() => { setCustomPool(item.id); resetPage(); }}>{item.name} · {item.count}</button>
+              <Button size="sm" variant="ghost" onClick={() => { const next = window.prompt('新名称', item.name); if (next?.trim()) renamePool.mutate({ id: item.id, name: next.trim() }); }}>改名</Button>
+              <Button size="sm" variant="ghost" onClick={() => { if (confirm(`删除池「${item.name}」？只删除池，不影响线路。`)) { if (customPool === item.id) setCustomPool(''); deletePool.mutate(item.id); } }}><Trash2 size={12} /></Button>
+            </div>
+          ))}
+          {customPools.data?.items.length ? null : <span className="caption">还没有自定义池</span>}
+        </div>
       </Card>
 
       <div className="caption" style={{ padding: '0 2px' }}>
@@ -566,6 +646,17 @@ export function Pool() {
               onClick={() => override.mutate({ keys: [...selected], pool: bulkPool })}
             >
               批量移动
+            </Button>
+            <select className="input" style={{ maxWidth: 160 }} value={bulkCustomPool} onChange={(event) => setBulkCustomPool(event.target.value)}>
+              <option value="">选自定义池…</option>
+              {(customPools.data?.items ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+            <Button
+              disabled={!bulkCustomPool}
+              loading={addToCustomPool.isPending}
+              onClick={() => addToCustomPool.mutate({ id: bulkCustomPool, keys: [...selected] })}
+            >
+              加入池
             </Button>
             <Button loading={reset.isPending} variant="glass" onClick={() => reset.mutate([...selected])}>
               恢复自动

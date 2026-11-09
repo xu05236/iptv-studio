@@ -67,7 +67,9 @@ export interface SubscriptionRow {
   exclude_groups: string;
   channel_ids: string;
   line_keys: string;
+  pool_ids: string;
   pool_mode: string;
+  filter_mode: string;
   proxy_mode: string;
   min_resolution: string;
   min_speed_kbps: number;
@@ -554,8 +556,8 @@ export async function getSubscriptionByToken(env: Env, token: string): Promise<S
 
 export async function createSubscription(env: Env, row: SubscriptionRow): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO subscriptions (id, name, token, enabled, groups, exclude_groups, channel_ids, line_keys, pool_mode, proxy_mode, min_resolution, min_speed_kbps, protocols, max_lines_per_channel, show_region_suffix, include_epg, format)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO subscriptions (id, name, token, enabled, groups, exclude_groups, channel_ids, line_keys, pool_ids, pool_mode, filter_mode, proxy_mode, min_resolution, min_speed_kbps, protocols, max_lines_per_channel, show_region_suffix, include_epg, format)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       row.id,
@@ -566,7 +568,9 @@ export async function createSubscription(env: Env, row: SubscriptionRow): Promis
       row.exclude_groups,
       row.channel_ids,
       row.line_keys,
+      row.pool_ids,
       row.pool_mode,
+      row.filter_mode,
       row.proxy_mode,
       row.min_resolution,
       row.min_speed_kbps,
@@ -673,7 +677,11 @@ const SUB_COLUMNS: Record<string, string> = {
   channelIds: 'channel_ids',
   line_keys: 'line_keys',
   lineKeys: 'line_keys',
+  pool_ids: 'pool_ids',
+  poolIds: 'pool_ids',
   pool_mode: 'pool_mode',
+  filter_mode: 'filter_mode',
+  filterMode: 'filter_mode',
   poolMode: 'pool_mode',
   proxy_mode: 'proxy_mode',
   proxyMode: 'proxy_mode',
@@ -710,6 +718,95 @@ export async function updateSubscription(env: Env, id: string, patch: Record<str
 
 export async function deleteSubscription(env: Env, id: string): Promise<void> {
   await env.DB.prepare('DELETE FROM subscriptions WHERE id = ?').bind(id).run();
+}
+
+// ---------------------------------------------------------------- custom pools
+
+export interface CustomPoolRow {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomPoolListItem extends CustomPoolRow {
+  count: number;
+}
+
+export async function listCustomPools(env: Env): Promise<CustomPoolListItem[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT p.id, p.name, p.created_at, p.updated_at, COUNT(l.line_key) AS count
+     FROM custom_pools p LEFT JOIN custom_pool_lines l ON l.pool_id = p.id
+     GROUP BY p.id ORDER BY p.created_at ASC`,
+  ).all<CustomPoolListItem>();
+  return results;
+}
+
+export async function createCustomPool(env: Env, id: string, name: string): Promise<CustomPoolRow | null> {
+  const existing = await env.DB.prepare('SELECT id FROM custom_pools WHERE name = ?').bind(name).first<{ id: string }>();
+  if (existing) return null;
+  await env.DB.prepare('INSERT INTO custom_pools (id, name) VALUES (?, ?)').bind(id, name).run();
+  return env.DB.prepare('SELECT * FROM custom_pools WHERE id = ?').bind(id).first<CustomPoolRow>();
+}
+
+export async function renameCustomPool(env: Env, id: string, name: string): Promise<boolean> {
+  const clash = await env.DB.prepare('SELECT id FROM custom_pools WHERE name = ? AND id <> ?').bind(name, id).first<{ id: string }>();
+  if (clash) return false;
+  const result = await env.DB.prepare("UPDATE custom_pools SET name = ?, updated_at = datetime('now') WHERE id = ?").bind(name, id).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+export async function deleteCustomPool(env: Env, id: string): Promise<boolean> {
+  const row = await env.DB.prepare('SELECT id FROM custom_pools WHERE id = ?').bind(id).first<{ id: string }>();
+  if (!row) return false;
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM custom_pool_lines WHERE pool_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM custom_pools WHERE id = ?').bind(id),
+  ]);
+  return true;
+}
+
+export async function addCustomPoolLines(env: Env, poolId: string, keys: string[]): Promise<number> {
+  const unique = [...new Set(keys)];
+  if (!unique.length) return 0;
+  for (let i = 0; i < unique.length; i += 100) {
+    const chunk = unique.slice(i, i + 100);
+    await env.DB.batch(chunk.map((key) => env.DB.prepare('INSERT OR IGNORE INTO custom_pool_lines (pool_id, line_key) VALUES (?, ?)').bind(poolId, key)));
+  }
+  return unique.length;
+}
+
+export async function removeCustomPoolLines(env: Env, poolId: string, keys: string[]): Promise<number> {
+  const unique = [...new Set(keys)];
+  if (!unique.length) return 0;
+  let removed = 0;
+  for (let i = 0; i < unique.length; i += 100) {
+    const chunk = unique.slice(i, i + 100);
+    const placeholders = chunk.map(() => '?').join(',');
+    const result = await env.DB.prepare(`DELETE FROM custom_pool_lines WHERE pool_id = ? AND line_key IN (${placeholders})`).bind(poolId, ...chunk).run();
+    removed += result.meta.changes ?? 0;
+  }
+  return removed;
+}
+
+export async function listCustomPoolLineKeys(env: Env, poolId: string): Promise<string[]> {
+  const { results } = await env.DB.prepare('SELECT line_key FROM custom_pool_lines WHERE pool_id = ?').bind(poolId).all<{ line_key: string }>();
+  return results.map((row) => row.line_key);
+}
+
+export async function listCustomPoolMembers(env: Env, poolIds: string[]): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  if (!poolIds.length) return out;
+  const placeholders = poolIds.map(() => '?').join(',');
+  const { results } = await env.DB.prepare(`SELECT pool_id, line_key FROM custom_pool_lines WHERE pool_id IN (${placeholders})`)
+    .bind(...poolIds)
+    .all<{ pool_id: string; line_key: string }>();
+  for (const row of results) {
+    const set = out.get(row.pool_id) ?? new Set<string>();
+    set.add(row.line_key);
+    out.set(row.pool_id, set);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- rules

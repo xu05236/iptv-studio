@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildFromCatalog, buildFromPool, playlistEtag, subscriptionFromRow, type SubscriptionConfig } from '../src/lib/playlist.js';
+import { buildFromCatalog, buildFromPool, buildFromPools, playlistEtag, subscriptionFromRow, type SubscriptionConfig } from '../src/lib/playlist.js';
 import type { ExportCatalog } from '../src/lib/catalog.js';
-import type { SubscriptionRow } from '../src/db.js';
+import type { LineOverrideRow, SubscriptionRow } from '../src/db.js';
 import type { LineEntry, PoolSnapshot } from '@iptv/core';
 
 function line(url: string, score: number): LineEntry {
@@ -118,5 +118,84 @@ describe('subscription rendering', () => {
     };
     expect(buildFromPool(snapshot, [], config).lines).toBe(1);
     expect(buildFromPool(snapshot, [], config, {}, new Set([poolLine.url])).lines).toBe(0);
+  });
+});
+
+describe('custom pool rendering', () => {
+  const premium = line('http://a/1.m3u8', 90);
+  const backup = line('http://b/1.m3u8', 70);
+  const candidate = { ...line('http://c/hunan.m3u8', 60), channelId: 'hunan-weishi' };
+  const snapshot: PoolSnapshot = {
+    generatedAt: '2026-10-30T00:00:00Z',
+    channels: {
+      cctv1: {
+        channel: { id: 'cctv1', name: 'CCTV-1 综合', group: '央视', tvgId: 'CCTV1' },
+        premium: [premium],
+        backup: [backup],
+        candidate: [],
+      },
+      'hunan-weishi': {
+        channel: { id: 'hunan-weishi', name: '湖南卫视', group: '卫视' },
+        premium: [],
+        backup: [],
+        candidate: [candidate],
+      },
+    },
+  };
+  const base: SubscriptionConfig = {
+    id: 'sub-pools',
+    name: 'pools',
+    token: 'token',
+    enabled: true,
+    groups: ['卫视'],
+    excludeGroups: [],
+    channelIds: [],
+    minResolution: 'any',
+    minSpeedKbps: 0,
+    protocols: [],
+    maxLinesPerChannel: 99,
+    showRegionSuffix: false,
+    includeEpg: false,
+    format: 'm3u',
+    poolMode: 'pools',
+    poolIds: ['premium', 'backup'],
+    filterMode: 'none',
+  };
+
+  it('exports every selected line when filters are off, even when the group filter would exclude it', () => {
+    const result = buildFromPools(snapshot, [], base, new Map());
+    expect(result.channels).toBe(1);
+    expect(result.lines).toBe(2);
+    expect(result.body).toContain('http://a/1.m3u8');
+    expect(result.body).toContain('http://b/1.m3u8');
+    expect(result.body).not.toContain('湖南卫视');
+  });
+
+  it('includes custom pool members regardless of their automatic bucket', () => {
+    const result = buildFromPools(
+      snapshot,
+      [],
+      { ...base, poolIds: ['pool-pick'], groups: [], filterMode: 'none' },
+      new Map([['pool-pick', new Set([candidate.key])]]),
+    );
+    expect(result.channels).toBe(1);
+    expect(result.lines).toBe(1);
+    expect(result.body).toContain('http://c/hunan.m3u8');
+  });
+
+  it('applies the saved filters when filterMode is not none', () => {
+    const result = buildFromPools(snapshot, [], { ...base, poolIds: ['premium', 'backup', 'candidate'], filterMode: 'inherit' }, new Map());
+    expect(result.channels).toBe(1);
+    expect(result.lines).toBe(1);
+    expect(result.body).toContain('http://c/hunan.m3u8');
+    expect(result.body).not.toContain('http://a/1.m3u8');
+  });
+
+  it('honours line overrides when matching built-in pools', () => {
+    const overrides: LineOverrideRow[] = [{ line_key: premium.key, pool: 'rejected', channel_id: 'cctv1', reason: null, updated_at: '2026-10-31T00:00:00Z' }];
+    const result = buildFromPools(snapshot, overrides, base, new Map());
+    expect(result.lines).toBe(1);
+    expect(result.body).not.toContain('http://a/1.m3u8');
+    expect(result.body).toContain('http://b/1.m3u8');
   });
 });

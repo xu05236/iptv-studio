@@ -13,7 +13,7 @@ import {
   type SubscriptionSpec,
 } from '@iptv/core';
 import type { Env } from '../env.js';
-import { listChannels, listLineOverrides, listLineTombstones, type LineOverrideRow, type SubscriptionRow } from '../db.js';
+import { listChannels, listCustomPoolMembers, listLineOverrides, listLineTombstones, type LineOverrideRow, type SubscriptionRow } from '../db.js';
 import { getJson } from './store.js';
 import { parseJsonField } from './http.js';
 import { loadCatalog, loadPoolSnapshot, type ExportCatalog } from './catalog.js';
@@ -24,7 +24,11 @@ import { signProxyUrl } from './relaySign.js';
 export interface SubscriptionConfig extends SubscriptionSpec {
   updatedAt?: string;
   lineKeys?: string[];
+  /** Built-in pool names and/or custom pool ids, when poolMode is "pools". */
+  poolIds?: string[];
   poolMode?: string;
+  /** Pools mode only: inherit = saved filters, none = full export, custom = saved filters too. */
+  filterMode?: string;
   proxyMode?: 'direct' | 'playlist' | 'full';
 }
 
@@ -38,7 +42,9 @@ export function subscriptionFromRow(row: SubscriptionRow): SubscriptionConfig {
     excludeGroups: parseJsonField<string[]>(row.exclude_groups, []),
     channelIds: parseJsonField<string[]>(row.channel_ids, []),
     lineKeys: parseJsonField<string[]>(row.line_keys ?? '[]', []),
+    poolIds: parseJsonField<string[]>(row.pool_ids ?? '[]', []),
     poolMode: row.pool_mode ?? 'premium',
+    filterMode: row.filter_mode ?? 'inherit',
     proxyMode: row.proxy_mode === 'playlist' || row.proxy_mode === 'full' ? row.proxy_mode : 'direct',
     minResolution: row.min_resolution as Quality | 'any',
     minSpeedKbps: row.min_speed_kbps,
@@ -181,17 +187,98 @@ export function buildFromPool(
   return { body, channels: exportChannels.length, lines: exportChannels.reduce((sum, channel) => sum + channel.lines.length, 0) };
 }
 
+/**
+ * Render a subscription that composes pools. The selection may mix built-in
+ * buckets (premium/backup/candidate, override-aware) with custom pool ids; a
+ * custom pool line is exported even when its automatic bucket says otherwise,
+ * because the user explicitly put it there. filterMode "none" exports every
+ * selected line, all other modes apply the subscription's saved filters.
+ */
+export function buildFromPools(
+  snapshot: PoolSnapshot,
+  overrides: LineOverrideRow[],
+  config: SubscriptionConfig,
+  customMembers: Map<string, Set<string>>,
+  options: { logoBaseUrl?: string | null; logoProxyBase?: string | null; epgUrl?: string | null } = {},
+  tombstoned: Set<string> = new Set(),
+): { body: string; channels: number; lines: number } {
+  const selected = new Set(config.poolIds ?? []);
+  const applyFilters = config.filterMode !== 'none';
+  const overrideMap = new Map(overrides.map((row) => [row.line_key, row.pool]));
+  const builtin = new Set(['premium', 'backup', 'candidate'].filter((name) => selected.has(name)));
+  const customKeys = new Set<string>();
+  for (const [poolId, members] of customMembers) {
+    if (!selected.has(poolId)) continue;
+    for (const key of members) customKeys.add(key);
+  }
+
+  const rows: Array<{ channel: ChannelConfig; lines: LineEntry[] }> = [];
+  for (const entry of Object.values(snapshot.channels)) {
+    const channel: ChannelConfig = {
+      id: entry.channel.id,
+      name: entry.channel.name,
+      group: entry.channel.group,
+      tvgId: entry.channel.tvgId ?? undefined,
+      logo: entry.channel.logo ?? undefined,
+      aliases: [],
+    };
+    if (applyFilters && !channelMatches(channel, config)) continue;
+
+    const collected: LineEntry[] = [];
+    const buckets: Array<['premium' | 'backup' | 'candidate', LineEntry[]]> = [
+      ['premium', entry.premium],
+      ['backup', entry.backup],
+      ['candidate', entry.candidate],
+    ];
+    for (const [bucket, list] of buckets) {
+      for (const line of list) {
+        if (tombstoned.has(canonicalPoolUrl(line.url))) continue;
+        const pool = overrideMap.get(line.key) ?? bucket;
+        if (builtin.has(pool) || customKeys.has(line.key)) collected.push(line);
+      }
+    }
+    if (!collected.length) continue;
+    const unique = [...new Map(collected.map((line) => [line.key, line])).values()].sort(compareLines);
+    const lines = applyFilters
+      ? selectLines(unique, {
+          maxLines: config.maxLinesPerChannel,
+          maxPerSource: config.maxLinesPerChannel <= 0 ? 0 : 3,
+          minQuality: config.minResolution,
+          minSpeedKbps: config.minSpeedKbps,
+          protocols: config.protocols.length ? config.protocols : undefined,
+          compensate: false,
+          keepSuspect: false,
+        })
+      : unique;
+    if (!lines.length) continue;
+    rows.push({ channel, lines });
+  }
+
+  const exportChannels = toExportChannels(rows, {
+    logoBaseUrl: options.logoBaseUrl ?? null,
+    logoProxyBase: options.logoProxyBase,
+    showRegionSuffix: config.showRegionSuffix,
+  });
+  const body = buildPlaylist(exportChannels, config.format, {
+    epgUrl: options.epgUrl ?? undefined,
+    showRegionSuffix: config.showRegionSuffix,
+    headerComment: `iptv-studio · ${config.name}`,
+  });
+  return { body, channels: exportChannels.length, lines: exportChannels.reduce((sum, channel) => sum + channel.lines.length, 0) };
+}
+
 /** Pool renders change whenever the snapshot, an override or a tombstone changes. */
 export function poolEtag(
   snapshot: PoolSnapshot,
   overrides: LineOverrideRow[],
   config: SubscriptionConfig,
   tombstones: Array<{ created_at: string }> = [],
+  customVersion = '',
 ): string {
   const overrideVersion = overrides.reduce((max, row) => (row.updated_at > max ? row.updated_at : max), '');
   const tombstoneVersion = tombstones.reduce((max, row) => (row.created_at > max ? row.created_at : max), '');
   const fingerprint = hashId(
-    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}:${config.proxyMode ?? 'direct'}`,
+    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}:${(config.poolIds ?? []).join(',')}:${customVersion}:${config.proxyMode ?? 'direct'}`,
     16,
   );
   return `W/"pool-${fingerprint}"`;
@@ -213,6 +300,23 @@ export async function renderSubscription(
     const body = await applyProxyMode(result.body, config.format, (url) => signProxyUrl(env, baseUrl, url, config.token, mode));
     return { ...result, body };
   };
+  if (config.poolMode === 'pools' && config.poolIds?.length) {
+    const snapshot = await loadPoolSnapshot(env);
+    if (snapshot) {
+      const customIds = config.poolIds.filter((id) => id.startsWith('pool-'));
+      const [overrides, tombstones, members] = await Promise.all([
+        listLineOverrides(env),
+        listLineTombstones(env),
+        listCustomPoolMembers(env, customIds),
+      ]);
+      const rendered = buildFromPools(snapshot, overrides, config, members, { epgUrl, logoProxyBase }, new Set(tombstones.map((row) => row.url)));
+      const customVersion = customIds
+        .map((id) => `${id}:${[...(members.get(id) ?? [])].sort().join(',')}`)
+        .join('|');
+      return finalize({ ...rendered, etag: poolEtag(snapshot, overrides, config, tombstones, customVersion) });
+    }
+  }
+
   if (config.lineKeys?.length) {
     const [state, channels] = await Promise.all([
       getJson<{ lines: LineEntry[] }>(env, 'state/lines.json'),

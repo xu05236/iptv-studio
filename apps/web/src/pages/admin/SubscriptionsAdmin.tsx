@@ -20,6 +20,8 @@ interface FormState {
   groups: string;
   excludeGroups: string;
   poolMode: string;
+  poolIds: string[];
+  filterMode: string;
   proxyMode: string;
   minResolution: string;
   minSpeedKbps: string;
@@ -35,6 +37,8 @@ const EMPTY_FORM: FormState = {
   groups: '',
   excludeGroups: '',
   poolMode: 'premium',
+  poolIds: [],
+  filterMode: 'inherit',
   proxyMode: 'direct',
   minResolution: 'any',
   minSpeedKbps: '0',
@@ -128,6 +132,12 @@ export function SubscriptionsAdmin() {
     queryFn: () => api.get<{ items: SubscriptionItem[] }>('/api/admin/subscriptions'),
   });
 
+  const customPools = useQuery({
+    queryKey: ['admin', 'custom-pools'],
+    queryFn: () => api.get<{ items: Array<{ id: string; name: string; count: number }> }>('/api/admin/pools'),
+    enabled: open,
+  });
+
   const channelList = useQuery({
     queryKey: ['admin', 'channels', 'picker'],
     queryFn: () => api.get<{ items: AdminChannel[] }>('/api/admin/channels'),
@@ -150,6 +160,8 @@ export function SubscriptionsAdmin() {
         excludeGroups: split(form.excludeGroups),
         channelIds,
         poolMode: form.poolMode,
+        poolIds: form.poolIds,
+        filterMode: form.filterMode,
         proxyMode: form.proxyMode,
         minResolution: form.minResolution,
         minSpeedKbps: Number(form.minSpeedKbps || 0),
@@ -159,6 +171,7 @@ export function SubscriptionsAdmin() {
         includeEpg: form.includeEpg,
         enabled: form.enabled,
       };
+      if (form.poolMode === 'pools' && !form.poolIds.length) throw new Error('选池导出至少要选择一个池');
       if (editing) return api.patch(`/api/admin/subscriptions/${editing.id}`, payload);
       return api.post('/api/admin/subscriptions', payload);
     },
@@ -236,6 +249,8 @@ export function SubscriptionsAdmin() {
             groups: item.groups.join(', '),
             excludeGroups: item.excludeGroups.join(', '),
             poolMode: item.pool_mode ?? 'premium',
+            poolIds: item.poolIds ?? (item.pool_ids ? JSON.parse(item.pool_ids) as string[] : []),
+            filterMode: item.filter_mode ?? 'inherit',
             proxyMode: item.proxy_mode ?? 'direct',
             minResolution: item.min_resolution,
             minSpeedKbps: String(item.min_speed_kbps),
@@ -314,7 +329,7 @@ export function SubscriptionsAdmin() {
                   <Badge tone="blue">{item.format.toUpperCase()}</Badge>
                 </div>
                 <div className="row row--wrap" style={{ gap: 5, marginTop: 6 }}>
-                  {item.pool_mode === 'custom' ? <Badge>自定义线路</Badge> : item.pool_mode === 'all' ? <Badge tone="blue">全部可用</Badge> : item.pool_mode === 'premium_backup' ? <Badge tone="orange">精品 + 备用</Badge> : <Badge tone="green">精品池</Badge>}
+                  {item.pool_mode === 'custom' ? <Badge>自定义线路</Badge> : item.pool_mode === 'pools' ? <Badge tone="blue">选池导出</Badge> : item.pool_mode === 'all' ? <Badge tone="blue">全部可用</Badge> : item.pool_mode === 'premium_backup' ? <Badge tone="orange">精品 + 备用</Badge> : <Badge tone="green">精品池</Badge>}
                   {item.min_resolution !== 'any' ? <Badge>≥ {item.min_resolution}</Badge> : null}
                   {item.min_speed_kbps ? <Badge>≥ {item.min_speed_kbps} kbps</Badge> : null}
                 </div>
@@ -404,9 +419,45 @@ export function SubscriptionsAdmin() {
               <option value="premium">精品池（仅质量确认）</option>
               <option value="premium_backup">精品 + 备用兜底</option>
               <option value="all">全部可用（含未确认分辨率）</option>
+              <option value="pools">自定义池组合（选池合并导出）</option>
               {form.poolMode === 'custom' ? <option value="custom">自定义线路（来自线路池）</option> : null}
             </select>
           </Field>
+          {form.poolMode === 'pools' ? (
+            <>
+              <Field label="选择池" hint="可任意组合内置池和自己创建的池；一个线路只导出一次">
+                <div className="row row--wrap" style={{ gap: 6 }}>
+                  {[
+                    { id: 'premium', name: '精品池' },
+                    { id: 'backup', name: '备用池' },
+                    { id: 'candidate', name: '候选池' },
+                    ...(customPools.data?.items ?? []).map((pool) => ({ id: pool.id, name: `${pool.name} (${pool.count})` })),
+                  ].map((pool) => {
+                    const active = form.poolIds.includes(pool.id);
+                    return (
+                      <button
+                        key={pool.id}
+                        type="button"
+                        className={active ? 'chip chip--active' : 'chip'}
+                        onClick={() => setForm({ ...form, poolIds: active ? form.poolIds.filter((id) => id !== pool.id) : [...form.poolIds, pool.id] })}
+                      >
+                        {pool.name}
+                      </button>
+                    );
+                  })}
+                  <Button size="sm" variant="glass" onClick={() => setForm({ ...form, poolIds: ['premium', 'backup', 'candidate', ...(customPools.data?.items ?? []).map((pool) => pool.id)] })}>全选</Button>
+                  <Button size="sm" variant="glass" onClick={() => setForm({ ...form, poolIds: [] })}>清空</Button>
+                </div>
+              </Field>
+              <Field label="过滤方式" hint="不过滤 = 池内每一线路原样导出；保留原过滤 = 使用下方频道/分组/画质条件">
+                <select className="select" value={form.filterMode} onChange={(event) => setForm({ ...form, filterMode: event.target.value })}>
+                  <option value="inherit">保留原过滤</option>
+                  <option value="none">不过滤（池内全量导出）</option>
+                  <option value="custom">自定义过滤（编辑下方条件）</option>
+                </select>
+              </Field>
+            </>
+          ) : null}
           <Field label="代理模式" hint="直连不经过服务器；仅清单只代理播放列表；全部中继会消耗 Worker 流量与请求额度">
             <select className="select" value={form.proxyMode} onChange={(event) => setForm({ ...form, proxyMode: event.target.value })}>
               <option value="direct">直连（默认）</option>

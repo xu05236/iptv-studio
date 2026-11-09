@@ -2,18 +2,25 @@ import { Hono } from 'hono';
 import { canonicalPoolUrl, channelLogo, compareLines, dedupePoolLines, qualityOf, qualityRank, type LineEntry, type PoolSnapshot, type Quality } from '@iptv/core';
 import type { AppEnv, Env } from '../env.js';
 import {
+  addCustomPoolLines,
   addLineTombstones,
   audit,
+  createCustomPool,
   createSubscription,
+  deleteCustomPool,
   deleteLineOverrides,
   listChannels,
+  listCustomPoolLineKeys,
+  listCustomPools,
   listLineFavorites,
   listLineOverrides,
   listLineTombstones,
   listSources,
   listSubscriptions,
   loadSettings,
+  removeCustomPoolLines,
   removeLineTombstones,
+  renameCustomPool,
   setLineFavorite,
   upsertLineOverride,
   type SubscriptionRow,
@@ -229,6 +236,65 @@ poolRoutes.get('/tree', async (c) => {
   });
 });
 
+poolRoutes.get('/pools', async (c) => {
+  return ok({ items: await listCustomPools(c.env) });
+});
+
+poolRoutes.post('/pools', async (c) => {
+  const body = (await readJson<{ name?: unknown }>(c)) ?? {};
+  const name = String(body.name ?? '').trim().slice(0, 40);
+  if (!name) return fail('请输入池名称');
+  const row = await createCustomPool(c.env, `pool-${randomId(8)}`, name);
+  if (!row) return fail('已存在同名池', 409);
+  await audit(c.env, c.get('actor'), 'pool.create', row.id, { name });
+  return ok({ pool: { ...row, count: 0 } }, 201);
+});
+
+poolRoutes.patch('/pools/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = (await readJson<{ name?: unknown }>(c)) ?? {};
+  const name = String(body.name ?? '').trim().slice(0, 40);
+  if (!name) return fail('请输入池名称');
+  const renamed = await renameCustomPool(c.env, id, name);
+  if (!renamed) return fail('池不存在或名称重复', 404);
+  await audit(c.env, c.get('actor'), 'pool.rename', id, { name });
+  return ok({ ok: true });
+});
+
+poolRoutes.delete('/pools/:id', async (c) => {
+  const id = c.req.param('id');
+  const removed = await deleteCustomPool(c.env, id);
+  if (!removed) return fail('池不存在', 404);
+  await audit(c.env, c.get('actor'), 'pool.delete', id);
+  return ok({ ok: true });
+});
+
+poolRoutes.post('/pools/:id/lines', async (c) => {
+  const id = c.req.param('id');
+  const pools = await listCustomPools(c.env);
+  if (!pools.some((pool) => pool.id === id)) return fail('池不存在', 404);
+  const body = (await readJson<{ keys?: unknown }>(c)) ?? {};
+  const keys = Array.isArray(body.keys)
+    ? body.keys.filter((key): key is string => typeof key === 'string' && Boolean(key.trim())).slice(0, 2000)
+    : [];
+  if (!keys.length) return fail('keys 不能为空');
+  const added = await addCustomPoolLines(c.env, id, keys);
+  await audit(c.env, c.get('actor'), 'pool.lines.add', id, { added });
+  return ok({ added });
+});
+
+poolRoutes.delete('/pools/:id/lines', async (c) => {
+  const id = c.req.param('id');
+  const body = (await readJson<{ keys?: unknown }>(c)) ?? {};
+  const keys = Array.isArray(body.keys)
+    ? body.keys.filter((key): key is string => typeof key === 'string' && Boolean(key.trim())).slice(0, 2000)
+    : [];
+  if (!keys.length) return fail('keys 不能为空');
+  const removed = await removeCustomPoolLines(c.env, id, keys);
+  await audit(c.env, c.get('actor'), 'pool.lines.remove', id, { removed });
+  return ok({ removed });
+});
+
 poolRoutes.get('/lines', async (c) => {
   const { lines } = await loadPool(c.env);
   const country = c.req.query('country') ?? '';
@@ -247,6 +313,9 @@ poolRoutes.get('/lines', async (c) => {
   const minRank = resolution ? qualityRank(resolution as Quality) : -1;
   const subscriptionId = (c.req.query('subscriptionId') ?? '').trim();
 
+  const customPoolId = (c.req.query('customPool') ?? '').trim();
+  const customPoolKeys = customPoolId ? new Set(await listCustomPoolLineKeys(c.env, customPoolId)) : null;
+
   // "View the lines this subscription would actually use" needs the same
   // channel/group/key scope as the playlist renderer, not just a text search.
   let subscriptionLineKeys: Set<string> | null = null;
@@ -264,6 +333,7 @@ poolRoutes.get('/lines', async (c) => {
   }
 
   const filtered = lines.filter((line) => {
+    if (customPoolKeys && !customPoolKeys.has(line.key)) return false;
     if (subscriptionLineKeys && !subscriptionLineKeys.has(line.key)) return false;
     if (!subscriptionLineKeys && subscriptionChannels.length && !subscriptionChannels.includes(line.channelId)) return false;
     if (!subscriptionLineKeys && subscriptionGroups.length && !subscriptionGroups.includes(line.group)) return false;
@@ -634,6 +704,8 @@ poolRoutes.post('/subscription', async (c) => {
     channel_ids: '[]',
     line_keys: JSON.stringify(selected.map((line) => line.key)),
     pool_mode: 'custom',
+    pool_ids: '[]',
+    filter_mode: 'inherit',
     proxy_mode: 'direct',
     min_resolution: 'any',
     min_speed_kbps: 0,

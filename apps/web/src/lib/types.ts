@@ -161,6 +161,9 @@ export interface SubscriptionItem {
   includeEpg: boolean;
   format: string;
   pool_mode?: string;
+  pool_ids?: string;
+  poolIds?: string[];
+  filter_mode?: string;
   proxy_mode?: string;
   matchedChannels?: number;
   usage7d?: { requests: number; bytes: number } | null;
