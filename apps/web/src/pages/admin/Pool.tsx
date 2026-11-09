@@ -319,6 +319,17 @@ export function Pool() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const reviveSelected = useMutation({
+    mutationFn: (keys: string[]) => api.post<{ revived: number; dispatched?: boolean }>('/api/admin/pool/revive', { keys }),
+    onSuccess: (result) => {
+      show(`已复活 ${result.revived} 条线路${result.dispatched ? '，已派发探测' : ''}`);
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'tasks'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const saveSubscription = useMutation({
     mutationFn: () => {
       const name = window.prompt('订阅名称', `线路池订阅 ${new Date().toISOString().slice(0, 10)}`);
@@ -558,6 +569,9 @@ export function Pool() {
             </Button>
             <Button loading={reset.isPending} variant="glass" onClick={() => reset.mutate([...selected])}>
               恢复自动
+            </Button>
+            <Button loading={reviveSelected.isPending} variant="glass" onClick={() => reviveSelected.mutate([...selected])}>
+              复活
             </Button>
             <Button
               variant="danger"
