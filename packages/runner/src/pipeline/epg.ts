@@ -245,3 +245,36 @@ export function buildGuide(data: EpgData, channelIds: Set<string>, hours = 24): 
   }
   return { generatedAt: new Date().toISOString(), hours, channels };
 }
+
+export interface StoredGuide {
+  generatedAt?: string;
+  hours?: number;
+  channels?: Record<string, GuideProgramme[]>;
+}
+
+/** True when the stored guide exists, has channels and is younger than `maxAgeHours`. */
+export function guideIsFresh(guide: StoredGuide | null, maxAgeHours = 12, now = Date.now()): boolean {
+  if (!guide?.channels || !Object.keys(guide.channels).length) return false;
+  const at = guide.generatedAt ? Date.parse(guide.generatedAt) : Number.NaN;
+  return Number.isFinite(at) && now - at >= 0 && now - at <= maxAgeHours * 3_600_000;
+}
+
+/**
+ * Keep last-known programmes for channels the new guide does not cover. Public
+ * guides regularly drop channels or fail as a whole; without this fallback one
+ * bad fetch lowers coverage for every player until the next good run.
+ */
+export function mergeGuideFallback(previous: StoredGuide | null, next: StoredGuide, hours = 24, now = Date.now()): StoredGuide {
+  const channels: Record<string, GuideProgramme[]> = { ...(next.channels ?? {}) };
+  const prevAt = previous?.generatedAt ? Date.parse(previous.generatedAt) : Number.NaN;
+  const usable = Number.isFinite(prevAt) && now - prevAt >= 0 && now - prevAt <= 72 * 3_600_000;
+  const horizon = now + hours * 3_600_000;
+  if (usable) {
+    for (const [id, list] of Object.entries(previous?.channels ?? {})) {
+      if (channels[id]?.length) continue;
+      const kept = (list ?? []).filter((item) => (item.stop ?? item.start) >= now - 3_600_000 && item.start <= horizon);
+      if (kept.length) channels[id] = kept;
+    }
+  }
+  return { generatedAt: next.generatedAt, hours: next.hours ?? hours, channels };
+}

@@ -326,9 +326,17 @@ export async function publish(
   step('state/index.json');
   await store.put('state/lines.json', linesBody, json);
   step('state/lines.json');
-  await store.put('state/guide.json', guideBody, json);
+  // Never replace a populated guide with an empty one: one bad EPG fetch used
+  // to wipe coverage for every player until the next good run.
+  const guideChannelCount = Object.keys(output.guide.channels ?? {}).length;
+  if (guideChannelCount > 0) {
+    await store.put('state/guide.json', guideBody, json);
+    step('state/guide.json');
+  } else {
+    logger.warn('新指南为空，保留上一版 state/guide.json');
+  }
   await store.put('state/now.json', nowBody, json);
-  step('guide/now');
+  step('state/now.json');
   // Subscriptions render from this compact snapshot (tested-alive lines only):
   // it keeps the Worker's hot path small and carries channel metadata for M3U.
   if (poolBody) {

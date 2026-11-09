@@ -36,7 +36,7 @@ import { ApiClient, ArtifactStore, loadRemoteConfig, type ChannelRecord, type Re
 import { collectSource, type CollectedSource } from './pipeline/collect.js';
 import { planProbes, runProbes } from './pipeline/probe.js';
 import { buildArtifacts, publish, type ExportCatalog } from './pipeline/publish.js';
-import { buildGuide, collectEpg } from './pipeline/epg.js';
+import { buildGuide, collectEpg, guideIsFresh, mergeGuideFallback, type StoredGuide } from './pipeline/epg.js';
 import { loadLogoPacks } from './pipeline/logoFiles.js';
 import { prefilterLiveness } from './pipeline/liveness.js';
 import { publishSubscriptions } from './pipeline/subscriptions.js';
@@ -44,10 +44,6 @@ import { captureScreenshots } from './pipeline/screenshots.js';
 import { enrichResolutions } from './pipeline/ffprobe.js';
 
 const EMPTY_EPG: EpgData = { channels: [], programmes: [] };
-
-interface StoredGuide {
-  channels?: Record<string, Array<{ title: string; start: number; stop?: number }>>;
-}
 
 function epgFromGuide(guide: StoredGuide | null): EpgData {
   const channels: EpgData['channels'] = [];
@@ -1025,9 +1021,11 @@ async function runBatchProbe(): Promise<void> {
     const lines = previousState?.lines ?? [];
     if (!lines.length) throw new Error('没有线路状态，请先运行 fetch/probe');
     report.sources = remote.sources.length;
-    // EPG is refreshed by the daily `epg` task; publishing only rebuilds the
-    // line catalog from the stored guide.
-    const { output, logKey } = await publishPhase(api, store, config, remote, lines, logger, runId, 'guide');
+    // The daily `epg` task is the primary refresher, but the scheduler can skip
+    // a slot; a stale or empty guide would blank every player's programme list.
+    const storedGuide = await store.getJson<StoredGuide>('state/guide.json');
+    const mode = guideIsFresh(storedGuide) ? 'guide' : 'fetch';
+    const { output, logKey } = await publishPhase(api, store, config, remote, lines, logger, runId, mode);
     report = {
       ...report,
       status: 'success',
@@ -1733,8 +1731,15 @@ async function main(): Promise<void> {
       if (epg.sourcesReport.length) {
         await store.put('state/epg-sources.json', JSON.stringify({ generatedAt: nowIso(), items: epg.sourcesReport }), 'application/json; charset=utf-8');
       }
+      const hasProgrammes = epg.programmes > 0 && Boolean(epg.xml);
       let bytes = 0;
-      if (epg.xml) {
+      let nextIds = new Set(previousIds);
+      if (hasProgrammes) {
+        const guide = mergeGuideFallback(
+          previousGuide,
+          buildGuide(epg.data, new Set(remote.channels.map((channel) => channel.id)), 24),
+        );
+        nextIds = new Set(Object.keys(guide.channels ?? {}));
         bytes = new TextEncoder().encode(epg.xml).byteLength;
         if (bytes > 24 * 1024 * 1024) {
           logger.warn('EPG 超过 KV 单值限制，未发布', { mb: Math.round(bytes / 1024 / 1024) });
@@ -1746,18 +1751,20 @@ async function main(): Promise<void> {
         if (catalog) {
           await publishSubscriptions(api, store, catalog, remote.settings, config.publicBaseUrl, epg.data, logger);
         }
-        await store.put(
-          'state/guide.json',
-          JSON.stringify(buildGuide(epg.data, new Set(remote.channels.map((channel) => channel.id)), 24)),
-          'application/json; charset=utf-8',
-        );
+        await store.put('state/guide.json', JSON.stringify(guide), 'application/json; charset=utf-8');
       } else {
-        logger.warn('没有生成任何节目单内容');
+        logger.warn('本轮没有抓到节目单，保留上一版指南');
       }
-      const nextIds = new Set(epg.data.channels.map((channel) => channel.id));
       const added = [...nextIds].filter((id) => !previousIds.has(id)).length;
       const removed = [...previousIds].filter((id) => !nextIds.has(id)).length;
-      await reportTaskProgress(api, 1, 1, `EPG 刷新完成 · ${nextIds.size} 频道 · ${epg.programmes} 节目 · 新增 ${added} · 删除 ${removed}`);
+      await reportTaskProgress(
+        api,
+        1,
+        1,
+        hasProgrammes
+          ? `EPG 刷新完成 · ${nextIds.size} 频道 · ${epg.programmes} 节目 · 新增 ${added} · 删除 ${removed}`
+          : 'EPG 抓取为空，已保留上一版指南',
+      );
       await finishRun(api, {
         id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
         sources: remote.sources.length, channels: nextIds.size, lines: 0, alive: 0, dead: 0,

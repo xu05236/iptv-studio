@@ -190,51 +190,61 @@ export async function runScheduler(env: Env): Promise<void> {
 
   let running = false;
   if (writes < 920) {
-    const runs = (await workflowRunStatus(env)) as Array<{ status?: string }> | null;
-    running = Array.isArray(runs) && runs.some((run) => run.status === 'queued' || run.status === 'in_progress');
+    try {
+      const runs = (await workflowRunStatus(env)) as Array<{ status?: string }> | null;
+      running = Array.isArray(runs) && runs.some((run) => run.status === 'queued' || run.status === 'in_progress');
+    } catch {
+      // A GitHub API hiccup must not abort the whole scheduler before the due
+      // slots are recorded — that silently skipped the nightly EPG refresh.
+      running = false;
+    }
   }
 
   let enqueued = false;
   for (const { config, scheduledAt } of due) {
-    if (writes >= 920) {
-      await record(config, scheduledAt, 'skipped: KV quota');
-      continue;
-    }
-    if (config.command === 'snapshot') {
-      const item = await createSnapshot(env, 'scheduler');
-      if (item) {
-        await recordFinishedTask(env, {
-          type: 'snapshot',
-          source: 'schedule',
-          message: `快照完成 · ${item.channels} 频道 · ${item.lines} 行 · ${item.alive} 可用`,
-          payload: { origin: 'schedule' },
-        });
+    try {
+      if (writes >= 920) {
+        await record(config, scheduledAt, 'skipped: KV quota');
+        continue;
       }
-      await record(config, scheduledAt, item ? 'snapshot created' : 'skipped: no artifacts');
-      continue;
+      if (config.command === 'snapshot') {
+        const item = await createSnapshot(env, 'scheduler');
+        if (item) {
+          await recordFinishedTask(env, {
+            type: 'snapshot',
+            source: 'schedule',
+            message: `快照完成 · ${item.channels} 频道 · ${item.lines} 行 · ${item.alive} 可用`,
+            payload: { origin: 'schedule' },
+          });
+        }
+        await record(config, scheduledAt, item ? 'snapshot created' : 'skipped: no artifacts');
+        continue;
+      }
+      if (running) {
+        await record(config, scheduledAt, 'skipped: workflow running');
+        continue;
+      }
+      if (allowance.blocked) {
+        await record(config, scheduledAt, `skipped: Actions budget (${allowance.used}/${allowance.budget} min, ${allowance.autoRunsToday}/${allowance.allowedAutoRuns} today)`);
+        continue;
+      }
+      const budget = Math.max(1, Number(settings.probeBudget) || 1200);
+      if (config.command === 'publish' && await publishIsCurrent(env)) {
+        await record(config, scheduledAt, 'skipped: already up to date');
+        continue;
+      }
+      const task = await createTask(env, {
+        type: config.command,
+        source: 'schedule',
+        priority: 50,
+        payload: { budget: String(budget) },
+      });
+      await record(config, scheduledAt, 'queued');
+      await audit(env, 'scheduler', `schedule.${config.command}`, task.id);
+      enqueued = true;
+    } catch (error) {
+      await record(config, scheduledAt, `error: ${error instanceof Error ? error.message : String(error)}`);
     }
-    if (running) {
-      await record(config, scheduledAt, 'skipped: workflow running');
-      continue;
-    }
-    if (allowance.blocked) {
-      await record(config, scheduledAt, `skipped: Actions budget (${allowance.used}/${allowance.budget} min, ${allowance.autoRunsToday}/${allowance.allowedAutoRuns} today)`);
-      continue;
-    }
-    const budget = Math.max(1, Number(settings.probeBudget) || 1200);
-    if (config.command === 'publish' && await publishIsCurrent(env)) {
-      await record(config, scheduledAt, 'skipped: already up to date');
-      continue;
-    }
-    const task = await createTask(env, {
-      type: config.command,
-      source: 'schedule',
-      priority: 50,
-      payload: { budget: String(budget) },
-    });
-    await record(config, scheduledAt, 'queued');
-    await audit(env, 'scheduler', `schedule.${config.command}`, task.id);
-    enqueued = true;
   }
 
   const at = Date.now();
