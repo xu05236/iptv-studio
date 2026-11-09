@@ -1,6 +1,7 @@
 const LABELS: Record<string, string> = {
   timeout: '请求超时',
-  network: '网络/TLS 失败',
+  network: '网络失败',
+  tls: 'TLS 证书错误',
   http_4xx: 'HTTP 4xx（请求被拒绝）',
   http_5xx: 'HTTP 5xx（服务端错误）',
   challenge: 'Cloudflare 质询',

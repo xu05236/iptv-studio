@@ -397,7 +397,10 @@ const UNPROBEABLE_URL = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
 
 function pruneOrphanLines(remote: RemoteConfig, lines: LineEntry[]): { lines: LineEntry[]; removed: number } {
   const channelIds = new Set(remote.channels.map((channel) => channel.id));
-  const kept = lines.filter((line) => channelIds.has(line.channelId));
+  // Keep lines for brand-new channels (`x-…` ids created from source names):
+  // dropping them here means a source that only carries new channels can never
+  // publish one. Once the channel is published it is in `remote.channels`.
+  const kept = lines.filter((line) => channelIds.has(line.channelId) || line.channelId.startsWith('x-'));
   return { lines: kept, removed: lines.length - kept.length };
 }
 

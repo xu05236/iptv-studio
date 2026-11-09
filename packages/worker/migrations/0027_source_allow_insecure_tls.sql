@@ -1,0 +1,1 @@
+ALTER TABLE sources ADD COLUMN allow_insecure_tls INTEGER NOT NULL DEFAULT 0;

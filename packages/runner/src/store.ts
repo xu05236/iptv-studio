@@ -149,6 +149,7 @@ export interface SourceRecord {
   entry_count?: number;
   refresh_hours?: number;
   request_headers?: string | Record<string, string> | null;
+  allow_insecure_tls?: number | string | null;
   mirror_urls?: string | null;
   fetch_mode?: string | null;
   /** F5: per-source fetch parameters. */

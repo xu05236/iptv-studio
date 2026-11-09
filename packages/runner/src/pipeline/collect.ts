@@ -2,6 +2,7 @@ import { effectiveRefreshHours, fetchText, filterSourceEntries, parseWithAdapter
 import type { ArtifactStore, SourceRecord } from '../store.js';
 import type { RunLogger } from '../logger.js';
 import { builtinPlaylist } from '../data/cctvOfficial.js';
+import { insecureFetch } from '../lib/insecureFetch.js';
 
 export interface CollectedSource {
   source: SourceRecord;
@@ -44,6 +45,7 @@ async function fetchPlaylist(
   conditional = true,
   headers?: Record<string, string>,
   timeoutMs = 45_000,
+  insecure = false,
 ): Promise<FetchResult> {
   const result = await fetchText(url, {
     etag: conditional ? etag : null,
@@ -53,6 +55,7 @@ async function fetchPlaylist(
     maxBytes: 24 * 1024 * 1024,
     retries: 2,
     retryDelayMs: 800,
+    fetchImpl: insecure ? insecureFetch : undefined,
   });
   return {
     ok: result.ok,
@@ -193,6 +196,7 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
     const delayMs = clamp(Number(source.fetch_delay_ms) || 0, 0, 5_000);
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
     const candidates = [source.url, ...parseMirrorUrls(source.mirror_urls)];
+    const insecure = Boolean(Number(source.allow_insecure_tls) || 0);
     const errors: string[] = [];
     let usedIndex = 0;
     for (let start = 0; start < candidates.length; start += concurrency) {
@@ -208,6 +212,7 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
             conditional,
             requestHeaders,
             timeoutMs,
+            insecure,
           );
         }),
         start,

@@ -37,6 +37,7 @@ export interface SourceRow {
   filters: string | null;
   request_headers: string | null;
   fetch_mode: string | null;
+  allow_insecure_tls: number;
   parse_report: string | null;
   content_hash: string | null;
   created_at: string;
@@ -162,6 +163,7 @@ export interface NewSource {
   requestHeaders?: unknown;
   mirrorUrls?: string[] | null;
   fetchMode?: string | null;
+  allowInsecureTls?: boolean | number | null;
   fetchTimeoutMs?: number | null;
   fetchConcurrency?: number | null;
   fetchDelayMs?: number | null;
@@ -171,8 +173,8 @@ export interface NewSource {
 
 export async function insertSource(env: Env, input: NewSource): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO sources (id, name, kind, url, mirror_urls, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, request_headers, fetch_mode, fetch_timeout_ms, fetch_concurrency, fetch_delay_ms, content_hash, refresh_hours, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+    `INSERT INTO sources (id, name, kind, url, mirror_urls, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, request_headers, fetch_mode, fetch_timeout_ms, fetch_concurrency, fetch_delay_ms, allow_insecure_tls, content_hash, refresh_hours, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
   )
     .bind(
       input.id,
@@ -194,6 +196,7 @@ export async function insertSource(env: Env, input: NewSource): Promise<void> {
       input.fetchTimeoutMs ?? null,
       input.fetchConcurrency ?? null,
       input.fetchDelayMs ?? null,
+      input.allowInsecureTls ? 1 : 0,
       input.contentHash ?? null,
       input.refreshHours ?? -1,
     )
@@ -229,6 +232,7 @@ const SOURCE_COLUMNS: Record<string, string> = {
   fetch_timeout_ms: 'fetch_timeout_ms',
   fetch_concurrency: 'fetch_concurrency',
   fetch_delay_ms: 'fetch_delay_ms',
+  allow_insecure_tls: 'allow_insecure_tls',
   content_hash: 'content_hash',
   refresh_hours: 'refresh_hours',
 };

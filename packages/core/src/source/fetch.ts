@@ -1,15 +1,33 @@
 import { readBytesCapped } from '../probe/measure.js';
 import { decodeSourceText } from './encoding.js';
 
-export type FetchErrorKind = 'timeout' | 'network' | 'http_4xx' | 'http_5xx' | 'challenge';
+export type FetchErrorKind = 'timeout' | 'network' | 'tls' | 'http_4xx' | 'http_5xx' | 'challenge';
 
 export const FETCH_ERROR_LABELS: Record<FetchErrorKind, string> = {
   timeout: '请求超时',
-  network: '网络/TLS 失败',
+  network: '网络失败',
+  tls: 'TLS 证书错误',
   http_4xx: 'HTTP 4xx（请求被拒绝）',
   http_5xx: 'HTTP 5xx（服务端错误）',
   challenge: 'Cloudflare 质询',
 };
+
+/** Inspect the undici error cause chain for common TLS certificate failures. */
+export function tlsIssue(error: unknown): string | null {
+  const codes: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 6; depth++) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === 'string') codes.push(code);
+    current = (current as { cause?: unknown }).cause;
+  }
+  const joined = codes.join(' ');
+  if (/CERT_HAS_EXPIRED/.test(joined)) return '证书已过期';
+  if (/ERR_TLS_CERT_ALTNAME_INVALID/.test(joined)) return '证书域名不匹配';
+  if (/SELF_SIGNED_CERT|DEPTH_ZERO_SELF_SIGNED|UNABLE_TO_VERIFY_LEAF_SIGNATURE|CERT_UNTRUSTED/.test(joined)) return '证书不受信任';
+  if (/CERT_|TLS|SSL/.test(joined)) return 'TLS 握手失败';
+  return null;
+}
 
 export function fetchErrorLabel(kind?: FetchErrorKind | string | null): string {
   if (!kind) return '';
@@ -131,8 +149,12 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
   const retryDelayMs = Math.max(0, Number(options.retryDelayMs) || 1_000);
   const fetchImpl = options.fetchImpl ?? fetch;
   let last: FetchTextResult = { ok: false, status: 0, attempts: 0 };
+  let target = url;
+  let httpFallbackTried = false;
+  let attempt = 0;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  while (attempt < maxAttempts) {
+    attempt++;
     const controller = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -140,7 +162,7 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
       controller.abort();
     }, options.timeoutMs ?? 20_000);
     try {
-      const response = await fetchImpl(url, { headers: mergeHeaders(options), redirect: 'follow', signal: controller.signal });
+      const response = await fetchImpl(target, { headers: mergeHeaders(options), redirect: 'follow', signal: controller.signal });
       if (response.status === 304) {
         return { ok: true, status: 304, notModified: true, etag: options.etag ?? null, lastModified: options.lastModified ?? null, attempts: attempt };
       }
@@ -171,8 +193,21 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
         };
       }
     } catch (error) {
-      const message = timedOut ? '请求超时' : error instanceof Error ? error.message : String(error);
-      last = { ok: false, status: 0, error: message, errorKind: timedOut ? 'timeout' : 'network', attempts: attempt };
+      const detail = timedOut ? null : tlsIssue(error);
+      if (detail) {
+        last = { ok: false, status: 0, error: `TLS ${detail}`, errorKind: 'tls', attempts: attempt };
+        // Some hosts serve the same playlist over plain HTTP with a broken
+        // certificate; try that once before giving up.
+        if (!httpFallbackTried && target.startsWith('https://')) {
+          target = `http://${target.slice('https://'.length)}`;
+          httpFallbackTried = true;
+          attempt--;
+          continue;
+        }
+      } else {
+        const message = timedOut ? '请求超时' : error instanceof Error ? error.message : String(error);
+        last = { ok: false, status: 0, error: message, errorKind: timedOut ? 'timeout' : 'network', attempts: attempt };
+      }
     } finally {
       clearTimeout(timer);
     }

@@ -70,6 +70,7 @@ export interface SourceItem {
   parseDrop?: boolean;
   feedbackOpen?: number;
   fetchMode?: string;
+  allowInsecureTls?: boolean;
   fetchTimeoutMs?: number;
   fetchConcurrency?: number;
   fetchDelayMs?: number;

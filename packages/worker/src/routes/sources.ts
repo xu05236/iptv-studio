@@ -68,6 +68,7 @@ interface CreateSourceInput {
   requestHeaders?: unknown;
   mirrorUrls?: unknown;
   fetchMode?: string;
+  allowInsecureTls?: boolean;
   fetchTimeoutMs?: number | string;
   fetchConcurrency?: number | string;
   fetchDelayMs?: number | string;
@@ -126,6 +127,7 @@ sourceRoutes.get('/', async (c) => {
       requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}),
       mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []),
       fetchMode: source.fetch_mode ?? 'direct',
+      allowInsecureTls: source.allow_insecure_tls === 1,
       fetchTimeoutMs: source.fetch_timeout_ms ?? 45_000,
       fetchConcurrency: source.fetch_concurrency ?? 1,
       fetchDelayMs: source.fetch_delay_ms ?? 0,
@@ -240,7 +242,7 @@ async function summarizePreview(text: string, existing: Awaited<ReturnType<typeo
 sourceRoutes.get('/:id', async (c) => {
   const source = await getSource(c.env, c.req.param('id'));
   if (!source) return fail('直播源不存在', 404);
-  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}), mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []), fetchMode: source.fetch_mode ?? 'direct', fetchTimeoutMs: source.fetch_timeout_ms ?? 45_000, fetchConcurrency: source.fetch_concurrency ?? 1, fetchDelayMs: source.fetch_delay_ms ?? 0, lastErrorKind: source.last_error_kind ?? null, ...parseReportOf(source), enabled: source.enabled === 1 } });
+  return ok({ source: { ...source, tags: parseJsonField<string[]>(source.tags, []), filters: parseJsonField<SourceFilters>(source.filters, {}), requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}), mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []), fetchMode: source.fetch_mode ?? 'direct', allowInsecureTls: source.allow_insecure_tls === 1, fetchTimeoutMs: source.fetch_timeout_ms ?? 45_000, fetchConcurrency: source.fetch_concurrency ?? 1, fetchDelayMs: source.fetch_delay_ms ?? 0, lastErrorKind: source.last_error_kind ?? null, ...parseReportOf(source), enabled: source.enabled === 1 } });
 });
 
 /**
@@ -324,6 +326,7 @@ sourceRoutes.get('/:id/detail', async (c) => {
       requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}),
       mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []),
       fetchMode: source.fetch_mode ?? 'direct',
+      allowInsecureTls: source.allow_insecure_tls === 1,
       fetchTimeoutMs: source.fetch_timeout_ms ?? 45_000,
       fetchConcurrency: source.fetch_concurrency ?? 1,
       fetchDelayMs: source.fetch_delay_ms ?? 0,
@@ -393,6 +396,7 @@ sourceRoutes.post('/', async (c) => {
   const fetchTimeoutMs = clampNumber(input.fetchTimeoutMs, 2_000, 120_000, 45_000);
   const fetchConcurrency = clampNumber(input.fetchConcurrency, 1, 4, 1);
   const fetchDelayMs = clampNumber(input.fetchDelayMs, 0, 5_000, 0);
+  const allowInsecureTls = input.allowInsecureTls === true ? 1 : 0;
   const tags = normalizeTags(input.tags);
 
   const existingSources = await listSources(c.env);
@@ -425,6 +429,7 @@ sourceRoutes.post('/', async (c) => {
       fetchTimeoutMs,
       fetchConcurrency,
       fetchDelayMs,
+      allowInsecureTls,
       refreshHours: refreshHoursOf(input.refresh_hours),
     });
     await audit(c.env, c.get('actor'), 'source.create.skip_fetch', id, { url: input.url });
@@ -503,6 +508,7 @@ sourceRoutes.post('/', async (c) => {
     fetchTimeoutMs,
     fetchConcurrency,
     fetchDelayMs,
+    allowInsecureTls,
     contentHash,
     refreshHours: refreshHoursOf(input.refresh_hours),
   });
@@ -584,6 +590,10 @@ sourceRoutes.patch('/:id', async (c) => {
   if (patch['fetchMode'] !== undefined) {
     patch['fetch_mode'] = patch['fetchMode'] === 'worker' ? 'worker' : 'direct';
     delete patch['fetchMode'];
+  }
+  if (patch['allowInsecureTls'] !== undefined) {
+    patch['allow_insecure_tls'] = patch['allowInsecureTls'] ? 1 : 0;
+    delete patch['allowInsecureTls'];
   }
   if (patch['mirrorUrls'] !== undefined) {
     const mirrorCheck = normalizeMirrorUrls(patch['mirrorUrls']);

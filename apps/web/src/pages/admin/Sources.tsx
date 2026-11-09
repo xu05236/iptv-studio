@@ -142,6 +142,7 @@ export function Sources() {
   const [requestHeaders, setRequestHeaders] = useState('');
   const [mirrorUrls, setMirrorUrls] = useState('');
   const [fetchMode, setFetchMode] = useState('direct');
+  const [allowInsecureTls, setAllowInsecureTls] = useState(false);
   const [fetchTimeoutMs, setFetchTimeoutMs] = useState('45');
   const [fetchConcurrency, setFetchConcurrency] = useState('1');
   const [fetchDelayMs, setFetchDelayMs] = useState('0');
@@ -214,6 +215,7 @@ export function Sources() {
         filters: buildFilters(filterForm) ?? {},
         refresh_hours: refreshHours.trim() === '' ? null : Number(refreshHours),
         requestHeaders: headers ?? {},
+        allowInsecureTls,
         mirrorUrls: mirrorList,
         fetchMode,
         fetchTimeoutMs: Number(fetchTimeoutMs) * 1000 || 45_000,
@@ -558,6 +560,7 @@ export function Sources() {
                 <div><strong>{formatNumber(source.alive_count ?? 0)}</strong><span>可用</span></div>
                 <div><strong>{pendingDue}<em>/{pendingTotal}</em></strong><span>待测</span></div>
                 <div><strong>{quarantineDue}<em>/{quarantineTotal}</em></strong><span>待复测</span></div>
+                <div><strong>{formatNumber(source.progress?.rejectedTotal ?? 0)}</strong><span>已淘汰</span></div>
               </div>
 
               <div className="source-card__meta">
@@ -597,7 +600,7 @@ export function Sources() {
                 <Button size="sm" title="检查解析" loading={probe.isPending} onClick={() => probe.mutate(source.id)}>检查</Button>
                 <Button size="sm" title="抽样测速" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}>测速</Button>
                 <Button size="sm" title="复活本源的已淘汰线路" loading={revive.isPending} onClick={() => revive.mutate(source.id)}>复活</Button>
-                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(source.refresh_hours == null ? '' : String(source.refresh_hours)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); setFetchTimeoutMs(String(Math.round((source.fetchTimeoutMs ?? 45_000) / 1000))); setFetchConcurrency(String(source.fetchConcurrency ?? 1)); setFetchDelayMs(String(source.fetchDelayMs ?? 0)); }}>过滤</Button>
+                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(source.refresh_hours == null ? '' : String(source.refresh_hours)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); setAllowInsecureTls(Boolean(source.allowInsecureTls)); setFetchTimeoutMs(String(Math.round((source.fetchTimeoutMs ?? 45_000) / 1000))); setFetchConcurrency(String(source.fetchConcurrency ?? 1)); setFetchDelayMs(String(source.fetchDelayMs ?? 0)); }}>过滤</Button>
                 <Button size="sm" title="删除本源" loading={remove.isPending} onClick={() => { if (confirm(`删除「${source.name}」？该源的线路会一起移除。`)) remove.mutate(source.id); }}>删除</Button>
               </div>
             </Card>
@@ -738,6 +741,13 @@ export function Sources() {
               <option value="worker">Worker 代拉（F3）</option>
             </select>
           </Field>
+          <div className="list">
+            <div className="list__row">
+              <span className="grow">允许证书错误（仅该源）</span>
+              <Switch checked={allowInsecureTls} onChange={setAllowInsecureTls} />
+            </div>
+          </div>
+          <div className="caption">站点证书过期或域名不匹配时仍尝试抓取；只影响这个源，默认关闭。</div>
           <Field label="备用地址" hint="主地址失败（404/超时/5xx）时按顺序尝试，每行一个，最多 5 个。">
             <textarea className="textarea mono" rows={3} value={mirrorUrls} onChange={(event) => setMirrorUrls(event.target.value)} placeholder={'https://mirror.example/list.m3u'} />
           </Field>
