@@ -29,12 +29,14 @@ export class ApiClient {
     throw lastError;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(method: string, path: string, body?: unknown, timeoutMs = 30_000): Promise<T> {
     return this.retry(async () => {
       const response = await fetch(`${this.baseUrl}${path}`, {
         method,
         headers: this.headers({ 'content-type': 'application/json' }),
         body: body === undefined ? undefined : JSON.stringify(body),
+        // A stalled admin API call must fail instead of hanging the whole run.
+        signal: AbortSignal.timeout(timeoutMs),
       });
       const text = await response.text();
       if (!response.ok) {
@@ -65,6 +67,9 @@ export class ApiClient {
           method: 'PUT',
           headers: this.headers({ 'content-type': 'application/octet-stream' }),
           body: body as unknown as BodyInit,
+          // Uploads can be large (up to ~24MB); still bounded so a stalled
+          // connection cannot wedge the run forever.
+          signal: AbortSignal.timeout(180_000),
         });
         if (!response.ok) {
           throw new Error(`PUT ${key} -> ${response.status}: ${(await response.text()).slice(0, 300)}`);
@@ -78,7 +83,7 @@ export class ApiClient {
   async getArtifact(key: string): Promise<string | null> {
     try {
       return await this.retry(async () => {
-        const response = await fetch(this.artifactUrl(key), { headers: this.headers() });
+        const response = await fetch(this.artifactUrl(key), { headers: this.headers(), signal: AbortSignal.timeout(60_000) });
         if (response.status === 404) return null;
         if (!response.ok) throw new Error(`GET ${key} -> ${response.status}`);
         return response.text();

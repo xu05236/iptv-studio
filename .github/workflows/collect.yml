@@ -19,6 +19,11 @@ on:
         type: choice
         options: ['false', 'true']
         default: 'false'
+      force_fetch:
+        description: '强制重抓全部启用源（忽略刷新间隔；手动执行默认开启）'
+        type: choice
+        options: ['false', 'true']
+        default: 'false'
       source_id:
         description: '仅检测指定采集站 ID（留空=全部）'
         default: ''
@@ -96,6 +101,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PROBE_BUDGET: ${{ github.event.inputs.budget || vars.PROBE_BUDGET || '6000' }}
           PROBE_FORCE: ${{ github.event.inputs.force || 'false' }}
+          FETCH_FORCE: ${{ github.event.inputs.force_fetch || 'false' }}
           SOURCE_ID: ${{ github.event.inputs.source_id || '' }}
           LINE_KEYS: ${{ github.event.inputs.line_keys || '' }}
           PROBE_PHASE: ${{ github.event.inputs.phase || '' }}

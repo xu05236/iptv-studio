@@ -10,19 +10,44 @@ import { createTask, dispatchNext, loadTasks, mutateTask, recordFinishedTask, ty
 /** Beijing is UTC+8 with no DST; the scheduler stores local HH:mm and matches in UTC. */
 const BEIJING_OFFSET_MS = 8 * 3_600_000;
 const RUN_WINDOW_MS = 15 * 60_000;
-const STUCK_TASK_MS = 90 * 60_000;
+const STUCK_TASK_MS = 20 * 60_000;
 
-/** A running task with no progress for 90 minutes is considered dead. */
+/**
+ * A running task with no progress for 20 minutes is considered dead.
+ *
+ * The runner reports progress on every fetched source / probe batch, so a
+ * heartbeat gap this long means the GitHub workflow is wedged — not busy.
+ */
 export function isStuckTask(task: Pick<Task, 'status' | 'startedAt' | 'lastHeartbeatAt' | 'createdAt'>, now = Date.now()): boolean {
   if (task.status !== 'running') return false;
   const last = Date.parse(task.lastHeartbeatAt ?? task.startedAt ?? task.createdAt);
   return Number.isFinite(last) && now - last > STUCK_TASK_MS;
 }
 
+/** Best-effort cancel of the GitHub Actions run behind a stuck task. */
+async function cancelGithubRun(env: Env, runId: number | undefined): Promise<void> {
+  if (!runId || !env.GITHUB_TOKEN || !env.GITHUB_REPO) return;
+  try {
+    await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/actions/runs/${runId}/cancel`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'iptv-studio',
+      },
+    });
+  } catch {
+    // best effort — the task is force-failed either way
+  }
+}
+
 async function recoverStuckTasks(env: Env, now: number): Promise<number> {
   const tasks = await loadTasks(env);
   const stuck = tasks.filter((task) => isStuckTask(task, now));
   for (const task of stuck) {
+    // Cancel the workflow first: force-failing the task alone leaves the
+    // Actions run alive and silently burning minutes.
+    await cancelGithubRun(env, task.githubRunId);
     await mutateTask(env, task.id, 'auto-fail');
   }
   if (stuck.length) await dispatchNext(env);

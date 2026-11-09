@@ -374,12 +374,16 @@ adminRoutes.post('/runs/dispatch', async (c) => {
       ? body.lineKeys.split(/[\s,]+/).filter(Boolean).slice(0, 50)
       : [];
   const source = ['manual', 'detection', 'source', 'cli'].includes(body.source ?? '') ? body.source! : 'manual';
+  // A manual collect/fetch means "refresh now": ignore the per-source refresh
+  // interval. Scheduled runs stay incremental. Probing keeps its own TTL.
+  const forceFetch = (command === 'collect' || command === 'fetch') && source === 'manual';
   const task = await createTask(c.env, {
     type: command,
     source: source as 'manual' | 'detection' | 'source' | 'cli',
     priority: source === 'source' ? 80 : 100,
     payload: {
       force: force ? 'true' : 'false',
+      force_fetch: forceFetch ? 'true' : 'false',
       budget: String(body.budget ?? defaultBudget),
       source_id: body.sourceId?.trim() ?? '',
       line_keys: lineKeys.join(','),

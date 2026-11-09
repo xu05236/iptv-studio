@@ -61,7 +61,7 @@ describe('stuck task recovery', () => {
   const base = {
     status: 'running' as const,
     createdAt: new Date(now - 2 * 3_600_000).toISOString(),
-    startedAt: new Date(now - 89 * 60_000).toISOString(),
+    startedAt: new Date(now - 19 * 60_000).toISOString(),
     lastHeartbeatAt: undefined,
   };
 
@@ -69,8 +69,8 @@ describe('stuck task recovery', () => {
     expect(isStuckTask(base, now)).toBe(false);
   });
 
-  it('recovers a running task with no progress for more than 90 minutes', () => {
-    expect(isStuckTask({ ...base, startedAt: new Date(now - 91 * 60_000).toISOString() }, now)).toBe(true);
+  it('recovers a running task with no progress for more than 20 minutes', () => {
+    expect(isStuckTask({ ...base, startedAt: new Date(now - 21 * 60_000).toISOString() }, now)).toBe(true);
   });
 
   it('uses a fresh heartbeat to keep a long task alive', () => {

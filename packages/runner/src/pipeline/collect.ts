@@ -145,7 +145,11 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
   let text: string | null = null;
 
   const refreshHours = refreshHoursFor(source);
-  const forceFetch = process.env.PROBE_FORCE === '1' || process.env.PROBE_FORCE === 'true';
+  const forceFetch =
+    process.env.FETCH_FORCE === '1' ||
+    process.env.FETCH_FORCE === 'true' ||
+    process.env.PROBE_FORCE === '1' ||
+    process.env.PROBE_FORCE === 'true';
   if (!forceFetch && refreshHours > 0 && source.last_fetch_at && (source.entry_count ?? 0) > 0) {
     const ageHours = (Date.now() - new Date(source.last_fetch_at).getTime()) / 3_600_000;
     if (ageHours < refreshHours) {
