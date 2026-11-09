@@ -2604,6 +2604,19 @@ button {
   color: var(--label-2);
 }
 
+.delta {
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  font-style: normal;
+}
+
+.delta--up { color: var(--green); }
+.delta--down { color: var(--red); }
+
+.source-card__stats strong em.delta--up { color: var(--green); }
+.source-card__stats strong em.delta--down { color: var(--red); }
+
 .source-card__meta {
   font-size: 12px;
   color: var(--label-2);

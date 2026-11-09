@@ -85,7 +85,7 @@ sourceRoutes.get('/', async (c) => {
     listSources(c.env),
     getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json'),
     listChannels(c.env),
-    getJson<{ generatedAt?: string; sources?: Array<{ sourceId: string; added: number; reused: number; retained: number; disappeared: number; skippedRejected: number }> }>(c.env, 'state/fetch-report.json'),
+    getJson<{ generatedAt?: string; sources?: Array<{ sourceId: string } & Record<string, unknown>> }>(c.env, 'state/fetch-report.json'),
     c.env.DB.prepare("SELECT source_id, COUNT(*) AS total FROM feedback WHERE status = 'open' AND source_id IS NOT NULL GROUP BY source_id").all<{ source_id: string; total: number }>(),
   ]);
   const feedbackOpen = new Map((feedbackRows.results ?? []).map((row) => [row.source_id, Number(row.total) || 0]));
@@ -306,9 +306,9 @@ sourceRoutes.get('/:id/detail', async (c) => {
       if (isDueForProbe(line, 'normal', now)) stats.dueQuarantine++;
     } else if (line.status === 'dead') {
       stats.rejected++;
-    } else if (line.status === 'unknown') {
+    } else if (line.status === 'unknown' && !line.lastProbeAt) {
       stats.pending++;
-      if (!line.lastProbeAt) stats.duePending++;
+      stats.duePending++;
     }
   }
 

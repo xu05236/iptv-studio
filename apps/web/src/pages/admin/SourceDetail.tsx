@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ExternalLink, RefreshCw, Trash2, Zap } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { timeAgo } from '../../lib/format';
+import { formatDateTime, timeAgo } from '../../lib/format';
 import { errorKindLabel } from '../../lib/fetchErrors';
 import type { SourceItem } from '../../lib/types';
 import { Badge, Button, Card, EmptyState, Skeleton, Stat, useToast } from '../../components/ui';
@@ -25,11 +25,31 @@ interface SourceDetailResponse {
   lastProbeAt: string | null;
   oldestAliveProbeAt: string | null;
   health: { days: number; points: HealthPoint[] };
-  report: { added: number; reused: number; retained: number; disappeared: number; skippedRejected: number } | null;
+  report: {
+    fetchedAt?: string;
+    parsed?: number;
+    added: number;
+    reused: number;
+    reusedAlive?: number;
+    reusedPending?: number;
+    reusedQuarantine?: number;
+    reusedOther?: number;
+    retained: number;
+    disappeared: number;
+    skippedRejected: number;
+    skippedTombstoned?: number;
+    before?: { total: number; alive: number; pending: number; quarantine: number; rejected: number };
+    after?: { total: number; alive: number; pending: number; quarantine: number; rejected: number };
+  } | null;
   reportGeneratedAt: string | null;
 }
 
 const formatNumber = (value: number): string => value.toLocaleString('zh-CN');
+
+function Delta({ value }: { value: number | null | undefined }) {
+  if (value === null || value === undefined || value === 0) return null;
+  return <em className={value > 0 ? 'delta delta--up' : 'delta delta--down'}>{value > 0 ? `+${value}` : value}</em>;
+}
 
 function hostOf(source: SourceItem): string {
   if (!source.url) return source.origin === 'upload' ? '本地上传' : '手动粘贴';
@@ -135,11 +155,11 @@ export function SourceDetail() {
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
-        <Card><Stat value={formatNumber(stats.total)} label="线路总数" /></Card>
-        <Card><Stat value={formatNumber(stats.alive)} label="可用" /></Card>
-        <Card><Stat value={formatNumber(stats.pending)} label="待测" /></Card>
-        <Card><Stat value={formatNumber(stats.quarantine)} label="待复测" /></Card>
-        <Card><Stat value={formatNumber(stats.rejected)} label="已淘汰" /></Card>
+        <Card><Stat value={<>{formatNumber(stats.total)}<Delta value={data.report?.before ? stats.total - data.report.before.total : null} /></>} label="线路总数" /></Card>
+        <Card><Stat value={<>{formatNumber(stats.alive)}<Delta value={data.report?.before ? stats.alive - data.report.before.alive : null} /></>} label="可用" /></Card>
+        <Card><Stat value={<>{formatNumber(stats.pending)}<Delta value={data.report?.before ? stats.pending - data.report.before.pending : null} /></>} label="待测" /></Card>
+        <Card><Stat value={<>{formatNumber(stats.quarantine)}<Delta value={data.report?.before ? stats.quarantine - data.report.before.quarantine : null} /></>} label="待复测" /></Card>
+        <Card><Stat value={<>{formatNumber(stats.rejected)}<Delta value={data.report?.before ? stats.rejected - data.report.before.rejected : null} /></>} label="已淘汰" /></Card>
         <Card><Stat value={formatNumber(stats.tested)} label="已测过" /></Card>
       </div>
 
@@ -175,19 +195,22 @@ export function SourceDetail() {
           <RefreshCw size={15} />
         </div>
         {report ? (
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
-            <div><div className="caption">新增</div><div className="title-3">+{formatNumber(report.added)}</div></div>
-            <div><div className="caption">复用</div><div className="title-3">{formatNumber(report.reused)}</div></div>
-            <div><div className="caption">保留</div><div className="title-3">{formatNumber(report.retained)}</div></div>
-            <div><div className="caption">跳过已淘汰</div><div className="title-3">{formatNumber(report.skippedRejected)}</div></div>
-            <div><div className="caption">消失</div><div className="title-3">{formatNumber(report.disappeared)}</div></div>
-          </div>
+          <>
+            <div className="title-3" style={{ marginBottom: 6 }}>来自 {formatDateTime(report.fetchedAt)} 的抓取</div>
+            <div className="caption">
+              解析 {formatNumber(report.parsed ?? (report.added + report.reused + report.skippedRejected + (report.skippedTombstoned ?? 0)))} 条
+              {' · '}新增 {formatNumber(report.added)} 条
+              {' · '}重复 {formatNumber(report.reused + report.skippedRejected)} 条（可用 {formatNumber(report.reusedAlive ?? 0)} · 待测 {formatNumber(report.reusedPending ?? 0)} · 待复测 {formatNumber(report.reusedQuarantine ?? 0)}{report.reusedOther ? ` · 其他 ${formatNumber(report.reusedOther)}` : ''} · 已淘汰 {formatNumber(report.skippedRejected)}）
+              {report.skippedTombstoned ? ` · 跳过已删除 ${formatNumber(report.skippedTombstoned)}` : ''}
+            </div>
+            <div className="caption" style={{ marginTop: 6 }}>
+              上游消失 {formatNumber(report.disappeared)} 条 · 保留 {formatNumber(report.retained)} 条（消失但仍在保留期内的旧线路，继续留在池中）
+            </div>
+            <div className="caption" style={{ marginTop: 10 }}>
+              口径：解析=本轮上游出现的线路总数；新增=池中原本没有；重复=池中已有、按抓取前状态分类（已淘汰线路不会再回池）；消失=上游本轮没出现；保留=消失但仍在保留期内、继续留在池中。新增 + 重复 + 跳过已删除 = 解析，能对上。
+            </div>
+          </>
         ) : <div className="task-empty">还没有抓取对比记录，源重抓后会出现在这里。</div>}
-        {report ? (
-          <div className="caption" style={{ marginTop: 10 }}>
-            口径：新增/复用是这一轮解析到的线路；跳过已淘汰是已淘汰线路再次出现、不会回池；消失是上游这一轮没出现的线路，其中仍在保留期内的会继续留在池中（保留）。这些数字和上方线路池的「待测/待复测/已淘汰」不是同一口径，不能直接相加。
-          </div>
-        ) : null}
       </Card>
 
       <Card>

@@ -115,16 +115,49 @@ function parseEpgPriority(value: unknown): string[] {
     .slice(0, 20);
 }
 
+export interface SourceStatusCounts {
+  total: number;
+  alive: number;
+  pending: number;
+  quarantine: number;
+  rejected: number;
+}
+
 export interface SourceDiff {
   sourceId: string;
   sourceName: string;
   fetched: boolean;
+  fetchedAt: string;
+  parsed: number;
   added: number;
   reused: number;
+  reusedAlive: number;
+  reusedPending: number;
+  reusedQuarantine: number;
+  reusedOther: number;
   retained: number;
   disappeared: number;
   skippedRejected: number;
   skippedTombstoned: number;
+  before: SourceStatusCounts;
+  after: SourceStatusCounts;
+}
+
+const emptyStatusCounts = (): SourceStatusCounts => ({ total: 0, alive: 0, pending: 0, quarantine: 0, rejected: 0 });
+
+/** Count lines the same way the source card does (alive / untested / suspect / dead). */
+function countLineStatuses(lines: LineEntry[]): Map<string, SourceStatusCounts> {
+  const bySource = new Map<string, SourceStatusCounts>();
+  for (const line of lines) {
+    const counts = bySource.get(line.sourceId) ?? emptyStatusCounts();
+    counts.total += 1;
+    if (line.status === 'alive') counts.alive += 1;
+    else if (line.status === 'suspect') counts.quarantine += 1;
+    else if (line.status === 'dead') counts.rejected += 1;
+    else if (!line.lastProbeAt) counts.pending += 1;
+    bySource.set(line.sourceId, counts);
+  }
+  return bySource;
 }
 
 function normalize(
@@ -137,6 +170,7 @@ function normalize(
   retentionDays = 30,
 ): { lines: LineEntry[]; authoritative: Set<string>; report: SourceDiff[] } {
   const previousByKey = new Map(previousLines.map((line) => [`${line.sourceId}|${line.urlKey}`, line]));
+  const beforeBySource = countLineStatuses(previousLines);
   const authoritative = new Set<string>();
   const merged = new Map<string, LineEntry>();
   const report = new Map<string, SourceDiff>();
@@ -149,12 +183,20 @@ function normalize(
       sourceId,
       sourceName: sources.get(sourceId)?.name ?? sourceId,
       fetched: false,
+      fetchedAt: timestamp,
+      parsed: 0,
       added: 0,
       reused: 0,
+      reusedAlive: 0,
+      reusedPending: 0,
+      reusedQuarantine: 0,
+      reusedOther: 0,
       retained: 0,
       disappeared: 0,
       skippedRejected: 0,
       skippedTombstoned: 0,
+      before: beforeBySource.get(sourceId) ?? emptyStatusCounts(),
+      after: emptyStatusCounts(),
     };
     report.set(sourceId, item);
     return item;
@@ -170,6 +212,7 @@ function normalize(
       const { url } = splitUrlHeaders(raw.url);
       const urlKey = normalizeUrlForDedupe(url);
       if (!urlKey) continue;
+      diff.parsed += 1;
       present.add(`${item.source.id}|${urlKey}`);
       if (tombstoned.has(canonicalPoolUrl(url))) {
         diff.skippedTombstoned++;
@@ -226,8 +269,15 @@ function normalize(
         official: old?.official ?? isOfficial,
       };
       merged.set(`${line.sourceId}|${line.urlKey}`, line);
-      if (old) diff.reused++;
-      else diff.added++;
+      if (old) {
+        diff.reused += 1;
+        if (old.status === 'alive') diff.reusedAlive += 1;
+        else if (old.status === 'suspect') diff.reusedQuarantine += 1;
+        else if (!old.lastProbeAt) diff.reusedPending += 1;
+        else diff.reusedOther += 1;
+      } else {
+        diff.added += 1;
+      }
     }
   }
 
@@ -262,6 +312,10 @@ function normalize(
     if (!present.has(`${old.sourceId}|${old.urlKey}`)) diffFor(old.sourceId).disappeared++;
   }
 
+  const afterBySource = countLineStatuses([...merged.values()]);
+  for (const diff of report.values()) {
+    diff.after = afterBySource.get(diff.sourceId) ?? emptyStatusCounts();
+  }
   return { lines: [...merged.values()], authoritative, report: [...report.values()] };
 }
 

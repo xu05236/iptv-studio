@@ -4,13 +4,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, ChevronDown, LayoutGrid, List, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Upload, Zap } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { SourceItem } from '../../lib/types';
-import { timeAgo } from '../../lib/format';
+import { formatDateTime, timeAgo } from '../../lib/format';
 import { errorKindLabel } from '../../lib/fetchErrors';
 import { Badge, Button, Card, EmptyState, Field, Segmented, Sheet, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { ReputationBadge, reputationTier } from '../../components/ReputationBadge';
 
 const formatNumber = (value: number): string => value.toLocaleString('zh-CN');
+
+function Delta({ value }: { value: number | null | undefined }) {
+  if (value === null || value === undefined || value === 0) return null;
+  return <em className={value > 0 ? 'delta delta--up' : 'delta delta--down'}>{value > 0 ? `+${value}` : value}</em>;
+}
 
 interface SourceHealthPoint {
   day: string;
@@ -556,6 +561,10 @@ export function Sources() {
           const quarantineDue = source.progress?.quarantine ?? 0;
           const quarantineTotal = source.progress?.quarantineTotal ?? source.progress?.quarantine ?? 0;
           const cardTone = !source.enabled ? 'orange' : source.status === 'paused' ? 'orange' : source.status === 'degraded' || source.last_error ? 'red' : (source.alive_count ?? 0) > 0 ? 'green' : 'default';
+          const report = source.report;
+          const before = report?.before;
+          const reportReused = report ? report.reused + report.skippedRejected : 0;
+          const reportParsed = report ? (report.parsed ?? (report.added + reportReused + (report.skippedTombstoned ?? 0))) : 0;
           return (
             <Card className={`source-card source-card--${cardTone}`} key={source.id}>
               <div className="source-card__head">
@@ -594,11 +603,11 @@ export function Sources() {
               </div>
 
               <div className="source-card__stats">
-                <div><strong>{formatNumber(source.entry_count ?? 0)}</strong><span>线路</span></div>
-                <div><strong>{formatNumber(source.alive_count ?? 0)}</strong><span>可用</span></div>
-                <div><strong>{pendingDue}<em>/{pendingTotal}</em></strong><span>待测</span></div>
-                <div><strong>{quarantineDue}<em>/{quarantineTotal}</em></strong><span>待复测</span></div>
-                <div><strong>{formatNumber(source.progress?.rejectedTotal ?? 0)}</strong><span>已淘汰</span></div>
+                <div><strong>{formatNumber(source.entry_count ?? 0)}<Delta value={before ? (source.entry_count ?? 0) - before.total : null} /></strong><span>线路</span></div>
+                <div><strong>{formatNumber(source.alive_count ?? 0)}<Delta value={before ? (source.alive_count ?? 0) - before.alive : null} /></strong><span>可用</span></div>
+                <div><strong>{pendingDue}<em>/{pendingTotal}</em><Delta value={before ? pendingTotal - before.pending : null} /></strong><span>待测</span></div>
+                <div><strong>{quarantineDue}<em>/{quarantineTotal}</em><Delta value={before ? quarantineTotal - before.quarantine : null} /></strong><span>待复测</span></div>
+                <div><strong>{formatNumber(source.progress?.rejectedTotal ?? 0)}<Delta value={before ? (source.progress?.rejectedTotal ?? 0) - before.rejected : null} /></strong><span>已淘汰</span></div>
               </div>
 
               <div className="source-card__meta">
@@ -610,9 +619,15 @@ export function Sources() {
                 {source.consecutive_failures ? ` · 连续失败 ${source.consecutive_failures} 次` : ''}
                 {source.progress?.channels ? ` · 贡献 ${formatNumber(source.progress.channels)} 个频道` : ''}
               </div>
-              {source.report ? (
-                <div className="source-card__meta" title="最近一轮抓取的差异统计，与线路池的待测/待复测/已淘汰不是同一口径">
-                  上次对比{data?.reportGeneratedAt ? `（${timeAgo(data.reportGeneratedAt)}）` : ''} · 解析 {source.report.added + source.report.reused + source.report.skippedRejected} 条 · 新增 {source.report.added} · 复用 {source.report.reused} · 跳过淘汰 {source.report.skippedRejected} · 上游消失 {source.report.disappeared}{source.report.retained ? `（保留 ${source.report.retained}）` : ''}
+              {report ? (
+                <div className="source-card__meta" title="解析=本轮上游出现的线路总数；新增=池中原本没有；重复=池中已有并按抓取前状态分类；已淘汰=已淘汰线路再次出现、不会回池。卡片上的 +N / -N 是当前值相对本轮抓取前的变化。">
+                  来自 {formatDateTime(report.fetchedAt)} 的抓取：解析 {formatNumber(reportParsed)} 条 · 新增 {formatNumber(report.added)} 条 · 重复 {formatNumber(reportReused)} 条（可用 {formatNumber(report.reusedAlive ?? 0)} · 待测 {formatNumber(report.reusedPending ?? 0)} · 待复测 {formatNumber(report.reusedQuarantine ?? 0)}{report.reusedOther ? ` · 其他 ${formatNumber(report.reusedOther)}` : ''} · 已淘汰 {formatNumber(report.skippedRejected)}）
+                  {report.skippedTombstoned ? ` · 跳过已删除 ${formatNumber(report.skippedTombstoned)}` : ''}
+                </div>
+              ) : null}
+              {report && (report.disappeared || report.retained) ? (
+                <div className="source-card__meta">
+                  上游消失 {formatNumber(report.disappeared)} 条 · 保留 {formatNumber(report.retained)} 条（保留期内的旧线路仍在池中）
                 </div>
               ) : null}
               {source.parseDrop ? (

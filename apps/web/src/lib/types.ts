@@ -75,7 +75,22 @@ export interface SourceItem {
   fetchConcurrency?: number;
   fetchDelayMs?: number;
   progress?: { total: number; tested: number; alive: number; pending: number; pendingTotal?: number; quarantine: number; quarantineTotal?: number; rejected: number; rejectedTotal?: number; channels?: number };
-  report?: { added: number; reused: number; retained: number; disappeared: number; skippedRejected: number } | null;
+  report?: {
+    fetchedAt?: string;
+    parsed?: number;
+    added: number;
+    reused: number;
+    reusedAlive?: number;
+    reusedPending?: number;
+    reusedQuarantine?: number;
+    reusedOther?: number;
+    retained: number;
+    disappeared: number;
+    skippedRejected: number;
+    skippedTombstoned?: number;
+    before?: { total: number; alive: number; pending: number; quarantine: number; rejected: number };
+    after?: { total: number; alive: number; pending: number; quarantine: number; rejected: number };
+  } | null;
   filters?: { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number };
   created_at: string;
 }
