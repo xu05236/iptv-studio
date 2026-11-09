@@ -181,6 +181,27 @@ export function Rules() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const linePreview = useQuery({
+    queryKey: ['admin', 'rules-preview-report'],
+    queryFn: () =>
+      api.get<{
+        report: {
+          generatedAt: string;
+          changedChannels: number;
+          changedLines: number;
+          excludedLines: number;
+          rules: Array<{ id: string; note: string; matchedLines: number; excludedLines: number; affectedChannels: number }>;
+        } | null;
+      }>('/api/admin/rules/preview-report'),
+    refetchInterval: 60_000,
+  });
+
+  const runLinePreview = useMutation({
+    mutationFn: () => api.post('/api/admin/runs', { command: 'rules-preview' }),
+    onSuccess: () => show('已派发线路级预览，约 5 分钟后点「刷新结果」'),
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const items = [...(rules.data?.items ?? [])].sort((a, b) => b.priority - a.priority || a.name.localeCompare(b.name, 'zh-CN'));
 
   return (
@@ -233,6 +254,44 @@ export function Rules() {
             ) : null}
           </div>
         ) : null}
+      </Card>
+
+      <Card>
+        <div className="row row--between row--wrap" style={{ alignItems: 'center', gap: 8 }}>
+          <div>
+            <div className="title-3">线路级预览（真实目录）</div>
+            <div className="caption">用已发布线路 + 当前规则跑一遍，统计每条规则真实命中/排除的线路数；约 5 分钟，消耗一轮 Actions。</div>
+          </div>
+          <div className="row" style={{ gap: 6 }}>
+            <Button variant="primary" loading={runLinePreview.isPending} onClick={() => runLinePreview.mutate()}>跑一次</Button>
+            <Button variant="glass" onClick={() => void linePreview.refetch()}>刷新结果</Button>
+          </div>
+        </div>
+        {linePreview.data?.report ? (
+          <>
+            <div className="caption" style={{ marginTop: 8 }}>
+              生成于 {new Date(linePreview.data.report.generatedAt).toLocaleString('zh-CN', { hour12: false })} · 影响 {linePreview.data.report.changedChannels} 个频道 / {linePreview.data.report.changedLines} 条线路 · 排除 {linePreview.data.report.excludedLines} 条
+            </div>
+            <table className="table" style={{ marginTop: 8 }}>
+              <thead>
+                <tr><th>规则</th><th>说明</th><th>命中线路</th><th>排除线路</th><th>影响频道</th></tr>
+              </thead>
+              <tbody>
+                {linePreview.data.report.rules.map((row) => (
+                  <tr key={row.id}>
+                    <td className="mono caption">{row.id.slice(0, 8)}</td>
+                    <td>{row.note || '—'}</td>
+                    <td>{row.matchedLines}</td>
+                    <td>{row.excludedLines}</td>
+                    <td>{row.affectedChannels}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        ) : (
+          <div className="caption" style={{ marginTop: 8 }}>还没有预览结果，点「跑一次」。</div>
+        )}
       </Card>
 
       {rules.isLoading ? <Skeleton height={160} radius={16} /> : null}

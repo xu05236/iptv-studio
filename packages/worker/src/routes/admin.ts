@@ -343,7 +343,7 @@ adminRoutes.get('/runs/:id/log', async (c) => {
 
 adminRoutes.post('/runs/dispatch', async (c) => {
   const body = (await readJson<{ command?: string; force?: boolean; budget?: number | string; sourceId?: string; lineKeys?: string[] | string; phase?: string; source?: string }>(c)) ?? {};
-  const allowedCommands = new Set(['collect', 'export', 'epg', 'fetch', 'probe', 'probe-batch', 'publish', 'liveness', 'probe-lines', 'cleanup-orphans', 'cleanup-rejected', 'revive-batch']);
+  const allowedCommands = new Set(['collect', 'export', 'epg', 'fetch', 'probe', 'probe-batch', 'publish', 'liveness', 'probe-lines', 'cleanup-orphans', 'cleanup-rejected', 'revive-batch', 'rules-preview']);
   const requestedCommand = body.command ?? '';
   const command = allowedCommands.has(requestedCommand) ? requestedCommand : 'collect';
   const force = Boolean(body.force);
@@ -443,6 +443,11 @@ adminRoutes.post('/rules', async (c) => {
   };
   await upsertRule(c.env, row);
   return ok({ rule: row });
+});
+
+adminRoutes.get('/rules/preview-report', async (c) => {
+  const report = await getJson<Record<string, unknown>>(c.env, 'state/rules-preview.json');
+  return ok({ report: report ?? null });
 });
 
 adminRoutes.post('/rules/preview', async (c) => {

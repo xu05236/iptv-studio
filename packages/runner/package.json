@@ -16,6 +16,7 @@
     "export": "tsx src/cli.ts export",
     "probe-lines": "tsx src/cli.ts probe-lines",
     "epg": "tsx src/cli.ts epg",
+    "rules-preview": "tsx src/cli.ts rules-preview",
     "shots": "tsx src/cli.ts shots",
     "usage": "tsx src/usage.ts",
     "typecheck": "tsc --noEmit"

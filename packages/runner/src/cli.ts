@@ -1,4 +1,6 @@
 import {
+  applyRules,
+  compileRules,
   BUILTIN_CHANNELS,
   ChannelRegistry,
   buildPoolSnapshot,
@@ -21,6 +23,7 @@ import {
   withinRetention,
   isPurgeable,
   type AppSettings,
+  type ChannelConfig,
   type EpgData,
   type LineEntry,
   type RawEntry,
@@ -1534,8 +1537,138 @@ async function runReviveBatch(): Promise<void> {
   }
 }
 
+/** A4：线路级规则预览——读已发布线路，按当前规则统计每条规则的真实影响。 */
+async function runRulesPreview(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+  let report: RunReport = {
+    id: runId,
+    trigger: 'manual',
+    status: 'running',
+    startedAt,
+    sources: 0,
+    channels: 0,
+    lines: 0,
+    alive: 0,
+    dead: 0,
+    probed: 0,
+    bytes: 0,
+    durationMs: 0,
+    warnings: [],
+  };
+
+  try {
+    const remote = await loadRemoteConfig(api);
+    const state = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const lines = state?.lines ?? [];
+    const compiled = compileRules(remote.rules);
+    const byChannel = new Map<string, LineEntry[]>();
+    for (const line of lines) {
+      const list = byChannel.get(line.channelId) ?? [];
+      list.push(line);
+      byChannel.set(line.channelId, list);
+    }
+
+    const stats = new Map<string, { id: string; note: string; matched: number; excluded: number; channels: Set<string>; samples: string[] }>();
+    for (const rule of remote.rules) {
+      if (!rule.enabled) continue;
+      stats.set(rule.id, {
+        id: rule.id,
+        note: rule.actions?.rename ?? rule.actions?.setGroup ?? rule.match?.channelPattern ?? rule.match?.namePattern ?? '',
+        matched: 0,
+        excluded: 0,
+        channels: new Set<string>(),
+        samples: [],
+      });
+    }
+
+    let changedChannels = 0;
+    let changedLines = 0;
+    let excludedLines = 0;
+    for (const channel of remote.channels) {
+      const channelLines = byChannel.get(channel.id) ?? [];
+      if (!channelLines.length) continue;
+      const base = { id: channel.id, name: channel.name, group: channel.group_title ?? '其他', tvgId: channel.tvg_id } as ChannelConfig;
+      const applied = applyRules(base, channelLines, compiled);
+      if (applied.channel.name !== base.name || applied.channel.group !== base.group) {
+        changedChannels++;
+        changedLines += applied.lines.length;
+      }
+      excludedLines += channelLines.length - applied.lines.length;
+
+      for (const compiledRule of compiled) {
+        let matched = 0;
+        let excluded = 0;
+        for (const line of channelLines) {
+          if (!compiledRule.matches({ channel: base, line })) continue;
+          matched++;
+          if (compiledRule.rule.actions?.exclude) excluded++;
+        }
+        if (!matched) continue;
+        const stat = stats.get(compiledRule.rule.id);
+        if (!stat) continue;
+        stat.matched += matched;
+        stat.excluded += excluded;
+        stat.channels.add(channel.id);
+        if (stat.samples.length < 5) stat.samples.push(`${base.name} / ${channelLines[0]?.name ?? ''}`);
+      }
+    }
+
+    const payload = {
+      generatedAt: nowIso(),
+      totalChannels: remote.channels.length,
+      totalLines: lines.length,
+      changedChannels,
+      changedLines,
+      excludedLines,
+      rules: [...stats.values()].map((stat) => ({
+        id: stat.id,
+        note: stat.note,
+        matchedLines: stat.matched,
+        excludedLines: stat.excluded,
+        affectedChannels: stat.channels.size,
+        samples: stat.samples,
+      })),
+    };
+    await store.put('state/rules-preview.json', JSON.stringify(payload), 'application/json; charset=utf-8');
+    const logKey = await writeLog(store, runId, logger);
+    report = {
+      ...report,
+      status: 'success',
+      finishedAt: nowIso(),
+      channels: remote.channels.length,
+      lines: lines.length,
+      alive: lines.filter((line) => line.status === 'alive').length,
+      durationMs: Date.now() - startedMs,
+      logKey,
+      message: `规则预览：命中 ${payload.rules.length} 条规则，影响 ${changedChannels} 个频道 / ${changedLines} 条线路，排除 ${excludedLines} 条`,
+    };
+    await finishRun(api, report);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('规则预览失败', { error: message });
+    report = { ...report, status: 'failed', finishedAt: nowIso(), error: message, durationMs: Date.now() - startedMs };
+    try {
+      report.logKey = await writeLog(store, runId, logger);
+    } catch {
+      /* ignore */
+    }
+    await finishRun(api, report);
+    throw error;
+  }
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2] ?? 'collect';
+  if (command === 'rules-preview') {
+    await runRulesPreview();
+    return;
+  }
   if (command === 'cleanup-orphans') {
     await runCleanupOrphans();
     return;
