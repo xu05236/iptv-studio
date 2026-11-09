@@ -200,7 +200,7 @@ export function SourceDetail() {
             <div className="caption">
               解析 {formatNumber(report.parsed ?? (report.added + report.reused + report.skippedRejected + (report.skippedTombstoned ?? 0)))} 条
               {' · '}新增 {formatNumber(report.added)} 条
-              {' · '}重复 {formatNumber(report.reused + report.skippedRejected)} 条（可用 {formatNumber(report.reusedAlive ?? 0)} · 待测 {formatNumber(report.reusedPending ?? 0)} · 待复测 {formatNumber(report.reusedQuarantine ?? 0)}{report.reusedOther ? ` · 其他 ${formatNumber(report.reusedOther)}` : ''} · 已淘汰 {formatNumber(report.skippedRejected)}）
+              {' · '}重复 {formatNumber(report.reused + report.skippedRejected)} 条{report.reusedAlive !== undefined ? `（可用 ${formatNumber(report.reusedAlive)} · 待测 ${formatNumber(report.reusedPending ?? 0)} · 待复测 ${formatNumber(report.reusedQuarantine ?? 0)}${report.reusedOther ? ` · 其他 ${formatNumber(report.reusedOther)}` : ''} · 已淘汰 ${formatNumber(report.skippedRejected)}）` : '（明细从下一次抓取开始显示）'}
               {report.skippedTombstoned ? ` · 跳过已删除 ${formatNumber(report.skippedTombstoned)}` : ''}
             </div>
             <div className="caption" style={{ marginTop: 6 }}>
