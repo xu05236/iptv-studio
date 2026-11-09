@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Copy, Eraser, Info, LayoutGrid, Link2, List, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
+import { AlertTriangle, Copy, Eraser, GitMerge, Info, LayoutGrid, Link2, List, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import type { AdminChannel } from '../../lib/types';
@@ -77,6 +77,8 @@ export function ChannelsAdmin() {
   const [epgLimit, setEpgLimit] = useState(100);
   const [epgInputs, setEpgInputs] = useState<Record<string, string>>({});
   const [epgBulk, setEpgBulk] = useState('');
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeTargets, setMergeTargets] = useState<Record<string, string>>({});
 
   const tree = useQuery({
     queryKey: ['admin', 'channels', 'tree'],
@@ -130,6 +132,27 @@ export function ChannelsAdmin() {
       }>(`/api/admin/epg/coverage?${params.toString()}`);
     },
     enabled: epgOpen,
+  });
+
+  const allChannels = useQuery({
+    queryKey: ['admin', 'channels', 'all'],
+    queryFn: () => api.get<{ items: AdminChannel[]; total: number }>('/api/admin/channels'),
+    enabled: mergeOpen,
+  });
+
+  const mergeChannel = useMutation({
+    mutationFn: ({ from, into }: { from: string; into: string }) =>
+      api.post<{ merged: number }>('/api/admin/channels/merge', { from: [from], into }),
+    onSuccess: (result, variables) => {
+      show(`已把 ${variables.from} 合并到 ${variables.into}，迁移 ${result.merged} 个频道`);
+      setMergeTargets((current) => {
+        const next = { ...current };
+        delete next[variables.from];
+        return next;
+      });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'channels'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
   });
 
   const bindEpg = useMutation({
@@ -292,6 +315,7 @@ export function ChannelsAdmin() {
             <Button loading={cleanupNames.isPending} onClick={() => cleanupNames.mutate()}><Eraser size={15} /> 清理名称</Button>
             <Button onClick={() => setConflictsOpen(true)}><AlertTriangle size={15} /> 别名冲突</Button>
             <Button onClick={() => setEpgOpen(true)}><Link2 size={15} /> EPG 映射</Button>
+            <Button onClick={() => setMergeOpen(true)}><GitMerge size={15} /> 未识别频道</Button>
             <Button loading={reclassify.isPending} onClick={() => reclassify.mutate()}><Wand2 size={15} /> 修复分类</Button>
           </>
         }
@@ -681,6 +705,45 @@ export function ChannelsAdmin() {
           ) : null}
           {epgCoverage.data && !epgCoverage.data.missing.length ? <div className="caption">所有频道都有节目单。</div> : null}
         </div>
+      </Sheet>
+
+      <Sheet open={mergeOpen} onClose={() => setMergeOpen(false)} title="未识别频道合并" subtitle="把 x- 自动频道并到正式频道">
+        <div className="caption">
+          合并会把源频道的别名、线路和探测状态并入目标频道，然后删除源频道；下一轮发布生效。
+        </div>
+        {allChannels.isLoading ? <div className="caption">正在读取频道…</div> : null}
+        {(allChannels.data?.items ?? []).filter((item) => item.id.startsWith('x-')).map((item) => (
+          <div key={item.id} className="list__row" style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div className="grow" style={{ minWidth: 0 }}>
+              <div className="list__title truncate">{item.name}</div>
+              <div className="caption mono">{item.id} · {item.group || '未分组'} · {item.lines} 条线路</div>
+            </div>
+            <select
+              className="input"
+              style={{ maxWidth: 200 }}
+              value={mergeTargets[item.id] ?? ''}
+              onChange={(event) => setMergeTargets((current) => ({ ...current, [item.id]: event.target.value }))}
+            >
+              <option value="">合并到…</option>
+              {(allChannels.data?.items ?? [])
+                .filter((target) => !target.id.startsWith('x-'))
+                .map((target) => (
+                  <option key={target.id} value={target.id}>{target.name}</option>
+                ))}
+            </select>
+            <Button
+              size="sm"
+              loading={mergeChannel.isPending}
+              disabled={!mergeTargets[item.id]}
+              onClick={() => mergeChannel.mutate({ from: item.id, into: mergeTargets[item.id]! })}
+            >
+              合并
+            </Button>
+          </div>
+        ))}
+        {allChannels.data && !allChannels.data.items.some((item) => item.id.startsWith('x-')) ? (
+          <div className="caption">当前没有 x- 开头的自动频道。</div>
+        ) : null}
       </Sheet>
     </div>
   );
