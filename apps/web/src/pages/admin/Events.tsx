@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bug, ShieldCheck, Activity } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatDateTime, timeAgo } from '../../lib/format';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
-import { Badge, Button, Card, Skeleton, useToast } from '../../components/ui';
+import { Badge, Button, Card, Segmented, Skeleton, useToast } from '../../components/ui';
 
 interface FeedbackItem {
   id: string;
@@ -104,38 +104,56 @@ export function Events() {
   return (
     <>
       <AdminPageHeader
-        eyebrow="运营发布"
+        eyebrow="EVENTS"
         title="运营事件"
         description="前台报障与后台审计的统一入口：报障可一键转探测，审计记录改名/删源/发布等操作。"
       />
       <Card>
+        <div className="title-3" style={{ marginBottom: 4 }}>这页怎么用</div>
         <div className="caption">
           这里汇总三类信息：前台用户点「报障」提交的线路问题；部署流水线失败时自动上报的 CI 日志；后台改名、删源、发布等操作审计。
           列表里的「待处理」是还没人处理的报障——点「转探测」会让采集端复测这条线路；点「已解决」或「忽略」只是标注状态，不会删除记录。
         </div>
       </Card>
-      <div className="row" style={{ gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <Button variant={tab === 'feedback' ? 'primary' : undefined} onClick={() => setTab('feedback')}>
-          <Bug size={15} /> 报障
-        </Button>
-        <Button variant={tab === 'audit' ? 'primary' : undefined} onClick={() => setTab('audit')}>
-          <ShieldCheck size={15} /> 审计
-        </Button>
-        <Button variant={tab === 'failures' ? 'primary' : undefined} onClick={() => setTab('failures')}>
-          <Activity size={15} /> 失败聚合
-        </Button>
-        <div style={{ flex: 1 }} />
-        {tab === 'feedback' && (
-          <div className="row" style={{ gap: 6 }}>
-            {['open', 'resolved', 'ignored', 'all'].map((item) => (
-              <button key={item} className={status === item && item !== 'all' ? 'chip chip--active' : 'chip'} onClick={() => setStatus(item)}>
-                {item === 'all' ? '全部' : STATUS_LABEL[item]}
-              </button>
-            ))}
+
+      <Card className="probe-filters">
+        <div className="probe-filters__head">
+          <div>
+            <div className="title-3">筛选与搜索</div>
+            <div className="caption">切换报障、审计与失败聚合；报障默认只看待处理</div>
           </div>
-        )}
-        <input className="input" style={{ maxWidth: 240 }} placeholder="搜索消息 / 频道 / 线路 / 动作" value={q} onChange={(event) => setQ(event.target.value)} />
-      </div>
+          <Badge>{tab === 'feedback' ? `${feedback.data?.items.length ?? 0} 条报障` : tab === 'audit' ? `${audit.data?.items.length ?? 0} 条审计` : '近 7 天'}</Badge>
+        </div>
+        <div className="probe-filter-row">
+          <div className="search grow" style={{ minWidth: 220 }}>
+            <Search size={16} className="search__icon" />
+            <input className="input" placeholder="搜索消息 / 频道 / 线路 / 动作" value={q} onChange={(event) => setQ(event.target.value)} />
+          </div>
+          <Segmented
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'feedback', label: '报障' },
+              { value: 'audit', label: '审计' },
+              { value: 'failures', label: '失败聚合' },
+            ]}
+          />
+        </div>
+        {tab === 'feedback' ? (
+          <div className="probe-filter-row">
+            <Segmented
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: 'open', label: '待处理' },
+                { value: 'resolved', label: '已解决' },
+                { value: 'ignored', label: '已忽略' },
+                { value: 'all', label: '全部' },
+              ]}
+            />
+          </div>
+        ) : null}
+      </Card>
 
       {tab === 'feedback' ? (
         <div className="stack" style={{ gap: 10 }}>

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, CalendarClock, PieChart, RadioTower, Save, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { Button, EmptyState, Field, Switch, useToast } from '../../components/ui';
+import { Badge, Button, EmptyState, Field, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { timeAgo } from '../../lib/format';
 
@@ -133,7 +133,7 @@ export function Epg() {
   return (
     <>
       <AdminPageHeader
-        eyebrow="节目单"
+        eyebrow="EPG"
         title="EPG 覆盖与映射"
         description="未映射的 EPG 频道名可以直接绑定到已有频道；绑定后立即计入覆盖率。"
         meta={stats ? `节目单生成于 ${stats.guideGeneratedAt ? timeAgo(stats.guideGeneratedAt) : '未知'}${stats.guideStale ? ' · 已过期' : ''}` : undefined}
@@ -145,35 +145,47 @@ export function Epg() {
       />
 
       <div className="stack">
-        <div className="card">
-          {stats ? (
-            <>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                <strong style={{ fontSize: 26 }}>{stats.percent}%</strong>
-                <span className="caption">
-                  有未来节目 {stats.covered} / {stats.total} 个频道
-                  {stats.stale ? ` · ${stats.stale} 个频道的节目已全部过期` : ''}
-                </span>
-              </div>
-              <div style={{ height: 8, background: 'var(--border, #e5e7eb)', borderRadius: 999, overflow: 'hidden', marginTop: 10 }}>
-                <div style={{ width: `${stats.percent}%`, height: '100%', background: 'var(--accent, #2563eb)' }} />
-              </div>
-              {stats.guideStale ? (
-                <div className="caption" style={{ marginTop: 8, color: 'var(--warning, #b45309)' }}>
-                  节目单已过期（{stats.guideAgeHours ?? '?'} 小时前生成），刷新 EPG 前覆盖率不可信。
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <span className="caption">加载中…</span>
-          )}
+        <div className="dashboard-stats">
+          <div className="dash-stat">
+            <span className="dash-stat__icon dash-stat__icon--blue"><PieChart size={16} /></span>
+            <div><div className="dash-stat__value">{stats ? `${stats.percent}%` : '—'}</div><div className="dash-stat__label">覆盖率（有未来节目）</div></div>
+          </div>
+          <div className="dash-stat">
+            <span className="dash-stat__icon dash-stat__icon--green"><CalendarClock size={16} /></span>
+            <div><div className="dash-stat__value">{stats ? `${stats.covered}/${stats.total}` : '—'}</div><div className="dash-stat__label">有节目频道</div></div>
+          </div>
+          <div className="dash-stat">
+            <span className="dash-stat__icon dash-stat__icon--orange"><AlertTriangle size={16} /></span>
+            <div><div className="dash-stat__value">{stats?.stale ?? '—'}</div><div className="dash-stat__label">节目全部过期</div></div>
+          </div>
+          <div className="dash-stat">
+            <span className="dash-stat__icon dash-stat__icon--teal"><RadioTower size={16} /></span>
+            <div><div className="dash-stat__value">{unmatched.data?.items.length ?? '—'}</div><div className="dash-stat__label">未映射 EPG 名</div></div>
+          </div>
         </div>
 
         <div className="card">
-          <div className="row" style={{ marginBottom: 10, alignItems: 'center' }}>
-            <strong>节目单设置</strong>
-            <span className="caption">保存后下一轮 EPG 抓取生效</span>
-            <div className="grow" />
+          <div className="row row--between row--wrap">
+            <div>
+              <div className="title-3">节目单状态</div>
+              <div className="caption">
+                {stats?.guideGeneratedAt ? `生成于 ${timeAgo(stats.guideGeneratedAt)}` : '还没有生成过'}
+                {stats?.guideStale ? ` · ${stats.guideAgeHours ?? '?'} 小时前，已过期` : ''}
+              </div>
+            </div>
+            {stats?.guideStale ? <Badge tone="orange">已过期</Badge> : <Badge tone="green">正常</Badge>}
+          </div>
+          <div style={{ height: 8, background: 'var(--border, #e5e7eb)', borderRadius: 999, overflow: 'hidden', marginTop: 10 }}>
+            <div style={{ width: `${stats?.percent ?? 0}%`, height: '100%', background: 'var(--accent, #2563eb)' }} />
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="row row--between row--wrap" style={{ alignItems: 'flex-start', marginBottom: 12 }}>
+            <div>
+              <div className="title-3">节目单设置</div>
+              <div className="caption">节目源、源优先级和定时抓取；保存后下一轮 EPG 抓取生效</div>
+            </div>
             <Button variant="primary" size="sm" loading={saveEpgSettings.isPending} onClick={() => saveEpgSettings.mutate()}>
               <Save size={14} /> 保存设置
             </Button>
@@ -198,26 +210,22 @@ export function Epg() {
         </div>
 
         <div className="card">
-          <div className="row" style={{ marginBottom: 10, alignItems: 'center' }}>
-            <strong>节目源贡献</strong>
-            <span className="caption">
-              {sources.data?.generatedAt ? `上次抓取 ${timeAgo(sources.data.generatedAt)}` : '还没有抓取记录'}
-            </span>
+          <div className="row row--between row--wrap" style={{ alignItems: 'flex-start', marginBottom: 10 }}>
+            <div>
+              <div className="title-3">节目源贡献</div>
+              <div className="caption">{sources.data?.generatedAt ? `上次抓取 ${timeAgo(sources.data.generatedAt)}` : '还没有抓取记录'}</div>
+            </div>
           </div>
           {!sources.data?.items.length ? (
             <span className="caption">运行一次 EPG 抓取后会显示每个源的频道/节目数。</span>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="list">
               {sources.data.items.map((item) => (
-                <div
-                  key={item.url}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderBottom: '1px solid var(--border, #eee)', paddingBottom: 6 }}
-                >
+                <div className="list__row" key={item.url}>
                   <strong style={{ minWidth: 140 }}>{item.provider}</strong>
                   <span className="caption" style={{ color: item.ok ? undefined : 'var(--danger, #b91c1c)' }}>
                     {item.ok ? '正常' : (item.error ?? '失败')}
                   </span>
-                  <span className="caption">{item.ok && item.programmes === 0 ? '0 节目' : ''}</span>
                   <div className="grow" />
                   <span className="caption">
                     {item.channels} 频道 · {item.programmes} 节目 · {item.bytes ? `${Math.round(item.bytes / 1024)} KB` : '—'}
@@ -229,10 +237,11 @@ export function Epg() {
         </div>
 
         <div className="card">
-          <div className="row" style={{ marginBottom: 10, alignItems: 'center' }}>
-            <strong>未映射的 EPG 频道名</strong>
-            <span className="caption">{unmatched.data?.items.length ?? 0} 条</span>
-            <div className="grow" />
+          <div className="row row--between row--wrap" style={{ alignItems: 'flex-start', marginBottom: 10 }}>
+            <div>
+              <div className="title-3">未映射的 EPG 频道名</div>
+              <div className="caption">{unmatched.data?.items.length ?? 0} 条；绑定后立即计入覆盖率</div>
+            </div>
             <input
               className="input"
               style={{ maxWidth: 220 }}
@@ -247,12 +256,9 @@ export function Epg() {
           ) : !items.length ? (
             <EmptyState title="没有未映射的 EPG 名" description="当前节目单里的频道名都能对上，或还没有生成过 EPG。" />
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="list">
               {items.slice(0, 300).map((item) => (
-                <div
-                  key={`${item.provider}-${item.epgName}`}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderBottom: '1px solid var(--border, #eee)', paddingBottom: 8 }}
-                >
+                <div className="list__row" key={`${item.provider}-${item.epgName}`}>
                   <strong style={{ minWidth: 160 }}>{item.epgName}</strong>
                   <span className="caption" style={{ minWidth: 140 }}>{item.provider}</span>
                   <span className="caption">置信度 {Math.round(item.confidence * 100)}%</span>
