@@ -18,6 +18,7 @@ import { getJson } from './store.js';
 import { parseJsonField } from './http.js';
 import { loadCatalog, loadPoolSnapshot, type ExportCatalog } from './catalog.js';
 import { applyProxyMode } from './proxyRewrite.js';
+import { relayQuotaExceeded } from './relayQuota.js';
 import { signProxyUrl } from './relaySign.js';
 
 export interface SubscriptionConfig extends SubscriptionSpec {
@@ -207,6 +208,8 @@ export async function renderSubscription(
   const finalize = async (result: { body: string; etag: string; channels: number; lines: number }) => {
     const mode = config.proxyMode ?? 'direct';
     if (mode === 'direct') return result;
+    // 该 token 当日中继配额已用尽时回退直连，避免整份清单都是 429 地址。
+    if (relayQuotaExceeded(`token:${config.token}`)) return result;
     const body = await applyProxyMode(result.body, config.format, (url) => signProxyUrl(env, baseUrl, url, config.token, mode));
     return { ...result, body };
   };

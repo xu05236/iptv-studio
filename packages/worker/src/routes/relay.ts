@@ -7,6 +7,7 @@ import { fail } from '../lib/http.js';
 import { loadCatalog } from '../lib/catalog.js';
 import { loadLineIndex, lineHeadersForUrl } from '../lib/lineIndex.js';
 import { proxyModeOf, signProxyUrl, verifyProxySignature } from '../lib/relaySign.js';
+import { recordRelayUse, relayQuotaExceeded, relayQuotaRetryAfter, setRelayQuotaLimits } from '../lib/relayQuota.js';
 
 export const relayRoutes = new Hono<AppEnv>();
 
@@ -20,27 +21,16 @@ let settingsCache: { at: number; value: Awaited<ReturnType<typeof loadSettings>>
 async function relaySettings(env: Env): Promise<Awaited<ReturnType<typeof loadSettings>>> {
   if (settingsCache && Date.now() - settingsCache.at < 60_000) return settingsCache.value;
   const value = await loadSettings(env);
+  setRelayQuotaLimits({ requests: value.relayDailyRequests, bytes: value.relayDailyBytes });
   settingsCache = { at: Date.now(), value };
   return value;
 }
 
-// F6: 按 token/key 的粗粒度配额（按 isolate 计数；免费版不写 D1/KV，避免反而吃额度）。
-const QUOTA_REQUESTS_PER_DAY = 20_000;
-const QUOTA_BYTES_PER_DAY = 2 * 1024 ** 3;
-const quotas = new Map<string, { day: string; requests: number; bytes: number }>();
-function overQuota(id: string, bytes = 0): boolean {
-  const day = new Date().toISOString().slice(0, 10);
-  const item = quotas.get(id) ?? { day, requests: 0, bytes: 0 };
-  if (item.day !== day) {
-    item.day = day;
-    item.requests = 0;
-    item.bytes = 0;
-  }
-  item.requests++;
-  item.bytes += bytes;
-  quotas.set(id, item);
-  if (quotas.size > 5_000) quotas.clear();
-  return item.requests > QUOTA_REQUESTS_PER_DAY || item.bytes > QUOTA_BYTES_PER_DAY;
+// F2: 按 token 的日配额用实例内存计数（不写 D1/KV，避免反而吃额度）。
+function quotaResponse(): Response {
+  const response = fail('中继配额已用完，请明天再试', 429, 'relay_quota');
+  response.headers.set('retry-after', String(relayQuotaRetryAfter()));
+  return response;
 }
 
 // F2: 订阅级代理要校验订阅仍启用；10 秒内存缓存，停用后最迟 10 秒失效。
@@ -186,7 +176,7 @@ relayRoutes.get('/', async (c) => {
   const token = c.req.query('token') ?? '';
   const subscription = await getSubscriptionByToken(c.env, token);
   if (!subscription || subscription.enabled !== 1) return fail('订阅令牌无效', 401);
-  if (overQuota(`token:${token}`)) return fail('中继配额已用完', 429, 'relay_quota');
+  if (relayQuotaExceeded(`token:${token}`)) return quotaResponse();
 
   const raw = c.req.query('u');
   if (!raw) return fail('缺少 u 参数');
@@ -201,6 +191,7 @@ relayRoutes.get('/', async (c) => {
 
   const upstream = await fetchUpstream(c, target, { userAgent: DEFAULT_UA }).catch(() => null);
   if (!upstream) return fail('上游线路超时或不可达', 504);
+  recordRelayUse(`token:${token}`, Number(upstream.headers.get('content-length') ?? 0) || 0);
   if (isPlaylist(upstream, target)) {
     const text = await upstream.text();
     const base = upstream.url || target.toString();
@@ -237,11 +228,12 @@ relayRoutes.get('/proxy', async (c) => {
     return fail('地址不合法');
   }
   if (!/^https?:$/.test(target.protocol) || isPrivateHost(target.hostname)) return fail('地址不合法');
-  if (overQuota(`token:${token}`)) return fail('中继配额已用完', 429, 'relay_quota');
+  if (relayQuotaExceeded(`token:${token}`)) return quotaResponse();
 
   const headers = await lineHeadersForUrl(c.env, raw);
   const upstream = await fetchUpstream(c, target, headers ?? { userAgent: DEFAULT_UA }).catch(() => null);
   if (!upstream) return fail('上游线路超时或不可达', 504);
+  recordRelayUse(`token:${token}`, Number(upstream.headers.get('content-length') ?? 0) || 0);
   if (upstream.status >= 400) return fail(`上游线路返回 HTTP ${upstream.status}`, 502);
   if (isPlaylist(upstream, target)) {
     const text = await upstream.text();
@@ -265,7 +257,7 @@ relayRoutes.get('/line/:key', async (c) => {
   if (!settings.relayEnabled) return fail('中继功能未开启（设置 → 高级）', 403);
 
   const key = c.req.param('key');
-  if (overQuota(`key:${key}`)) return fail('中继配额已用完', 429, 'relay_quota');
+  if (relayQuotaExceeded(`key:${key}`)) return quotaResponse();
 
   // F6: 热路径只查紧凑索引（内存 60s / Cache API / 单值 KV），不再解析整份 probe.json。
   const index = await loadLineIndex(c.env);
@@ -305,6 +297,7 @@ relayRoutes.get('/line/:key', async (c) => {
 
   const upstream = await fetchUpstream(c, parsed, sourceHeaders ?? { userAgent: DEFAULT_UA }).catch(() => null);
   if (!upstream) return fail('上游线路超时或不可达', 504);
+  recordRelayUse(`key:${key}`, Number(upstream.headers.get('content-length') ?? 0) || 0);
   if (upstream.status >= 400) {
     const detail = await upstream.text().catch(() => '');
     const cloudflareCode = /error\s*code[:\s]*(\d+)/i.exec(detail)?.[1];

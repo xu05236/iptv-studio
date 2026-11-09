@@ -315,6 +315,21 @@ export function SettingsPage() {
             <Switch checked={form.directPlayback} onChange={(value) => set('directPlayback', value)} />
           </div>
         </div>
+        <div className="row" style={{ gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
+          <Field label="每 token 日请求上限" hint="默认 20000；实例内存计数，重启清零">
+            <input className="input" type="number" min={100} max={1000000} value={form.relayDailyRequests} onChange={(event) => set('relayDailyRequests', Number(event.target.value) || 20000)} />
+          </Field>
+          <Field label="每 token 日流量上限（GB）" hint="默认 2 GB；用尽后中继返回 429，新清单自动回退直连">
+            <input
+              className="input"
+              type="number"
+              min={0.1}
+              step={0.1}
+              value={Math.round(((form.relayDailyBytes ?? 2 * 1024 ** 3) / 1024 ** 3) * 10) / 10}
+              onChange={(event) => set('relayDailyBytes', Math.round((Number(event.target.value) || 2) * 1024 ** 3))}
+            />
+          </Field>
+        </div>
         {data?.publicBaseUrl ? <div className="caption" style={{ marginTop: 10 }}>公开地址：{data.publicBaseUrl}</div> : null}
       </Card>
 

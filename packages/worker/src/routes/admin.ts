@@ -647,7 +647,7 @@ adminRoutes.put('/settings', async (c) => {
     'probePhaseOrder', 'probePausedPhases',
     'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishTimes', 'autoPublishIntervalHours', 'autoPublishAfterProbeEnabled', 'epgRefreshEnabled', 'epgRefreshTimes',
     'snapshotOnPublishEnabled', 'snapshotScheduleEnabled', 'snapshotScheduleTimes',
-    'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback',
+    'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback', 'relayDailyRequests', 'relayDailyBytes',
   ];
   const clean: Partial<AppSettings> = {};
   for (const key of allowed) {
@@ -703,6 +703,8 @@ adminRoutes.put('/settings', async (c) => {
   if (clean.sourcePauseThreshold !== undefined) clean.sourcePauseThreshold = Math.max(2, Math.min(20, Number(clean.sourcePauseThreshold) || 5));
   if (clean.sourceHalfOpenHours !== undefined) clean.sourceHalfOpenHours = Math.max(1, Math.min(168, Number(clean.sourceHalfOpenHours) || 6));
   if (clean.fetchIntervalDays !== undefined) clean.fetchIntervalDays = Math.min(7, Math.max(1, Math.floor(Number(clean.fetchIntervalDays) || 1)));
+  if (clean.relayDailyRequests !== undefined) clean.relayDailyRequests = Math.max(100, Math.min(1_000_000, Math.floor(Number(clean.relayDailyRequests) || 20_000)));
+  if (clean.relayDailyBytes !== undefined) clean.relayDailyBytes = Math.max(10 * 1024 * 1024, Math.min(100 * 1024 ** 3, Math.floor(Number(clean.relayDailyBytes) || 2 * 1024 ** 3)));
   const settings = await saveSettings(c.env, clean);
   return ok({ settings });
 });

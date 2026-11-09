@@ -358,6 +358,10 @@ export interface AppSettings {
   retentionDays: number;
   screenshots: boolean;
   relayEnabled: boolean;
+  /** 每个订阅 token 每天最多中继多少次（默认 20000；实例内存计数，重启清零）。 */
+  relayDailyRequests: number;
+  /** 每个订阅 token 每天最多中继多少字节（默认 2GB）。 */
+  relayDailyBytes: number;
   directPlayback: boolean;
 }
 
@@ -430,6 +434,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   retentionDays: 7,
   screenshots: false,
   relayEnabled: false,
+  relayDailyRequests: 20_000,
+  relayDailyBytes: 2 * 1024 ** 3,
   directPlayback: false,
 };
 
