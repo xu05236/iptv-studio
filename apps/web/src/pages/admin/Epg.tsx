@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Trash2 } from 'lucide-react';
+import { Save, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { EmptyState, useToast } from '../../components/ui';
+import { Button, EmptyState, Field, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { timeAgo } from '../../lib/format';
 
@@ -39,11 +39,22 @@ interface EpgSource {
   error?: string;
 }
 
+interface EpgSettings {
+  epgUrls?: string[];
+  epgSourcePriority?: string;
+  epgRefreshEnabled?: boolean;
+  epgRefreshTimes?: string;
+}
+
 export function Epg() {
   const { show } = useToast();
   const queryClient = useQueryClient();
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [keyword, setKeyword] = useState('');
+  const [epgText, setEpgText] = useState('');
+  const [priority, setPriority] = useState('');
+  const [epgEnabled, setEpgEnabled] = useState(true);
+  const [epgTimes, setEpgTimes] = useState('00:10');
 
   const coverage = useQuery({
     queryKey: ['epg-coverage'],
@@ -56,6 +67,34 @@ export function Epg() {
   const sources = useQuery({
     queryKey: ['epg-sources'],
     queryFn: () => api.get<{ generatedAt: string | null; items: EpgSource[] }>('/api/admin/epg/sources'),
+  });
+  const settings = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => api.get<{ settings: EpgSettings }>('/api/admin/settings'),
+  });
+
+  useEffect(() => {
+    const value = settings.data?.settings;
+    if (!value) return;
+    setEpgText((value.epgUrls ?? []).join('\n'));
+    setPriority(value.epgSourcePriority ?? '');
+    setEpgEnabled(value.epgRefreshEnabled ?? true);
+    setEpgTimes(value.epgRefreshTimes ?? '00:10');
+  }, [settings.data]);
+
+  const saveEpgSettings = useMutation({
+    mutationFn: () =>
+      api.put('/api/admin/settings', {
+        epgUrls: epgText.split(/\n+/).map((line) => line.trim()).filter(Boolean),
+        epgSourcePriority: priority,
+        epgRefreshEnabled: epgEnabled,
+        epgRefreshTimes: epgTimes,
+      }),
+    onSuccess: () => {
+      show('EPG 设置已保存，下一轮抓取生效');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+    },
+    onError: (error: Error) => show(`保存失败：${error.message}`, 'error'),
   });
 
   const bind = useMutation({
@@ -99,14 +138,14 @@ export function Epg() {
         description="未映射的 EPG 频道名可以直接绑定到已有频道；绑定后立即计入覆盖率。"
         meta={stats ? `节目单生成于 ${stats.guideGeneratedAt ? timeAgo(stats.guideGeneratedAt) : '未知'}${stats.guideStale ? ' · 已过期' : ''}` : undefined}
         actions={
-          <button className="btn btn--sm" onClick={() => clean.mutate()} disabled={clean.isPending}>
+          <Button size="sm" onClick={() => clean.mutate()} loading={clean.isPending}>
             <Trash2 size={14} /> 清理噪声频道
-          </button>
+          </Button>
         }
       />
 
       <div className="stack">
-        <div className="card" style={{ padding: 16 }}>
+        <div className="card">
           {stats ? (
             <>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
@@ -130,8 +169,36 @@ export function Epg() {
           )}
         </div>
 
-        <div className="card" style={{ padding: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div className="card">
+          <div className="row" style={{ marginBottom: 10, alignItems: 'center' }}>
+            <strong>节目单设置</strong>
+            <span className="caption">保存后下一轮 EPG 抓取生效</span>
+            <div className="grow" />
+            <Button variant="primary" size="sm" loading={saveEpgSettings.isPending} onClick={() => saveEpgSettings.mutate()}>
+              <Save size={14} /> 保存设置
+            </Button>
+          </div>
+          <div className="stack" style={{ gap: 10 }}>
+            <Field label="XMLTV 源" hint="每行一个地址；留空则不生成节目单">
+              <textarea className="input" rows={4} value={epgText} onChange={(event) => setEpgText(event.target.value)} placeholder="https://example.com/epg.xml" />
+            </Field>
+            <Field label="源优先级" hint="按 hostname 排序，逗号分隔；同频道同一时刻以靠前的源为准">
+              <input className="input" value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="fanmingming.com,epg.pw,51zmt.top" />
+            </Field>
+            <div className="list">
+              <div className="list__row">
+                <span className="grow">启用 EPG 独立定时抓取</span>
+                <Switch checked={epgEnabled} onChange={setEpgEnabled} />
+              </div>
+            </div>
+            <Field label="抓取时刻（北京时间）" hint="支持多个时刻，用逗号分隔，例如 00:10, 12:10">
+              <input className="input" value={epgTimes} onChange={(event) => setEpgTimes(event.target.value)} />
+            </Field>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="row" style={{ marginBottom: 10, alignItems: 'center' }}>
             <strong>节目源贡献</strong>
             <span className="caption">
               {sources.data?.generatedAt ? `上次抓取 ${timeAgo(sources.data.generatedAt)}` : '还没有抓取记录'}
@@ -161,8 +228,8 @@ export function Epg() {
           )}
         </div>
 
-        <div className="card" style={{ padding: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div className="card">
+          <div className="row" style={{ marginBottom: 10, alignItems: 'center' }}>
             <strong>未映射的 EPG 频道名</strong>
             <span className="caption">{unmatched.data?.items.length ?? 0} 条</span>
             <div className="grow" />

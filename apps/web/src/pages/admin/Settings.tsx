@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, CalendarClock, Save, ShieldAlert, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
+import { Activity, CalendarClock, Save, ShieldAlert, SlidersHorizontal, Wrench } from 'lucide-react';
 import type { AppSettings } from '@iptv/core';
 import { api } from '../../lib/api';
 import type { SettingsResponse } from '../../lib/types';
@@ -20,8 +20,6 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const { show } = useToast();
   const [form, setForm] = useState<AppSettings | null>(null);
-  const [epgText, setEpgText] = useState('');
-  const [newEpgUrl, setNewEpgUrl] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'settings'],
@@ -56,15 +54,12 @@ export function SettingsPage() {
   useEffect(() => {
     if (data?.settings) {
       setForm(data.settings);
-      setEpgText((data.settings.epgUrls ?? []).join('\n'));
     }
   }, [data]);
 
   const save = useMutation({
-    mutationFn: () => api.put<{ settings: AppSettings }>('/api/admin/settings', {
-      ...form,
-      epgUrls: epgText.split(/\n+/).map((line) => line.trim()).filter(Boolean),
-    }),    onSuccess: () => {
+    mutationFn: () => api.put<{ settings: AppSettings }>('/api/admin/settings', { ...form }),
+    onSuccess: () => {
       show('设置已保存');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'schedule'] });
@@ -77,22 +72,6 @@ export function SettingsPage() {
   }
 
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]): void => setForm({ ...form, [key]: value });
-  const epgUrls = epgText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const writeEpgUrls = (urls: string[]): void => setEpgText(urls.join('\n'));
-  const addEpgUrl = (): void => {
-    const value = newEpgUrl.trim();
-    if (!value) return;
-    if (!/^https?:\/\//i.test(value)) {
-      show('EPG 地址必须以 http:// 或 https:// 开头', 'error');
-      return;
-    }
-    if (epgUrls.includes(value)) {
-      show('这个 EPG 源已经存在');
-      return;
-    }
-    writeEpgUrls([...epgUrls, value]);
-    setNewEpgUrl('');
-  };
 
   return (
     <div className="stack">
@@ -107,7 +86,7 @@ export function SettingsPage() {
         <a href="#settings-basic">台标</a>
         <a href="#settings-probe">采集与探测</a>
         <a href="#settings-schedule">定时任务</a>
-        <a href="#settings-epg">EPG 与通知</a>
+        <a href="#settings-notify">通知与保留</a>
         <a href="#settings-advanced">高级</a>
         <a href="#settings-maintenance">维护</a>
       </nav>
@@ -117,7 +96,6 @@ export function SettingsPage() {
         <div><span>自动采集</span><Badge tone={form.autoCollectEnabled ? 'green' : 'default'}>{form.autoCollectEnabled ? '开启' : '关闭'}</Badge></div>
         <div><span>分批探测</span><Badge tone={form.autoProbeEnabled ? 'green' : 'default'}>{form.autoProbeEnabled ? '开启' : '关闭'}</Badge></div>
         <div><span>自动发布</span><Badge tone={form.autoPublishEnabled ? 'green' : 'default'}>{form.autoPublishEnabled ? '开启' : '关闭'}</Badge></div>
-        <div><span>EPG 定时</span><Badge tone={form.epgRefreshEnabled ? 'green' : 'default'}>{form.epgRefreshEnabled ? '开启' : '关闭'}</Badge></div>
       </div>
 
       <div className="settings-overview">
@@ -290,71 +268,13 @@ export function SettingsPage() {
         </div>
       </Card>
 
-      <div id="settings-epg" className="settings-anchor" />
+      <div id="settings-notify" className="settings-anchor" />
       <Card>
         <div className="settings-card__head">
           <span className="settings-card__icon"><CalendarClock size={17} /></span>
-          <div><div className="title-3">EPG 与通知</div><div className="caption">节目单源、刷新时刻、通知与保留</div></div>
+          <div><div className="title-3">通知与保留</div><div className="caption">Telegram 日报、截帧验证与快照保留；EPG 设置已移到「EPG 覆盖与映射」页。</div></div>
         </div>
         <div className="stack" style={{ marginTop: 12 }}>
-          <Field label="XMLTV 源" hint="支持添加多个源；保存后下一轮采集生效。留空则不生成节目单。">
-            <div className="stack stack--tight">
-              {epgUrls.map((url, index) => (
-                <div className="row row--wrap" key={`${url}-${index}`} style={{ gap: 6 }}>
-                  <input
-                    className="input grow"
-                    value={url}
-                    onChange={(event) => {
-                      const next = [...epgUrls];
-                      next[index] = event.target.value;
-                      writeEpgUrls(next);
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    onClick={() => writeEpgUrls(epgUrls.filter((_, itemIndex) => itemIndex !== index))}
-                  >
-                    <Trash2 size={14} /> 删除
-                  </Button>
-                </div>
-              ))}
-              {!epgUrls.length ? <div className="caption">当前没有 EPG 源。</div> : null}
-              <div className="row row--wrap" style={{ gap: 6 }}>
-                <input
-                  className="input grow"
-                  placeholder="https://example.com/epg.xml 或 .xml.gz"
-                  value={newEpgUrl}
-                  onChange={(event) => setNewEpgUrl(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      addEpgUrl();
-                    }
-                  }}
-                />
-                <Button size="sm" onClick={addEpgUrl} disabled={!newEpgUrl.trim()}>添加源</Button>
-              </div>
-              <div className="caption">当前 {epgUrls.length} 个源；默认包含 fanmingming 与 epg.pw。</div>
-            </div>
-          </Field>
-          <Field label="EPG 源优先级" hint="按 hostname 排序，逗号分隔，靠前优先；同频道同一时刻以靠前的源为准。">
-            <input
-              className="input"
-              placeholder="fanmingming.com,epg.pw,51zmt.top"
-              value={form.epgSourcePriority ?? ''}
-              onChange={(event) => set('epgSourcePriority', event.target.value)}
-            />
-          </Field>
-          <div className="list">
-            <div className="list__row">
-              <span className="grow">启用 EPG 独立定时抓取</span>
-              <Switch checked={form.epgRefreshEnabled ?? true} onChange={(value) => set('epgRefreshEnabled', value)} />
-            </div>
-          </div>
-          <Field label="EPG 抓取时刻（北京时间）" hint="节目单每天 0 点后已更新；支持多个时刻，用逗号分隔，例如 00:10, 12:10">
-            <input className="input" value={form.epgRefreshTimes ?? '00:10'} onChange={(event) => set('epgRefreshTimes', event.target.value)} />
-          </Field>
           <div className="list">
             <div className="list__row"><span className="grow">Telegram 日报（需在 Actions 配置 Secret）</span><Switch checked={form.notifyTelegram} onChange={(value) => set('notifyTelegram', value)} /></div>
             <div className="list__row"><span className="grow">每日截帧验证（需 runner 支持 ffmpeg）</span><Switch checked={form.screenshots} onChange={(value) => set('screenshots', value)} /></div>

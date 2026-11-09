@@ -103,7 +103,7 @@ export function SourceDetail() {
   return (
     <div className="stack">
       <AdminPageHeader
-        eyebrow="SOURCE"
+        eyebrow="采集站"
         title={source.name}
         description={`${hostOf(source)} · ${source.kind} · 权重 ${source.weight} · 抓取 ${source.fetchMode === 'worker' ? 'Worker 代拉' : '直连'}`}
         actions={

@@ -46,6 +46,7 @@ const KIND_LABEL: Record<string, string> = {
   wrong: '名称/分类错误',
   epg: '节目单缺失',
   slow: '卡顿',
+  ci: '部署/CI 失败',
   other: '其他',
 };
 
@@ -107,6 +108,12 @@ export function Events() {
         title="运营事件"
         description="前台报障与后台审计的统一入口：报障可一键转探测，审计记录改名/删源/发布等操作。"
       />
+      <Card>
+        <div className="caption">
+          这里汇总三类信息：前台用户点「报障」提交的线路问题；部署流水线失败时自动上报的 CI 日志；后台改名、删源、发布等操作审计。
+          列表里的「待处理」是还没人处理的报障——点「转探测」会让采集端复测这条线路；点「已解决」或「忽略」只是标注状态，不会删除记录。
+        </div>
+      </Card>
       <div className="row" style={{ gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <Button variant={tab === 'feedback' ? 'primary' : undefined} onClick={() => setTab('feedback')}>
           <Bug size={15} /> 报障
@@ -148,11 +155,25 @@ export function Events() {
                       <Badge tone={STATUS_TONE[item.status] ?? 'default'}>{STATUS_LABEL[item.status] ?? item.status}</Badge>
                       <span className="caption">{timeAgo(item.created_at)} · {formatDateTime(item.created_at)}</span>
                     </div>
-                    <div style={{ marginTop: 8 }}>{item.message ?? '（无说明）'}</div>
+                    <div style={{ marginTop: 8 }}>
+                      {item.message && item.message.length > 180 ? (
+                        <details>
+                          <summary className="caption" style={{ cursor: 'pointer' }}>查看完整内容（{item.message.length} 字）</summary>
+                          <pre className="code" style={{ marginTop: 6, maxHeight: 220, overflow: 'auto' }}>{item.message}</pre>
+                        </details>
+                      ) : (
+                        <div>{item.message ?? '（无说明）'}</div>
+                      )}
+                    </div>
+                    {item.kind === 'ci' ? (
+                      <div className="caption" style={{ marginTop: 4 }}>
+                        来自部署流水线（GitHub Actions）的自动上报，一般是 D1 迁移、构建或部署步骤失败；修好后点「已解决」。
+                      </div>
+                    ) : null}
                     <div className="caption" style={{ marginTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                      {item.channel_id && <span>频道：{item.channel_id}</span>}
-                      {item.source_id && <span>采集站：{item.source_id}</span>}
-                      {item.entry_key && <span>线路：{item.entry_key}</span>}
+                      {item.channel_id && <span>频道 ID：{item.channel_id}</span>}
+                      {item.source_id && <span>采集站 ID：{item.source_id}</span>}
+                      {item.entry_key && <span>线路 key：{item.entry_key}</span>}
                     </div>
                   </div>
                   <div className="row" style={{ gap: 6 }}>
