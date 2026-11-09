@@ -34,6 +34,33 @@ export function fetchErrorLabel(kind?: FetchErrorKind | string | null): string {
   return FETCH_ERROR_LABELS[kind as FetchErrorKind] ?? String(kind);
 }
 
+/**
+ * Extract the underlying network error code (ENOTFOUND / ECONNREFUSED / …) from
+ * undici's error/cause chain so the source card can say why a fetch failed
+ * instead of just "fetch failed".
+ */
+export function networkIssue(error: unknown): string | null {
+  const codes: string[] = [];
+  const walk = (value: unknown, depth: number): void => {
+    if (!value || depth > 5) return;
+    const candidate = value as { code?: unknown; errors?: unknown[]; cause?: unknown };
+    if (typeof candidate.code === 'string' && candidate.code) codes.push(candidate.code);
+    if (Array.isArray(candidate.errors)) {
+      for (const item of candidate.errors) walk(item, depth + 1);
+    }
+    walk(candidate.cause, depth + 1);
+  };
+  walk(error, 0);
+  const preferred = [
+    'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT',
+    'EHOSTUNREACH', 'ENETUNREACH', 'EPROTO', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET',
+  ];
+  for (const code of preferred) {
+    if (codes.includes(code)) return code;
+  }
+  return codes.find((code) => /^E[A-Z_]+$/.test(code) || /^UND_ERR_/.test(code)) ?? null;
+}
+
 export interface FetchTextOptions {
   /** Conditional request: previous ETag. */
   etag?: string | null;
@@ -205,7 +232,9 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
           continue;
         }
       } else {
-        const message = timedOut ? '请求超时' : error instanceof Error ? error.message : String(error);
+        const base = timedOut ? '请求超时' : error instanceof Error ? error.message : String(error);
+        const cause = timedOut ? null : networkIssue(error);
+        const message = cause ? `${base} (${cause})` : base;
         last = { ok: false, status: 0, error: message, errorKind: timedOut ? 'timeout' : 'network', attempts: attempt };
       }
     } finally {
