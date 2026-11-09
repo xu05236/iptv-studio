@@ -134,7 +134,7 @@ export function Pool() {
 
   const customPools = useQuery({
     queryKey: ['admin', 'custom-pools'],
-    queryFn: () => api.get<{ items: Array<{ id: string; name: string; count: number }> }>('/api/admin/pools'),
+    queryFn: () => api.get<{ items: Array<{ id: string; name: string; count: number }> }>('/api/admin/pool/pools'),
   });
 
   const poolTotals = useMemo(() => {
@@ -340,7 +340,7 @@ export function Pool() {
   });
 
   const createPool = useMutation({
-    mutationFn: (name: string) => api.post<{ pool: { id: string; name: string } }>('/api/admin/pools', { name }),
+    mutationFn: (name: string) => api.post<{ pool: { id: string; name: string } }>('/api/admin/pool/pools', { name }),
     onSuccess: () => {
       show('已创建池');
       setPoolName('');
@@ -350,7 +350,7 @@ export function Pool() {
   });
 
   const renamePool = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => api.patch(`/api/admin/pools/${id}`, { name }),
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.patch(`/api/admin/pool/pools/${id}`, { name }),
     onSuccess: () => {
       show('已改名');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'custom-pools'] });
@@ -359,7 +359,7 @@ export function Pool() {
   });
 
   const deletePool = useMutation({
-    mutationFn: (id: string) => api.del(`/api/admin/pools/${id}`),
+    mutationFn: (id: string) => api.del(`/api/admin/pool/pools/${id}`),
     onSuccess: () => {
       show('池已删除，线路不受影响');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'custom-pools'] });
@@ -368,7 +368,7 @@ export function Pool() {
   });
 
   const addToCustomPool = useMutation({
-    mutationFn: ({ id, keys }: { id: string; keys: string[] }) => api.post<{ added: number }>(`/api/admin/pools/${id}/lines`, { keys }),
+    mutationFn: ({ id, keys }: { id: string; keys: string[] }) => api.post<{ added: number }>(`/api/admin/pool/pools/${id}/lines`, { keys }),
     onSuccess: (result) => {
       show(`已加入池：新增 ${result.added} 条`);
       setSelected(new Set());

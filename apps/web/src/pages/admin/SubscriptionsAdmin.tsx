@@ -134,7 +134,7 @@ export function SubscriptionsAdmin() {
 
   const customPools = useQuery({
     queryKey: ['admin', 'custom-pools'],
-    queryFn: () => api.get<{ items: Array<{ id: string; name: string; count: number }> }>('/api/admin/pools'),
+    queryFn: () => api.get<{ items: Array<{ id: string; name: string; count: number }> }>('/api/admin/pool/pools'),
     enabled: open,
   });
 
