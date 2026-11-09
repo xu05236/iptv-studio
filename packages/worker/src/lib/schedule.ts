@@ -390,6 +390,29 @@ export function intervalDue(lastRunAt: string | null | undefined, intervalDays: 
   return now - last >= (days - 0.05) * 86_400_000;
 }
 
+/**
+ * Extra probe batch triggered by a large import: only when the regular window
+ * is still in the future, pending lines exist, the last probe is 3h old and no
+ * extra batch has run today. Keeps Actions spend at +1 run/day maximum.
+ */
+export function probeWakeAllowed(input: {
+  pending: number;
+  lastRunAt?: string | null;
+  nextRunAt?: string | null;
+  now: number;
+  today: string;
+  wakeDate?: string | null;
+  wakeCount?: number | null;
+}): boolean {
+  const nextDue = input.nextRunAt ? Date.parse(input.nextRunAt) : NaN;
+  if (!Number.isFinite(nextDue) || nextDue <= input.now) return false;
+  if (input.pending <= 0) return false;
+  const last = input.lastRunAt ? Date.parse(input.lastRunAt) : NaN;
+  if (Number.isFinite(last) && input.now - last < 3 * 3_600_000) return false;
+  if (input.wakeDate === input.today && Number(input.wakeCount ?? 0) >= 1) return false;
+  return true;
+}
+
 async function recordInterval(env: Env, key: string, now: number, nextMs: number, result: string): Promise<void> {
   const state: IntervalState = {
     lastRunAt: new Date(now).toISOString(),
@@ -488,9 +511,25 @@ async function runFetchWatch(env: Env, settings: AppSettings, now: number): Prom
 async function runProbeWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
   if (!settings.autoProbeEnabled) return false;
   const state = await getRuntimeJson<IntervalState>(env, 'state/probe-schedule.json');
-  if (state?.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
-  const intervalMs = Math.max(1, Number(settings.autoProbeIntervalHours) || 2) * 3_600_000;
   const stats = await getJson<Record<string, number>>(env, 'state/pool-stats.json');
+  const today = new Date(now).toISOString().slice(0, 10);
+  const wake = await getRuntimeJson<{ date?: string; count?: number }>(env, 'state/probe-wake.json');
+  let earlyWake = false;
+  if (state?.nextRunAt && Date.parse(state.nextRunAt) > now) {
+    // A large source import leaves pending lines idle until the next 8h window.
+    // Allow at most one extra batch per day, and only 3h after the last probe.
+    earlyWake = probeWakeAllowed({
+      pending: Number(stats?.pending ?? 0),
+      lastRunAt: state.lastRunAt,
+      nextRunAt: state.nextRunAt,
+      now,
+      today,
+      wakeDate: wake?.date,
+      wakeCount: wake?.count,
+    });
+    if (!earlyWake) return false;
+  }
+  const intervalMs = Math.max(1, Number(settings.autoProbeIntervalHours) || 2) * 3_600_000;
   const paused = new Set(phaseList(settings.probePausedPhases));
   const hasWork = !stats || PHASES.some((phase) => !paused.has(phase) && Number(stats[phase] ?? 0) > 0);
   if (!hasWork) {
@@ -513,6 +552,9 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
     unit: 'lines',
   });
   await recordInterval(env, 'state/probe-schedule.json', now, now + intervalMs, 'queued');
+  if (earlyWake) {
+    await putRuntimeJson(env, 'state/probe-wake.json', { date: today, count: Number(wake?.count ?? 0) + 1 });
+  }
   await audit(env, 'scheduler', 'schedule.probe-batch', task.id);
   return true;
 }

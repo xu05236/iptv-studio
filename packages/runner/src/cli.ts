@@ -557,11 +557,8 @@ async function fetchPhase(
   logger.info('线路归一完成', { lines: lines.length, sourceId: sourceId || undefined });
   const stats = poolStatsFor(remote, lines);
   await store.put('state/pool-stats.json', JSON.stringify(stats), 'application/json');
-  if (stats.pending > 0) {
-    // Wake the batch scheduler immediately after a source refresh instead of
-    // waiting for the previous 2h interval to expire.
-    await store.put('state/probe-schedule.json', JSON.stringify({ nextRunAt: new Date().toISOString(), result: 'fetch added pending' }), 'application/json');
-  }
+  // 新线路不再直接改写探测计划：调度器按「待测 > 0 + 距上次探测 ≥ 3h + 每天最多 1 批」补探，
+  // 其余交给 8 小时窗口，避免每次加源都多开一轮 Actions。
   return { lines, collected, sourceId };
 }
 

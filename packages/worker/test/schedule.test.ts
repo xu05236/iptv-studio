@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '@iptv/core';
-import { actionsAllowance, intervalDue, isStuckTask, mostRecentScheduledAt, nextAutoLivenessAt, nextScheduledAt, parseCollectTimes } from '../src/lib/schedule.js';
+import { actionsAllowance, intervalDue, isStuckTask, mostRecentScheduledAt, nextAutoLivenessAt, nextScheduledAt, parseCollectTimes, probeWakeAllowed } from '../src/lib/schedule.js';
 
 describe('global fetch cadence', () => {
   const now = Date.parse('2026-11-09T00:00:00Z');
@@ -108,5 +108,31 @@ describe('schedule instants', () => {
     const enabled = { ...DEFAULT_SETTINGS, autoLivenessEnabled: true, autoLivenessTimes: '20:30' };
     expect(nextAutoLivenessAt(enabled, now)).toBe(Date.parse('2026-10-31T12:30:00Z'));
     expect(nextAutoLivenessAt({ ...enabled, autoLivenessEnabled: false }, now)).toBeNull();
+  });
+});
+
+describe('probe early wake', () => {
+  const base = {
+    pending: 1500,
+    lastRunAt: '2026-11-09T01:15:00Z',
+    nextRunAt: '2026-11-09T09:15:00Z',
+    now: Date.parse('2026-11-09T05:00:00Z'),
+    today: '2026-11-09',
+    wakeDate: null,
+    wakeCount: 0,
+  };
+
+  it('allows one extra batch when the window is far away and pending work exists', () => {
+    expect(probeWakeAllowed(base)).toBe(true);
+  });
+
+  it('waits until the last probe is 3h old', () => {
+    expect(probeWakeAllowed({ ...base, now: Date.parse('2026-11-09T03:30:00Z') })).toBe(false);
+  });
+
+  it('never wakes twice per day and respects an already-passed window', () => {
+    expect(probeWakeAllowed({ ...base, wakeDate: '2026-11-09', wakeCount: 1 })).toBe(false);
+    expect(probeWakeAllowed({ ...base, nextRunAt: '2026-11-09T04:00:00Z' })).toBe(false);
+    expect(probeWakeAllowed({ ...base, pending: 0 })).toBe(false);
   });
 });

@@ -247,7 +247,7 @@ export function Sources() {
   const favorite = useMutation({
     mutationFn: (source: SourceItem) => api.patch(`/api/admin/sources/${source.id}`, { weight: source.weight >= 2 ? 1 : 2 }),
     onSuccess: () => {
-      show('收藏状态已更新，下一轮排序生效');
+      show('收藏状态已更新');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
@@ -317,9 +317,8 @@ export function Sources() {
     const base = attentionOnly ? all.filter(needsAttention) : all;
     const favorite = (source: SourceItem): number => (source.weight >= 2 ? 1 : 0);
     const added = (source: SourceItem): number => Date.parse(source.created_at) || 0;
-    const attention = (source: SourceItem): number => (needsAttention(source) ? 1 : 0);
     if (!healthSort || !health.data) {
-      return [...base].sort((a, b) => attention(b) - attention(a) || favorite(b) - favorite(a) || added(b) - added(a) || b.reputation - a.reputation || a.name.localeCompare(b.name, 'zh-CN'));
+      return [...base].sort((a, b) => favorite(b) - favorite(a) || added(b) - added(a) || a.name.localeCompare(b.name, 'zh-CN'));
     }
     const score = new Map(
       health.data.items.map((item) => {
@@ -328,7 +327,7 @@ export function Sources() {
         return [item.sourceId, total ? alive / total : 0];
       }),
     );
-    return [...base].sort((a, b) => attention(b) - attention(a) || favorite(b) - favorite(a) || added(b) - added(a) || (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
+    return [...base].sort((a, b) => favorite(b) - favorite(a) || added(b) - added(a) || (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
   }, [data, healthSort, health.data, attentionOnly, tagFilter]);
   const attentionCount = useMemo(() => (data?.items ?? []).filter(needsAttention).length, [data]);
   const allTags = useMemo(() => {
