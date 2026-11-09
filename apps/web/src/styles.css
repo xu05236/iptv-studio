@@ -2506,8 +2506,8 @@ button {
 
 .source-grid--list .source-card__head { grid-area: head; }
 .source-grid--list .source-card__stats { grid-area: stats; }
-.source-grid--list .source-card__meta { grid-area: meta; }
-.source-grid--list .source-card__error { grid-area: error; }
+.source-grid--list .source-card__meta-lines { grid-area: meta; }
+.source-grid--list .source-card__error-lines { grid-area: error; }
 .source-grid--list .source-card__url { grid-area: url; }
 .source-grid--list .source-card__actions {
   grid-area: actions;
@@ -2571,12 +2571,12 @@ button {
 
 .source-card__stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
 }
 
 .source-card__stats > div {
-  padding: 9px 10px;
+  padding: 8px 7px;
   border-radius: 11px;
   background: var(--fill-2);
   min-width: 0;
@@ -2584,7 +2584,7 @@ button {
 
 .source-card__stats strong {
   display: block;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
@@ -2592,7 +2592,7 @@ button {
 
 .source-card__stats strong em {
   font-style: normal;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   color: var(--label-3);
 }
@@ -2620,6 +2620,22 @@ button {
 .source-card__meta {
   font-size: 12px;
   color: var(--label-2);
+}
+
+.source-card__meta-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.source-card__error-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.source-card__error-lines:empty {
+  display: none;
 }
 
 .source-card__error {
@@ -2801,7 +2817,7 @@ button {
 
 @media (max-width: 520px) {
   .source-card__stats {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 

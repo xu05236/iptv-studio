@@ -610,6 +610,7 @@ export function Sources() {
                 <div><strong>{formatNumber(source.progress?.rejectedTotal ?? 0)}<Delta value={before ? (source.progress?.rejectedTotal ?? 0) - before.rejected : null} /></strong><span>已淘汰</span></div>
               </div>
 
+              <div className="source-card__meta-lines">
               <div className="source-card__meta">
                 更新 {timeAgo(source.last_fetch_at ?? source.last_ok_at)} · {source.refresh_hours != null && source.refresh_hours > 0 ? (source.refresh_hours % 24 === 0 ? `每 ${source.refresh_hours / 24} 天` : `每 ${source.refresh_hours}h`) : source.refresh_hours === 0 ? '不自动重抓' : '跟随分档（12/24/72h）'}
                 {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
@@ -630,6 +631,8 @@ export function Sources() {
                   上游消失 {formatNumber(report.disappeared)} 条 · 保留 {formatNumber(report.retained)} 条（保留期内的旧线路仍在池中）
                 </div>
               ) : null}
+              </div>
+              <div className="source-card__error-lines">
               {source.parseDrop ? (
                 <div className="source-card__error">解析条数较上轮下降 {source.parseReport?.dropPercent ?? 0}%（{formatNumber(source.parseReport?.entries ?? 0)} 条）</div>
               ) : null}
@@ -642,6 +645,7 @@ export function Sources() {
                   {source.last_error}
                 </div>
               ) : null}
+              </div>
               {source.url ? <div className="caption mono truncate source-card__url">{source.url}</div> : null}
 
               <div className="source-card__actions">
