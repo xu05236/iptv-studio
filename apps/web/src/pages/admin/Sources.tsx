@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, ChevronDown, LayoutGrid, List, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Upload, Zap } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -8,7 +8,7 @@ import { timeAgo } from '../../lib/format';
 import { errorKindLabel } from '../../lib/fetchErrors';
 import { Badge, Button, Card, EmptyState, Field, Segmented, Sheet, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
-import { ReputationBadge } from '../../components/ReputationBadge';
+import { ReputationBadge, reputationTier } from '../../components/ReputationBadge';
 
 const formatNumber = (value: number): string => value.toLocaleString('zh-CN');
 
@@ -147,6 +147,10 @@ export function Sources() {
   const [fetchConcurrency, setFetchConcurrency] = useState('1');
   const [fetchDelayMs, setFetchDelayMs] = useState('0');
   const [healthSort, setHealthSort] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const reputationParam = searchParams.get('reputation');
+  const reputationFilter: 'high' | 'normal' | 'low' | null =
+    reputationParam === 'high' || reputationParam === 'normal' || reputationParam === 'low' ? reputationParam : null;
   const [attentionOnly, setAttentionOnly] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [tagFilter, setTagFilter] = useState('');
@@ -315,7 +319,9 @@ export function Sources() {
   });
 
   const items = useMemo(() => {
-    const all = (data?.items ?? []).filter((source) => !tagFilter || (source.tags ?? []).includes(tagFilter));
+    const all = (data?.items ?? [])
+      .filter((source) => !tagFilter || (source.tags ?? []).includes(tagFilter))
+      .filter((source) => !reputationFilter || reputationTier(source.reputation ?? 0) === reputationFilter);
     const base = attentionOnly ? all.filter(needsAttention) : all;
     const favorite = (source: SourceItem): number => (source.weight >= 2 ? 1 : 0);
     const added = (source: SourceItem): number => Date.parse(source.created_at) || 0;
@@ -330,7 +336,7 @@ export function Sources() {
       }),
     );
     return [...base].sort((a, b) => favorite(b) - favorite(a) || added(b) - added(a) || (score.get(b.id) ?? 0) - (score.get(a.id) ?? 0));
-  }, [data, healthSort, health.data, attentionOnly, tagFilter]);
+  }, [data, healthSort, health.data, attentionOnly, tagFilter, reputationFilter]);
   const attentionCount = useMemo(() => (data?.items ?? []).filter(needsAttention).length, [data]);
   const allTags = useMemo(() => {
     const tags = new Set<string>();
@@ -413,6 +419,25 @@ export function Sources() {
               按 7 天健康排序
             </Button>
           </div>
+        </div>
+      ) : null}
+
+      {reputationFilter ? (
+        <div className="row row--wrap" style={{ gap: 6, alignItems: 'center' }}>
+          <Badge tone={reputationFilter === 'high' ? 'green' : reputationFilter === 'normal' ? 'blue' : 'orange'}>
+            只看：{reputationFilter === 'high' ? '优质' : reputationFilter === 'normal' ? '正常' : '降权'}
+          </Badge>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const next = new URLSearchParams(searchParams);
+              next.delete('reputation');
+              setSearchParams(next, { replace: true });
+            }}
+          >
+            清除筛选
+          </Button>
         </div>
       ) : null}
 

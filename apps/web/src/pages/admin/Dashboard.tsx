@@ -831,28 +831,34 @@ export function Dashboard() {
           <div className="row row--between">
             <div>
               <div className="title-3">源健康度</div>
-              <div className="caption">{stats.sources.total} 个采集站</div>
+              <div className="caption">{stats.sources.total} 个采集站 · 点击数字只看该档</div>
             </div>
             <Link to="/admin/sources" className="caption">管理 <ArrowUpRight size={12} /></Link>
           </div>
           {(() => {
             const total = Math.max(1, stats.sources.reputation.high + stats.sources.reputation.normal + stats.sources.reputation.low);
             const items = [
-              { label: '优质', value: stats.sources.reputation.high, tone: 'green' },
-              { label: '正常', value: stats.sources.reputation.normal, tone: 'orange' },
-              { label: '降权', value: stats.sources.reputation.low, tone: 'red' },
+              { key: 'high', label: '优质', value: stats.sources.reputation.high, tone: 'green' },
+              { key: 'normal', label: '正常', value: stats.sources.reputation.normal, tone: 'orange' },
+              { key: 'low', label: '降权', value: stats.sources.reputation.low, tone: 'red' },
             ];
             return (
               <>
                 <div className="health-stats">
                   {items.map((item) => (
-                    <div className={`health-stat health-stat--${item.tone}`} key={item.label}>
+                    <Link
+                      className={`health-stat health-stat--${item.tone}`}
+                      key={item.label}
+                      to={`/admin/sources?reputation=${item.key}`}
+                      title={`只看${item.label}的采集站`}
+                      style={{ textDecoration: 'none', color: 'inherit' }}
+                    >
                       <span className="health-stat__dot" />
                       <div>
                         <div className="health-stat__value">{formatNumber(item.value)}</div>
                         <div className="health-stat__label">{item.label}</div>
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
                 <div className="health-bar">
