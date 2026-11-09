@@ -259,8 +259,12 @@ export function SettingsPage() {
           <div className="list">
             <div className="list__row"><span className="grow">启用定时抓源（新源建议手动触发）</span><Switch checked={form.autoFetchEnabled ?? true} onChange={(value) => set('autoFetchEnabled', value)} /></div>
           </div>
-          <Field label="抓取间隔（天）" hint="1 = 每天按下面的时段抓；2 = 每 2 天；3/4/7 同理。只在时段到点、且距上次抓源已满 N 天时才会执行">
-            <input className="input" inputMode="numeric" value={form.fetchIntervalDays ?? 1} onChange={(event) => set('fetchIntervalDays', Math.max(1, Number(event.target.value) || 1))} />
+          <Field label="抓取间隔（天）" hint="按天定时：每天 / 每 2 天 / … / 每 7 天。与下面的时段配合使用：例如「每 2 天」+「06:30」= 隔天 06:30 抓一次；中间日期到点会自动跳过">
+            <select className="select" value={form.fetchIntervalDays ?? 1} onChange={(event) => set('fetchIntervalDays', Number(event.target.value))}>
+              {[1, 2, 3, 4, 5, 6, 7].map((days) => (
+                <option key={days} value={days}>{days === 1 ? '每天' : `每 ${days} 天`}</option>
+              ))}
+            </select>
           </Field>
           <Field label="抓取时段（北京时间）" hint="固定定时或自定义多时段：可填 1 个或多个时刻，逗号分隔，例如 06:30 或 06:30,12:30,18:30；到点只抓源，新线路进 pending 后由分批探测处理">
             <input className="input" value={form.fetchTimes ?? '06:30'} onChange={(event) => set('fetchTimes', event.target.value)} />

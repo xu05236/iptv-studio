@@ -661,7 +661,7 @@ adminRoutes.put('/settings', async (c) => {
   if (clean.sourceDegradeThreshold !== undefined) clean.sourceDegradeThreshold = Math.max(1, Math.min(10, Number(clean.sourceDegradeThreshold) || 3));
   if (clean.sourcePauseThreshold !== undefined) clean.sourcePauseThreshold = Math.max(2, Math.min(20, Number(clean.sourcePauseThreshold) || 5));
   if (clean.sourceHalfOpenHours !== undefined) clean.sourceHalfOpenHours = Math.max(1, Math.min(168, Number(clean.sourceHalfOpenHours) || 6));
-  if (clean.fetchIntervalDays !== undefined) clean.fetchIntervalDays = Math.max(1, Number(clean.fetchIntervalDays) || 7);
+  if (clean.fetchIntervalDays !== undefined) clean.fetchIntervalDays = Math.min(7, Math.max(1, Math.floor(Number(clean.fetchIntervalDays) || 1)));
   const settings = await saveSettings(c.env, clean);
   return ok({ settings });
 });

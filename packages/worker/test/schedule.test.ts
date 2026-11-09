@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '@iptv/core';
-import { actionsAllowance, isStuckTask, mostRecentScheduledAt, nextAutoLivenessAt, nextScheduledAt, parseCollectTimes } from '../src/lib/schedule.js';
+import { actionsAllowance, intervalDue, isStuckTask, mostRecentScheduledAt, nextAutoLivenessAt, nextScheduledAt, parseCollectTimes } from '../src/lib/schedule.js';
+
+describe('global fetch cadence', () => {
+  const now = Date.parse('2026-11-09T00:00:00Z');
+
+  it('runs daily when the interval is 1', () => {
+    expect(intervalDue(null, 1, now)).toBe(true);
+    expect(intervalDue(new Date(now - 3_600_000).toISOString(), 1, now)).toBe(true);
+  });
+
+  it('skips until N days have passed, then runs', () => {
+    expect(intervalDue(new Date(now - 86_400_000).toISOString(), 2, now)).toBe(false);
+    expect(intervalDue(new Date(now - 2 * 86_400_000).toISOString(), 2, now)).toBe(true);
+    expect(intervalDue(new Date(now - 6 * 86_400_000).toISOString(), 7, now)).toBe(false);
+    expect(intervalDue(new Date(now - 7 * 86_400_000).toISOString(), 7, now)).toBe(true);
+  });
+});
 
 describe('actions allowance pacing', () => {
   const now = Date.parse('2026-11-06T02:00:00Z');

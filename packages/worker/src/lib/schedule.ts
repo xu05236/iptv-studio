@@ -381,6 +381,15 @@ async function intervalGuard(env: Env, settings: AppSettings): Promise<'quota' |
   return null;
 }
 
+/** True when a global N-day cadence allows another fetch at `now`. */
+export function intervalDue(lastRunAt: string | null | undefined, intervalDays: number, now: number): boolean {
+  const days = Math.max(1, Math.floor(Number(intervalDays) || 1));
+  if (days <= 1) return true;
+  const last = lastRunAt ? Date.parse(lastRunAt) : NaN;
+  if (!Number.isFinite(last)) return true;
+  return now - last >= (days - 0.05) * 86_400_000;
+}
+
 async function recordInterval(env: Env, key: string, now: number, nextMs: number, result: string): Promise<void> {
   const state: IntervalState = {
     lastRunAt: new Date(now).toISOString(),
@@ -439,19 +448,16 @@ async function runFetchWatch(env: Env, settings: AppSettings, now: number): Prom
   const state = await getRuntimeJson<IntervalState>(env, 'state/fetch-schedule.json');
   if (state?.result?.startsWith('skipped') && state.nextRunAt && Date.parse(state.nextRunAt) > now) return false;
   if (state?.lastRunAt && Date.parse(state.lastRunAt) >= slot) return false;
-  // Global cadence: 1 = every day at the slots above, 2 = every two days, etc.
-  const intervalDays = Math.max(1, Math.floor(Number(settings.fetchIntervalDays) || 1));
-  if (intervalDays > 1 && state?.lastRunAt) {
-    const elapsed = now - Date.parse(state.lastRunAt);
-    if (elapsed < (intervalDays - 0.05) * 86_400_000) {
-      const nextSlot = nextScheduledAt(times, now + 60_000) ?? now + 86_400_000;
-      await putRuntimeJson(env, 'state/fetch-schedule.json', {
-        lastRunAt: state.lastRunAt,
-        nextRunAt: new Date(nextSlot).toISOString(),
-        result: `idle: every ${intervalDays} day(s)`,
-      });
-      return false;
-    }
+  // Global cadence: 1 = every day at the slots above, 2 = every two days, up to 7.
+  const intervalDays = Math.max(1, Math.min(7, Math.floor(Number(settings.fetchIntervalDays) || 1)));
+  if (!intervalDue(state?.lastRunAt, intervalDays, now)) {
+    const nextSlot = nextScheduledAt(times, now + 60_000) ?? now + 86_400_000;
+    await putRuntimeJson(env, 'state/fetch-schedule.json', {
+      lastRunAt: state?.lastRunAt ?? null,
+      nextRunAt: new Date(nextSlot).toISOString(),
+      result: `idle: every ${intervalDays} day(s)`,
+    });
+    return false;
   }
   const sources = await listSources(env);
   const hasDue = sources.some((item) => {
