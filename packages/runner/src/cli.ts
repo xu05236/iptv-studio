@@ -152,9 +152,11 @@ function countLineStatuses(lines: LineEntry[]): Map<string, SourceStatusCounts> 
     const counts = bySource.get(line.sourceId) ?? emptyStatusCounts();
     counts.total += 1;
     if (line.status === 'alive') counts.alive += 1;
-    else if (line.status === 'suspect') counts.quarantine += 1;
-    else if (line.status === 'dead') counts.rejected += 1;
-    else if (!line.lastProbeAt) counts.pending += 1;
+    else if (!/^(rtsp|rtmp|rtmps|udp|rtp):\/\//i.test(line.url)) {
+      if (line.status === 'suspect') counts.quarantine += 1;
+      else if (line.status === 'dead') counts.rejected += 1;
+      else if (!line.lastProbeAt) counts.pending += 1;
+    }
     bySource.set(line.sourceId, counts);
   }
   return bySource;
