@@ -594,6 +594,13 @@ sourceRoutes.patch('/:id', async (c) => {
   if (patch['allowInsecureTls'] !== undefined) {
     patch['allow_insecure_tls'] = patch['allowInsecureTls'] ? 1 : 0;
     delete patch['allowInsecureTls'];
+    // Turning the switch on is an explicit "retry this source" request. Without
+    // this, a source paused by TLS failures stays paused and the collector keeps
+    // skipping it, which looks like the switch did nothing.
+    if (patch['allow_insecure_tls'] === 1 && source.status === 'paused') {
+      patch['status'] = 'active';
+      patch['consecutive_failures'] = 0;
+    }
   }
   if (patch['mirrorUrls'] !== undefined) {
     const mirrorCheck = normalizeMirrorUrls(patch['mirrorUrls']);
