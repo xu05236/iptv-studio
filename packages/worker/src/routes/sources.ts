@@ -171,7 +171,9 @@ sourceRoutes.get('/health', async (c) => {
   }
   return ok({
     days,
-    items: [...grouped.entries()].map(([sourceId, points]) => ({
+    items: [...grouped.entries()]
+      .filter(([sourceId]) => names.has(sourceId))
+      .map(([sourceId, points]) => ({
       sourceId,
       name: names.get(sourceId) ?? sourceId,
       points: points.map((point) => ({

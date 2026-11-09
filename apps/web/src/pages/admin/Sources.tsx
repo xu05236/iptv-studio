@@ -493,7 +493,7 @@ export function Sources() {
             <span className="source-health__icon"><Activity size={16} /></span>
             <div className="grow">
               <div className="source-health__title">近 7 天源健康</div>
-              <div className="caption">{healthSummary?.sources ?? health.data.items.length} 个采集站 · 可用 / 解析</div>
+              <div className="caption">{healthSummary?.sources ?? health.data.items.length} 个源 · 可用 / 解析</div>
             </div>
             <div className="source-health__metrics">
               <span><strong>{healthSummary?.average ?? 0}%</strong><em>平均可用率</em></span>
@@ -506,7 +506,7 @@ export function Sources() {
               <table className="table table--cards">
                 <thead>
                   <tr>
-                    <th>采集站</th>
+                    <th>源</th>
                     {Array.from({ length: health.data.days }, (_, index) => {
                       const date = new Date(Date.now() - (health.data.days - 1 - index) * 86_400_000).toISOString().slice(5, 10);
                       return <th key={date}>{date}</th>;
@@ -516,7 +516,7 @@ export function Sources() {
                 <tbody>
                   {health.data.items.map((item) => (
                     <tr key={item.sourceId}>
-                      <td data-label="采集站" className="truncate" style={{ maxWidth: 160 }}>{item.name}</td>
+                      <td data-label="源" className="truncate" style={{ maxWidth: 160 }}>{item.name}</td>
                       {Array.from({ length: health.data.days }, (_, index) => {
                         const date = new Date(Date.now() - (health.data.days - 1 - index) * 86_400_000).toISOString().slice(0, 10);
                         const point = item.points.find((entry) => entry.day === date);
