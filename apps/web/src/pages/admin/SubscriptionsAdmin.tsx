@@ -66,6 +66,7 @@ export function SubscriptionsAdmin() {
   const [frontLimit, setFrontLimit] = useState('0');
   const [maxPerSource, setMaxPerSource] = useState('0');
   const [devices, setDevices] = useState<DeviceToken[]>([]);
+  const [deviceSummary, setDeviceSummary] = useState<{ total: number; enabled: number; active24h: number; active7d: number } | null>(null);
   const [deviceLabel, setDeviceLabel] = useState('');
 
   const settingsQuery = useQuery({
@@ -82,10 +83,12 @@ export function SubscriptionsAdmin() {
 
   const reloadDevices = async (id: string) => {
     try {
-      const result = await api.get<{ items: DeviceToken[] }>(`/api/admin/subscriptions/${id}/tokens`);
+      const result = await api.get<{ items: DeviceToken[]; summary?: { total: number; enabled: number; active24h: number; active7d: number } }>(`/api/admin/subscriptions/${id}/tokens`);
       setDevices(result.items);
+      setDeviceSummary(result.summary ?? null);
     } catch {
       setDevices([]);
+      setDeviceSummary(null);
     }
   };
 
@@ -401,7 +404,10 @@ export function SubscriptionsAdmin() {
           {editing?.id ? (
             <>
               <div className="sheet-section">设备令牌</div>
-              <div className="caption">每个设备一个令牌；禁用某个设备不影响其它设备。</div>
+              <div className="caption">
+                每个设备一个令牌；禁用某个设备不影响其它设备。
+                {deviceSummary ? ` 共 ${deviceSummary.total} 个 · 启用 ${deviceSummary.enabled} · 24h 活跃 ${deviceSummary.active24h} · 7d 活跃 ${deviceSummary.active7d}` : ''}
+              </div>
               <div className="stack" style={{ gap: 6 }}>
                 {devices.map((device) => (
                   <div key={device.token} className="row row--between" style={{ alignItems: 'center', gap: 8 }}>

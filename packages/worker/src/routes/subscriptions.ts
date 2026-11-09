@@ -140,7 +140,18 @@ subscriptionRoutes.get('/:id/tokens', async (c) => {
   const row = await getSubscription(c.env, id);
   if (!row) return fail('订阅不存在', 404);
   const items = await listSubscriptionTokens(c.env, id);
-  return ok({ items });
+  const now = Date.now();
+  const seenWithin = (ms: number): number =>
+    items.filter((item) => item.enabled === 1 && item.last_seen_at && now - Date.parse(item.last_seen_at) <= ms).length;
+  return ok({
+    items,
+    summary: {
+      total: items.length,
+      enabled: items.filter((item) => item.enabled === 1).length,
+      active24h: seenWithin(86_400_000),
+      active7d: seenWithin(7 * 86_400_000),
+    },
+  });
 });
 
 subscriptionRoutes.post('/:id/tokens', async (c) => {
