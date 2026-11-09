@@ -398,7 +398,7 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
   if (running) {
     if (changed) await saveTasks(env, tasks);
     await notify();
-    return { task: running, message: '已有任务在运行' };
+    return { task: running, message: '已有任务在运行，任务已加入排队中' };
   }
   const queued = tasks
     .filter((task) => task.status === 'queued')
@@ -515,7 +515,7 @@ async function mutateTaskCore(env: Env, id: string, action: string): Promise<str
     if (task.status !== 'running') return '只有运行中的任务可以自动结束';
     task.status = 'failed';
     task.finishedAt = new Date().toISOString();
-    task.message = '自动结束：运行超过 90 分钟无进展';
+    task.message = '自动结束：运行超过 20 分钟无进展';
     await finishPlaceholderRun(env, task.id, 'failed', task.message);
   } else if (action === 'force-fail') {
     if (task.status !== 'running') return '只有运行中的任务可以强制结束';
