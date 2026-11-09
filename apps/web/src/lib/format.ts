@@ -28,9 +28,16 @@ export function formatLatency(ms: number | null | undefined): string {
   return `${Math.round(ms)} ms`;
 }
 
+function parseTime(input: string): number {
+  // SQLite `datetime('now')` returns 'YYYY-MM-DD HH:mm:ss' in UTC without a zone
+  // suffix. `new Date()` reads that as local time, which in CST shows 8 hours ago.
+  const value = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(input) ? `${input.replace(' ', 'T')}Z` : input;
+  return new Date(value).getTime();
+}
+
 export function timeAgo(input: string | null | undefined): string {
   if (!input) return '从未';
-  const time = new Date(input).getTime();
+  const time = parseTime(input);
   if (!Number.isFinite(time)) return '—';
   const diff = Date.now() - time;
   if (diff < 0) return '刚刚';
@@ -41,14 +48,14 @@ export function timeAgo(input: string | null | undefined): string {
   if (hours < 24) return `${hours} 小时前`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days} 天前`;
-  return new Date(input).toLocaleDateString('zh-CN');
+  return new Date(time).toLocaleDateString('zh-CN');
 }
 
 export function formatDateTime(input: string | null | undefined): string {
   if (!input) return '—';
-  const date = new Date(input);
-  if (!Number.isFinite(date.getTime())) return '—';
-  return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const time = parseTime(input);
+  if (!Number.isFinite(time)) return '—';
+  return new Date(time).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 export function formatDuration(ms: number | null | undefined): string {

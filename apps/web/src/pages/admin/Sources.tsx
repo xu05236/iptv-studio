@@ -611,7 +611,7 @@ export function Sources() {
               </div>
 
               <div className="source-card__meta">
-                更新 {timeAgo(source.last_ok_at)} · {source.refresh_hours != null && source.refresh_hours > 0 ? (source.refresh_hours % 24 === 0 ? `每 ${source.refresh_hours / 24} 天` : `每 ${source.refresh_hours}h`) : source.refresh_hours === 0 ? '不自动重抓' : '跟随分档（12/24/72h）'}
+                更新 {timeAgo(source.last_fetch_at ?? source.last_ok_at)} · {source.refresh_hours != null && source.refresh_hours > 0 ? (source.refresh_hours % 24 === 0 ? `每 ${source.refresh_hours / 24} 天` : `每 ${source.refresh_hours}h`) : source.refresh_hours === 0 ? '不自动重抓' : '跟随分档（12/24/72h）'}
                 {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}
               </div>
               <div className="source-card__meta">
