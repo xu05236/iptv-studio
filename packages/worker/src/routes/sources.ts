@@ -782,6 +782,30 @@ sourceRoutes.post('/:id/recover', async (c) => {
   return ok({ source: await getSource(c.env, id), taskId: task.id, message: dispatched.message });
 });
 
+/**
+ * Fetch a single source on demand. The runner scopes a fetch task to one source
+ * via SOURCE_ID, so this refreshes ~1 source instead of the whole list. A paused
+ * or disabled source is revived first, otherwise the runner would skip it.
+ */
+sourceRoutes.post('/:id/fetch-now', async (c) => {
+  const id = c.req.param('id');
+  const source = await getSource(c.env, id);
+  if (!source) return fail('直播源不存在', 404);
+  if (source.enabled !== 1 || source.status !== 'active') {
+    await updateSource(c.env, id, { enabled: 1, status: 'active', consecutive_failures: 0 });
+  }
+  const task = await createTask(c.env, {
+    type: 'fetch',
+    source: 'manual',
+    priority: 100,
+    payload: { source_id: id, force: 'false', force_fetch: 'true', budget: '0' },
+    message: `手动抓源 ${source.name}`,
+  });
+  const dispatched = await dispatchNext(c.env);
+  await audit(c.env, c.get('actor'), 'source.fetch_now', id, { taskId: task.id });
+  return ok({ ok: true, taskId: task.id, message: dispatched.message });
+});
+
 async function sha256(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');

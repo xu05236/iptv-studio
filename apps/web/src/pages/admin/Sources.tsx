@@ -253,6 +253,16 @@ export function Sources() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const fetchNow = useMutation({
+    mutationFn: (id: string) => api.post<{ message?: string }>(`/api/admin/sources/${id}/fetch-now`),
+    onSuccess: (result) => {
+      show(result?.message ?? '已派发抓源任务');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'tasks'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const favorite = useMutation({
     mutationFn: (source: SourceItem) => api.patch(`/api/admin/sources/${source.id}`, { weight: source.weight >= 2 ? 1 : 2 }),
     onSuccess: () => {
@@ -621,6 +631,7 @@ export function Sources() {
 
               <div className="source-card__actions">
                 <Link to={`/admin/sources/${source.id}`}><Button size="sm">详情</Button></Link>
+                <Button size="sm" title="只抓这一个源，不跑全量采集" loading={fetchNow.isPending} onClick={() => fetchNow.mutate(source.id)}>抓源</Button>
                 {source.status !== 'active' ? (
                   <Button size="sm" title="重试恢复" loading={recover.isPending} onClick={() => recover.mutate(source.id)}>恢复</Button>
                 ) : null}
