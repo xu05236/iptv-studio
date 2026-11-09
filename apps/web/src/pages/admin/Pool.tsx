@@ -631,7 +631,6 @@ export function Pool() {
               {(customPools.data?.items ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
             <Button
-              variant="glass"
               disabled={!bulkCustomPool}
               loading={addToCustomPool.isPending}
               title="把选中的线路加入左侧选择的自定义池"
@@ -639,10 +638,10 @@ export function Pool() {
             >
               加入池
             </Button>
-            <Button loading={reset.isPending} variant="glass" title="取消手工指定的池，交回系统按质量自动分池" onClick={() => reset.mutate([...selected])}>
+            <Button loading={reset.isPending} title="取消手工指定的池，交回系统按质量自动分池" onClick={() => reset.mutate([...selected])}>
               恢复自动分池
             </Button>
-            <Button loading={reviveSelected.isPending} variant="glass" title="把已淘汰线路放回待测并派发一次探测" onClick={() => reviveSelected.mutate([...selected])}>
+            <Button loading={reviveSelected.isPending} title="把已淘汰线路放回待测并派发一次探测" onClick={() => reviveSelected.mutate([...selected])}>
               复活并重测
             </Button>
             <Button
@@ -794,7 +793,7 @@ export function Pool() {
           {(customPools.data?.items ?? []).length ? (customPools.data?.items ?? []).map((item) => (
             <div key={item.id} className="row" style={{ gap: 6, padding: '8px 10px', border: '1px solid var(--sep)', borderRadius: 12, alignItems: 'center' }}>
               <button type="button" className="chip" onClick={() => { setCustomPool(item.id); setPoolsOpen(false); resetPage(); }}>{item.name} · {item.count}</button>
-              <Button size="sm" variant="glass" onClick={() => { const next = window.prompt('新名称', item.name); if (next?.trim()) renamePool.mutate({ id: item.id, name: next.trim() }); }}>改名</Button>
+              <Button size="sm" onClick={() => { const next = window.prompt('新名称', item.name); if (next?.trim()) renamePool.mutate({ id: item.id, name: next.trim() }); }}>改名</Button>
               <Button size="sm" variant="ghost" onClick={() => { if (confirm(`删除池「${item.name}」？只删除池，不影响线路。`)) { if (customPool === item.id) setCustomPool(''); deletePool.mutate(item.id); } }}><Trash2 size={13} /></Button>
             </div>
           )) : <div className="caption">还没有自定义池</div>}
@@ -813,7 +812,7 @@ export function Pool() {
                   <div className="truncate">{item.url}</div>
                   <div className="caption">{item.channel_id ?? '未知频道'} · {item.reason || '无原因'} · {item.created_at}</div>
                 </div>
-                <Button size="sm" variant="glass" loading={untombstone.isPending} onClick={() => untombstone.mutate([item.url])}>
+                <Button size="sm" loading={untombstone.isPending} onClick={() => untombstone.mutate([item.url])}>
                   解除
                 </Button>
               </div>

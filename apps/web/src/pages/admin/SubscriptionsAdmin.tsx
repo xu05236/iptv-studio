@@ -445,8 +445,8 @@ export function SubscriptionsAdmin() {
                       </button>
                     );
                   })}
-                  <Button size="sm" variant="glass" onClick={() => setForm({ ...form, poolIds: ['premium', 'backup', 'candidate', ...(customPools.data?.items ?? []).map((pool) => pool.id)] })}>全选</Button>
-                  <Button size="sm" variant="glass" onClick={() => setForm({ ...form, poolIds: [] })}>清空</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setForm({ ...form, poolIds: ['premium', 'backup', 'candidate', ...(customPools.data?.items ?? []).map((pool) => pool.id)] })}>全选</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setForm({ ...form, poolIds: [] })}>清空</Button>
                 </div>
               </Field>
               <Field label="过滤方式" hint="不过滤 = 池内每一线路原样导出；保留原过滤 = 使用下方频道/分组/画质条件">
