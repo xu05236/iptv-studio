@@ -194,9 +194,16 @@ export function SettingsPage() {
       <Card>
         <div className="settings-card__head">
           <span className="settings-card__icon"><CalendarClock size={17} /></span>
-          <div><div className="title-3">定时任务</div><div className="caption">采集、测活、分批探测、抓源与发布</div></div>
+          <div><div className="title-3">定时任务</div><div className="caption">每一类定时各管什么；日常通常只需要「抓源 + 分批探测 + 每日发布」</div></div>
         </div>
         <div className="stack" style={{ marginTop: 12 }}>
+          <div className="caption" style={{ lineHeight: 1.7 }}>
+            完整采集＝抓源＋探测＋发布＋EPG 全部串一遍，日常不用开，首次搭建或兜底时手动跑一次即可；
+            抓源＝只重抓已有源，新增/导入源时系统仍会立刻抓一次，不受这个开关影响；
+            分批探测＝只测线路，决定可用 / 待复测 / 淘汰；
+            每日发布＝只重算产物与订阅，不抓源也不探测；
+            池内测活＝只做轻量连通性检查，不做测速。
+          </div>
           <div className="title-3" style={{ fontSize: 14 }}>完整采集</div>
           <div className="list">
             <div className="list__row"><span className="grow">启用定时采集（默认关闭）</span><Switch checked={form.autoCollectEnabled ?? false} onChange={(value) => set('autoCollectEnabled', value)} /></div>
@@ -205,6 +212,7 @@ export function SettingsPage() {
             <input className="input" value={form.autoCollectTimes ?? '08:30'} onChange={(event) => set('autoCollectTimes', event.target.value)} />
           </Field>
           <div className="caption">
+            完整采集会把抓源、探测、发布、EPG 串成一次长任务（约 7 分钟 Actions）。日常不需要开；只有首次搭建、改过产物结构或想兜底时才手动跑一次。
             预算沿用上方「采集预算」；保护：KV 写入 ≥920 或已有任务在跑时自动跳过；时区固定北京时间（UTC+8）。
             {schedule.data?.nextAt ? ` 下次：${new Date(schedule.data.nextAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` : ' 当前未启用。'}
             {schedule.data?.lastRunAt ? ` · 上次：${new Date(schedule.data.lastRunAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（${schedule.data.result ?? '未知'}）` : ''}
@@ -212,13 +220,13 @@ export function SettingsPage() {
 
           <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>每日池内测活</div>
           <div className="list">
-            <div className="list__row"><span className="grow">启用每日轻量测活（默认开启，成本很低）</span><Switch checked={form.autoLivenessEnabled ?? true} onChange={(value) => set('autoLivenessEnabled', value)} /></div>
+            <div className="list__row"><span className="grow">启用每日池内测活（只查连通性，不做测速）</span><Switch checked={form.autoLivenessEnabled ?? true} onChange={(value) => set('autoLivenessEnabled', value)} /></div>
           </div>
           <Field label="每天测活时刻（北京时间）" hint="HH:mm，多个用逗号分隔；只检查池内 alive 线路，不做测速">
             <input className="input" value={form.autoLivenessTimes ?? '20:30'} onChange={(event) => set('autoLivenessTimes', event.target.value)} />
           </Field>
           <div className="caption">
-            已由「分批探测」替代，建议关闭，保留仅用于手动应急。
+            分批探测每天能覆盖全部池内线路（1200 条/批 × 约 3 批/天）时，这项可以关，省一次 Actions；留着手动按钮应急即可。
             {schedule.data?.liveness?.nextAt ? ` 下次：${new Date(schedule.data.liveness.nextAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` : ' 当前未启用。'}
             {schedule.data?.liveness?.lastRunAt ? ` · 上次：${new Date(schedule.data.liveness.lastRunAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（${schedule.data.liveness.result ?? '未知'}）` : ''}
           </div>
@@ -231,11 +239,11 @@ export function SettingsPage() {
             <div className="grow"><Field label="每批条数" hint="一次 dispatch 最多完整探测多少条；建议 1200"><input className="input" inputMode="numeric" value={form.probeBatchSize ?? 1200} onChange={(event) => set('probeBatchSize', Number(event.target.value))} /></Field></div>
             <div className="grow"><Field label="批次间隔（小时）" hint="一批完成后至少隔多久再派下一批；全部清空后自动停"><input className="input" inputMode="numeric" value={form.autoProbeIntervalHours ?? 2} onChange={(event) => set('autoProbeIntervalHours', Number(event.target.value))} /></Field></div>
           </div>
-          <div className="caption">阶段顺序、提升/延后、暂停在概览页「检测任务」里调整；KV 写入 ≥920 时队列自动暂停。</div>
+          <div className="caption">每批 1200 条、间隔 8 小时 ≈ 每天 3 批 3600 条，足够覆盖全部池内线路。阶段顺序、提升/延后、暂停在概览页「检测任务」里调整；KV 写入 ≥920 时队列自动暂停。</div>
 
           <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>抓源</div>
           <div className="list">
-            <div className="list__row"><span className="grow">启用定时抓源（新源建议手动触发）</span><Switch checked={form.autoFetchEnabled ?? true} onChange={(value) => set('autoFetchEnabled', value)} /></div>
+            <div className="list__row"><span className="grow">启用定时抓源（只重抓已有源）</span><Switch checked={form.autoFetchEnabled ?? true} onChange={(value) => set('autoFetchEnabled', value)} /></div>
           </div>
           <Field label="抓取间隔（天）" hint="按天定时：每天 / 每 2 天 / … / 每 7 天。与下面的时段配合使用：例如「每 2 天」+「06:30」= 隔天 06:30 抓一次；中间日期到点会自动跳过">
             <select className="select" value={form.fetchIntervalDays ?? 1} onChange={(event) => set('fetchIntervalDays', Number(event.target.value))}>
@@ -247,7 +255,7 @@ export function SettingsPage() {
           <Field label="抓取时段（北京时间）" hint="固定定时或自定义多时段：可填 1 个或多个时刻，逗号分隔，例如 06:30 或 06:30,12:30,18:30；到点只抓源，新线路进 pending 后由分批探测处理">
             <input className="input" value={form.fetchTimes ?? '06:30'} onChange={(event) => set('fetchTimes', event.target.value)} />
           </Field>
-          <div className="caption">单源覆盖：采集站 → 过滤 / 更新策略 → 更新间隔（留空跟随分档，0 = 不自动重抓，24 = 每天，48 = 每 2 天）。分档规则：7 天内新源 24 小时、重点源（权重 ≥ 2）12 小时、其它 72 小时。</div>
+          <div className="caption">新增/导入源时系统会立刻建一次抓源任务，与这个开关无关；这里只控制已有源的定期重抓。单源覆盖：采集站 → 过滤 / 更新策略 → 更新间隔（留空跟随分档，0 = 不自动重抓，24 = 每天，48 = 每 2 天）。分档规则：7 天内新源 24 小时、重点源（权重 ≥ 2）12 小时、其它 72 小时。</div>
 
           <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>每日发布</div>
           <div className="list">
