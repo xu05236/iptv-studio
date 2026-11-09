@@ -196,7 +196,7 @@ export function SourceDetail() {
         </div>
         {report ? (
           <>
-            <div className="title-3" style={{ marginBottom: 6 }}>来自 {formatDateTime(report.fetchedAt)} 的抓取</div>
+            <div className="title-3" style={{ marginBottom: 6 }}>来自 {report.fetchedAt ? formatDateTime(report.fetchedAt) : data.reportGeneratedAt ? formatDateTime(data.reportGeneratedAt) : '上一轮'} 的抓取</div>
             <div className="caption">
               解析 {formatNumber(report.parsed ?? (report.added + report.reused + report.skippedRejected + (report.skippedTombstoned ?? 0)))} 条
               {' · '}新增 {formatNumber(report.added)} 条
