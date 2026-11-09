@@ -391,6 +391,26 @@ export function intervalDue(lastRunAt: string | null | undefined, intervalDays: 
 }
 
 /**
+ * First scheduled slot that actually satisfies the N-day cadence. The daily
+ * slots in between are skipped, so showing the raw next slot in the dashboard
+ * would promise a run that never starts.
+ */
+export function nextDueFetchSlot(
+  times: CollectTime[],
+  lastRunAt: string | null | undefined,
+  intervalDays: number,
+  now: number,
+): number | null {
+  if (!times.length) return null;
+  const days = Math.max(1, Math.min(7, Math.floor(Number(intervalDays) || 1)));
+  if (days <= 1) return nextScheduledAt(times, now + 60_000);
+  const last = lastRunAt ? Date.parse(lastRunAt) : NaN;
+  if (!Number.isFinite(last)) return nextScheduledAt(times, now + 60_000);
+  const threshold = last + (days - 0.05) * 86_400_000;
+  return nextScheduledAt(times, Math.max(now, threshold - 60_000));
+}
+
+/**
  * Extra probe batch triggered by a large import: only when the regular window
  * is still in the future, pending lines exist, the last probe is 3h old and no
  * extra batch has run today. Keeps Actions spend at +1 run/day maximum.
@@ -474,7 +494,7 @@ async function runFetchWatch(env: Env, settings: AppSettings, now: number): Prom
   // Global cadence: 1 = every day at the slots above, 2 = every two days, up to 7.
   const intervalDays = Math.max(1, Math.min(7, Math.floor(Number(settings.fetchIntervalDays) || 1)));
   if (!intervalDue(state?.lastRunAt, intervalDays, now)) {
-    const nextSlot = nextScheduledAt(times, now + 60_000) ?? now + 86_400_000;
+    const nextSlot = nextDueFetchSlot(times, state?.lastRunAt ?? null, intervalDays, now) ?? now + 86_400_000;
     await putRuntimeJson(env, 'state/fetch-schedule.json', {
       lastRunAt: state?.lastRunAt ?? null,
       nextRunAt: new Date(nextSlot).toISOString(),

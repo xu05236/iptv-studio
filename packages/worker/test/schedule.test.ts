@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '@iptv/core';
-import { actionsAllowance, intervalDue, isStuckTask, mostRecentScheduledAt, nextAutoLivenessAt, nextScheduledAt, parseCollectTimes, probeWakeAllowed } from '../src/lib/schedule.js';
+import { actionsAllowance, intervalDue, isStuckTask, mostRecentScheduledAt, nextAutoLivenessAt, nextDueFetchSlot, nextScheduledAt, parseCollectTimes, probeWakeAllowed } from '../src/lib/schedule.js';
 
 describe('global fetch cadence', () => {
   const now = Date.parse('2026-11-09T00:00:00Z');
@@ -134,5 +134,23 @@ describe('probe early wake', () => {
     expect(probeWakeAllowed({ ...base, wakeDate: '2026-11-09', wakeCount: 1 })).toBe(false);
     expect(probeWakeAllowed({ ...base, nextRunAt: '2026-11-09T04:00:00Z' })).toBe(false);
     expect(probeWakeAllowed({ ...base, pending: 0 })).toBe(false);
+  });
+});
+
+describe('next fetch slot with an N-day cadence', () => {
+  const times = parseCollectTimes('09:30');
+  const now = Date.parse('2026-11-09T02:00:00Z');
+
+  it('skips tomorrow and lands on the first slot two days out', () => {
+    const next = nextDueFetchSlot(times, '2026-11-09T01:20:41Z', 2, now);
+    expect(next).toBe(Date.parse('2026-11-11T01:30:00Z'));
+  });
+
+  it('uses tomorrow when the cadence is daily', () => {
+    expect(nextDueFetchSlot(times, '2026-11-09T01:20:41Z', 1, now)).toBe(Date.parse('2026-11-10T01:30:00Z'));
+  });
+
+  it('uses the next slot when there is no previous run', () => {
+    expect(nextDueFetchSlot(times, null, 2, now)).toBe(Date.parse('2026-11-10T01:30:00Z'));
   });
 });

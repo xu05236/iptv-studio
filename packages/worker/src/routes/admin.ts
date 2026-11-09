@@ -34,7 +34,7 @@ import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask, recordFinishedTask, type Task } from '../lib/tasks.js';
 import { registerTelegramWebhook } from '../lib/telegram.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
-import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, nextScheduledAt, parseCollectTimes } from '../lib/schedule.js';
+import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, nextDueFetchSlot, nextScheduledAt, parseCollectTimes } from '../lib/schedule.js';
 import { sourceMetaMap } from '../lib/source.js';
 import { summarizeCoverage, type GuideLike } from '../lib/epgCoverage.js';
 
@@ -808,7 +808,10 @@ adminRoutes.get('/tasks', async (c) => {
       fetch: {
         enabled: settings.autoFetchEnabled,
         intervalDays: settings.fetchIntervalDays,
-        nextAt: fetchState?.nextRunAt ?? null,
+        nextAt: (() => {
+          const value = nextDueFetchSlot(parseCollectTimes(settings.fetchTimes || '06:30'), fetchState?.lastRunAt ?? null, settings.fetchIntervalDays, Date.now());
+          return value ? new Date(value).toISOString() : null;
+        })(),
         lastRunAt: fetchState?.lastRunAt ?? null,
         result: fetchState?.result ?? null,
       },
