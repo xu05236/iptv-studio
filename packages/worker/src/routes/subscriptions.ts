@@ -7,6 +7,7 @@ import {
   deleteSubscriptionToken,
   getSubscription,
   listSubscriptionTokens,
+  listRelayUsage,
   listSubscriptions,
   setSubscriptionTokenEnabled,
   updateSubscription,
@@ -152,6 +153,15 @@ subscriptionRoutes.get('/:id/tokens', async (c) => {
       active7d: seenWithin(7 * 86_400_000),
     },
   });
+});
+
+subscriptionRoutes.get('/:id/usage', async (c) => {
+  const id = c.req.param('id');
+  const row = await getSubscription(c.env, id);
+  if (!row) return fail('订阅不存在', 404);
+  const days = Math.min(30, Math.max(1, Number(c.req.query('days') ?? 7) || 7));
+  const items = await listRelayUsage(c.env, id, days);
+  return ok({ items, days });
 });
 
 subscriptionRoutes.post('/:id/tokens', async (c) => {

@@ -74,6 +74,15 @@ export function SubscriptionsAdmin() {
     queryFn: () => api.get<{ settings: { maxLinesPerChannel: number; frontLineLimit: number; maxLinesPerSource: number } }>('/api/admin/settings'),
   });
 
+  const usageQuery = useQuery({
+    queryKey: ['admin', 'subscription-usage', editing?.id],
+    queryFn: () =>
+      api.get<{ items: Array<{ token: string; label: string | null; day: string; requests: number; bytes: number }> }>(
+        `/api/admin/subscriptions/${editing!.id}/usage?days=7`,
+      ),
+    enabled: Boolean(editing?.id),
+  });
+
   useEffect(() => {
     if (!settingsQuery.data) return;
     setExportLimit(String(settingsQuery.data.settings.maxLinesPerChannel ?? 0));
@@ -427,6 +436,26 @@ export function SubscriptionsAdmin() {
                 <input className="input" value={deviceLabel} onChange={(event) => setDeviceLabel(event.target.value)} placeholder="设备名，例如 客厅电视" style={{ flex: 1 }} />
                 <Button loading={addDevice.isPending} onClick={() => addDevice.mutate()}>添加设备</Button>
               </div>
+              <div className="sheet-section">中继用量（近 7 天）</div>
+              {usageQuery.data?.items.length ? (
+                <table className="table">
+                  <thead>
+                    <tr><th>设备</th><th>日期</th><th>请求</th><th>流量</th></tr>
+                  </thead>
+                  <tbody>
+                    {usageQuery.data.items.map((item) => (
+                      <tr key={`${item.token}-${item.day}`}>
+                        <td>{item.label || item.token.slice(0, 6)}</td>
+                        <td className="mono">{item.day}</td>
+                        <td>{item.requests}</td>
+                        <td>{(item.bytes / 1024 / 1024).toFixed(1)} MB</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="caption">近 7 天没有中继请求；direct 模式不经过中继，不会产生用量。</div>
+              )}
             </>
           ) : null}
           <Field label="指定频道（可选）" hint="不选 = 按分组导出；选了 = 只导出这些频道，和分组过滤同时生效">

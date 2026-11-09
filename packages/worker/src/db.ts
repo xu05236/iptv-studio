@@ -589,6 +589,28 @@ export async function listSubscriptionTokens(env: Env, subscriptionId: string): 
   return results;
 }
 
+export interface RelayUsageRow {
+  token: string;
+  label: string | null;
+  day: string;
+  requests: number;
+  bytes: number;
+}
+
+/** Per-token relay traffic for one subscription (last N UTC days). */
+export async function listRelayUsage(env: Env, subscriptionId: string, days = 7): Promise<RelayUsageRow[]> {
+  const span = Math.max(0, Math.min(29, days - 1));
+  const { results } = await env.DB.prepare(
+    `SELECT u.token, t.label, u.day, u.requests, u.bytes
+     FROM relay_usage u JOIN subscription_tokens t ON t.token = u.token
+     WHERE t.subscription_id = ? AND u.day >= date('now', ?)
+     ORDER BY u.day DESC, u.requests DESC`,
+  )
+    .bind(subscriptionId, `-${span} days`)
+    .all<RelayUsageRow>();
+  return results;
+}
+
 export async function createSubscriptionToken(env: Env, subscriptionId: string, label: string): Promise<SubscriptionTokenRow> {
   const token = crypto.randomUUID().replace(/-/g, '').slice(0, 24);
   await env.DB.prepare('INSERT INTO subscription_tokens (token, subscription_id, label, enabled) VALUES (?, ?, ?, 1)')

@@ -8,6 +8,7 @@ import { loadCatalog } from '../lib/catalog.js';
 import { loadLineIndex, lineHeadersForUrl } from '../lib/lineIndex.js';
 import { proxyModeOf, signProxyUrl, verifyProxySignature } from '../lib/relaySign.js';
 import { recordRelayUse, relayQuotaExceeded, relayQuotaRetryAfter, setRelayQuotaLimits } from '../lib/relayQuota.js';
+import { recordRelayUsage } from '../lib/relayUsage.js';
 
 export const relayRoutes = new Hono<AppEnv>();
 
@@ -192,6 +193,7 @@ relayRoutes.get('/', async (c) => {
   const upstream = await fetchUpstream(c, target, { userAgent: DEFAULT_UA }).catch(() => null);
   if (!upstream) return fail('上游线路超时或不可达', 504);
   recordRelayUse(`token:${token}`, Number(upstream.headers.get('content-length') ?? 0) || 0);
+  recordRelayUsage(c.env, c.executionCtx, token, Number(upstream.headers.get('content-length') ?? 0) || 0);
   if (isPlaylist(upstream, target)) {
     const text = await upstream.text();
     const base = upstream.url || target.toString();
@@ -234,6 +236,7 @@ relayRoutes.get('/proxy', async (c) => {
   const upstream = await fetchUpstream(c, target, headers ?? { userAgent: DEFAULT_UA }).catch(() => null);
   if (!upstream) return fail('上游线路超时或不可达', 504);
   recordRelayUse(`token:${token}`, Number(upstream.headers.get('content-length') ?? 0) || 0);
+  recordRelayUsage(c.env, c.executionCtx, token, Number(upstream.headers.get('content-length') ?? 0) || 0);
   if (upstream.status >= 400) return fail(`上游线路返回 HTTP ${upstream.status}`, 502);
   if (isPlaylist(upstream, target)) {
     const text = await upstream.text();
