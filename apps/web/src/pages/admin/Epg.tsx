@@ -131,7 +131,7 @@ export function Epg() {
   const stats = coverage.data;
 
   return (
-    <>
+    <div className="stack">
       <AdminPageHeader
         eyebrow="EPG"
         title="EPG 覆盖与映射"
@@ -287,6 +287,6 @@ export function Epg() {
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }

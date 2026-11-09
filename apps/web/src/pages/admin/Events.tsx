@@ -102,7 +102,7 @@ export function Events() {
   });
 
   return (
-    <>
+    <div className="stack">
       <AdminPageHeader
         eyebrow="EVENTS"
         title="运营事件"
@@ -283,7 +283,7 @@ export function Events() {
           )}
         </Card>
       )}
-    </>
+    </div>
   );
 }
 
