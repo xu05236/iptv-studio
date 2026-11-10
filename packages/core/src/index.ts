@@ -29,3 +29,4 @@ export * from './diff.js';
 export * from './refresh.js';
 export * from './linePool.js';
 export * from './state/lines.js';
+export * from './state/overlap.js';

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { isDueForProbe, mapPool, normalizeMirrorUrls, normalizeUrlForDedupe, PARSE_DROP_THRESHOLD, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters, type SourceParseReport } from '@iptv/core';
+import { isDueForProbe, mapPool, normalizeMirrorUrls, normalizeUrlForDedupe, PARSE_DROP_THRESHOLD, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters, type SourceOverlapReport, type SourceParseReport } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   deleteSource,
@@ -144,71 +144,35 @@ sourceRoutes.get('/', async (c) => {
   });
 });
 
-/** Cross-source overlap: how many lines each source shares with others. */
+/** Cross-source overlap: precomputed at publish time (see computeSourceOverlap). */
 sourceRoutes.get('/overlap', async (c) => {
-  const [sources, state] = await Promise.all([listSources(c.env), loadLines(c.env)]);
-  const byUrl = new Map<string, { sources: Set<string>; first: Map<string, string> }>();
-  const perSource = new Map<string, { total: number; urls: Set<string> }>();
-  for (const line of state.lines) {
-    if (!line.url) continue;
-    const url = normalizeUrlForDedupe(line.url) || line.url;
-    const group = byUrl.get(url) ?? { sources: new Set<string>(), first: new Map<string, string>() };
-    group.sources.add(line.sourceId);
-    const seen = group.first.get(line.sourceId);
-    if (!seen || line.firstSeenAt < seen) group.first.set(line.sourceId, line.firstSeenAt);
-    byUrl.set(url, group);
-    const stat = perSource.get(line.sourceId) ?? { total: 0, urls: new Set<string>() };
-    stat.total += 1;
-    stat.urls.add(url);
-    perSource.set(line.sourceId, stat);
-  }
-
-  const dupBySource = new Map<string, { duplicated: number; earliestWins: number }>();
-  let duplicateUrls = 0;
-  let duplicatedLines = 0;
-  for (const group of byUrl.values()) {
-    if (group.sources.size < 2) continue;
-    duplicateUrls += 1;
-    duplicatedLines += group.sources.size;
-    let earliestId: string | null = null;
-    let earliestAt = '';
-    for (const [id, at] of group.first) {
-      if (!earliestId || at < earliestAt) {
-        earliestId = id;
-        earliestAt = at;
-      }
-    }
-    for (const id of group.sources) {
-      const stat = dupBySource.get(id) ?? { duplicated: 0, earliestWins: 0 };
-      stat.duplicated += 1;
-      if (id === earliestId) stat.earliestWins += 1;
-      dupBySource.set(id, stat);
-    }
-  }
-
-  const items = sources
-    .map((source) => {
-      const stats = perSource.get(source.id);
-      const dup = dupBySource.get(source.id);
-      const total = stats?.total ?? 0;
-      const duplicated = dup?.duplicated ?? 0;
-      const unique = Math.max(0, (stats?.urls.size ?? 0) - duplicated);
+  const report = await getJson<SourceOverlapReport>(c.env, 'state/source-overlap.json');
+  const sources = await listSources(c.env);
+  const meta = new Map(sources.map((source) => [source.id, source]));
+  const items = (report?.items ?? [])
+    .filter((item) => meta.has(item.sourceId))
+    .map((item) => {
+      const source = meta.get(item.sourceId)!;
       return {
-        id: source.id,
+        id: item.sourceId,
         name: source.name,
         enabled: source.enabled === 1,
         reputation: source.reputation,
-        total,
-        duplicated,
-        unique,
-        earliestWins: dup?.earliestWins ?? 0,
-        share: total ? duplicated / total : 0,
+        total: item.total,
+        duplicated: item.duplicated,
+        unique: item.unique,
+        earliestWins: item.earliestWins,
+        share: item.share,
       };
-    })
-    .filter((item) => item.total > 0)
-    .sort((a, b) => b.duplicated - a.duplicated || b.unique - a.unique);
-
-  return ok({ totalLines: state.lines.length, uniqueUrls: byUrl.size, duplicateUrls, duplicatedLines, items });
+    });
+  return ok({
+    generatedAt: report?.generatedAt ?? null,
+    totalLines: report?.totalLines ?? 0,
+    uniqueUrls: report?.uniqueUrls ?? 0,
+    duplicateUrls: report?.duplicateUrls ?? 0,
+    duplicatedLines: report?.duplicatedLines ?? 0,
+    items,
+  });
 });
 
 sourceRoutes.get('/health', async (c) => {

@@ -173,6 +173,7 @@ export function Sources() {
     queryKey: ['admin', 'sources', 'overlap'],
     queryFn: () =>
       api.get<{
+        generatedAt: string | null;
         totalLines: number;
         uniqueUrls: number;
         duplicateUrls: number;
@@ -857,6 +858,12 @@ export function Sources() {
           <QueryError title="统计失败" error={overlap.error} onRetry={() => void overlap.refetch()} />
         ) : overlap.data ? (
           <div className="stack">
+            {overlap.data.generatedAt ? (
+              <div className="caption">统计生成于 {formatDateTime(overlap.data.generatedAt)}</div>
+            ) : null}
+            {overlap.data.items.length ? null : (
+              <div className="caption">统计尚未生成，下一次发布后可用。</div>
+            )}
             <div className="caption">
               共 {formatNumber(overlap.data.totalLines)} 条线路 / {formatNumber(overlap.data.uniqueUrls)} 个 URL；其中{' '}
               {formatNumber(overlap.data.duplicateUrls)} 个 URL 被多个来源收录（涉及 {formatNumber(overlap.data.duplicatedLines)} 条线路）。

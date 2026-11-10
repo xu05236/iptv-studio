@@ -23,6 +23,7 @@ import type { RunLogger } from '../logger.js';
 import { buildGuide, nowPlaying, upcoming } from './epg.js';
 import { LINES_ARCHIVE_TRIGGER_BYTES, mergeArchive, splitArchivable, type LinesArchive } from './archive.js';
 import { saveLinesState } from '../lib/linesState.js';
+import { computeSourceOverlap } from '@iptv/core';
 import { matchLogoFile, type LogoPack } from './logoFiles.js';
 
 const GROUP_ORDER = ['央视', '卫视', '地方', '港澳台', '国际', '4K', '影视频道', '体育', '少儿', '纪录', '新闻', '音乐', '付费', '其他'];
@@ -338,6 +339,9 @@ export async function publish(
   // 中继侧不再解析整份 probe.json（20MB 级，单请求 CPU 必超 10ms）。
   const lineIndex = probeItems.map((item) => ({ key: item.key, url: item.url, headers: item.headers }));
   const lineIndexBody = check('state/line-index.json', JSON.stringify({ generatedAt: options.generatedAt, items: lineIndex }));
+  // Precomputed here so the Worker only reads a small artifact instead of
+  // parsing every line on each request (that path intermittently 503'd).
+  const overlapBody = check('state/source-overlap.json', JSON.stringify(computeSourceOverlap(linesToSave, options.generatedAt)));
 
   const epgBytes = options.epgXml ? new TextEncoder().encode(options.epgXml).byteLength : 0;
   if (epgBytes > 15 * 1024 * 1024) {
@@ -375,8 +379,9 @@ export async function publish(
   }
   await store.put('state/probe.json', probeBody, json);
   await store.put('state/line-index.json', lineIndexBody, json);
+  await store.put('state/source-overlap.json', overlapBody, json);
   step('state/line-index.json');
-  objects += 7;
+  objects += 8;
 
   if (epgBody) {
     await store.put('out/epg.xml', epgBody, 'application/xml; charset=utf-8');
