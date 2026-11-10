@@ -500,7 +500,7 @@ export function SubscriptionsAdmin() {
                 <div className="caption">
                   本次将导出 {formPreview.lines} 条线路 · {formPreview.channels} 个频道
                   {formPreview.stats.indexAlive !== null
-                    ? `；索引可用 ${formPreview.stats.indexAlive} 条 → 进池 ${formPreview.stats.poolLines} 条（差 ${Math.max(0, formPreview.stats.indexAlive - formPreview.stats.poolLines)} 条：未进池 / 同 URL 去重 / 质量未确认）`
+                    ? `；索引可用 ${formPreview.stats.indexAlive} 条 · 池内 ${formPreview.stats.poolLines} 条（导出会再按频道过滤、同 URL 去重、每频道上限裁剪）`
                     : ''}
                 </div>
               ) : null}
@@ -634,7 +634,7 @@ export function SubscriptionsAdmin() {
       <Sheet open={Boolean(preview)} onClose={() => setPreview(null)} title={`预览 · ${preview?.name ?? ''}`} subtitle={`${preview?.format?.toUpperCase()} · ${preview?.channels ?? '—'} 频道 · ${preview?.lines ?? '—'} 线路 · 前 4 万字符`}>
         {preview?.stats ? (
           <div className="caption" style={{ marginBottom: 8 }}>
-            索引可用 {preview.stats.indexAlive ?? '—'} 条 → 池内 {preview.stats.poolLines} 条 → 本次导出 {preview.stats.exported} 条：差额来自频道过滤、同 URL 去重、每频道导出行数上限与质量确认。
+            索引可用 {preview.stats.indexAlive ?? '—'} 条 · 池内 {preview.stats.poolLines} 条 · 本次导出 {preview.stats.exported} 条：导出会按频道过滤、同 URL 去重、每频道导出行数上限与质量确认裁剪。
           </div>
         ) : null}
         <pre className="code">{preview?.body}</pre>
