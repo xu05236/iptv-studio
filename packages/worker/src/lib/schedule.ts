@@ -1,7 +1,7 @@
 import { effectiveRefreshHours, type AppSettings } from '@iptv/core';
 import type { Env } from '../env.js';
 import { audit, listSources, loadSettings } from '../db.js';
-import { workflowRunStatus } from './github.js';
+import { cancelGithubRun, workflowRunStatus } from './github.js';
 import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 import { createSnapshot } from './snapshots.js';
@@ -25,22 +25,6 @@ export function isStuckTask(task: Pick<Task, 'status' | 'startedAt' | 'lastHeart
 }
 
 /** Best-effort cancel of the GitHub Actions run behind a stuck task. */
-async function cancelGithubRun(env: Env, runId: number | undefined): Promise<void> {
-  if (!runId || !env.GITHUB_TOKEN || !env.GITHUB_REPO) return;
-  try {
-    await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/actions/runs/${runId}/cancel`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'iptv-studio',
-      },
-    });
-  } catch {
-    // best effort — the task is force-failed either way
-  }
-}
-
 async function recoverStuckTasks(env: Env, now: number): Promise<number> {
   const tasks = await loadTasks(env);
   const stuck = tasks.filter((task) => isStuckTask(task, now));

@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS } from '@iptv/core';
 import type { Env } from '../env.js';
 import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
-import { dispatchWorkflow, listWorkflowRuns } from './github.js';
+import { cancelGithubRun, dispatchWorkflow, listWorkflowRuns } from './github.js';
 import { deletePlaceholderRun, finishPlaceholderRun, loadSettings, upsertPlaceholderRun } from '../db.js';
 
 export type TaskSource = 'schedule' | 'manual' | 'detection' | 'source' | 'cli';
@@ -247,6 +247,7 @@ function isTransientFailure(message: string): boolean {
 
 /** Remove a failed task and enqueue a fresh attempt with the same payload. */
 function retryTask(tasks: Task[], task: Task, reason: string): Task | null {
+  if (task.status === 'cancelled') return null;
   const nextRetry = (task.retryCount ?? 0) + 1;
   if (nextRetry > MAX_RETRIES) {
     task.status = 'failed';
@@ -298,7 +299,15 @@ async function reconcileRunningTasks(env: Env, tasks: Task[]): Promise<void> {
     task.githubRunId = run.id;
     if (run.status === 'completed') {
       if (run.conclusion === 'success') task.lastHeartbeatAt = new Date().toISOString();
-      else {
+      else if (run.conclusion === 'cancelled') {
+        // A cancelled run means someone stopped it on purpose (the task board
+        // or the GitHub UI). Retrying here would quietly start another Actions
+        // run and burn minutes — the exact thing the operator tried to stop.
+        task.status = 'cancelled';
+        task.finishedAt = new Date().toISOString();
+        task.message = 'GitHub run 已取消，不再自动重试';
+        await finishPlaceholderRun(env, task.id, 'cancelled', task.message);
+      } else {
         const retry = retryTask(tasks, task, `GitHub run ${run.conclusion ?? '失败'}`);
         if (retry) await deletePlaceholderRun(env, task.id);
         else {
@@ -323,6 +332,8 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
   if (!task) return;
+  // Late finish from a run the operator already cancelled: keep it cancelled.
+  if (task.status === 'cancelled') return;
   task.status = status;
   const taskMessage = status === 'done'
     ? (message ?? (/抓取完成|分批探测完成|EPG 刷新完成|快照完成/.test(task.message ?? '') ? task.message! : '完成'))
@@ -357,6 +368,7 @@ async function progressTaskCore(env: Env, taskId: string, done: number, total?: 
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
   if (!task) return;
+  if (task.status === 'cancelled') return;
   const nextTotal = total && total > 0 ? total : task.progress.total;
   if (task.progress.done === Math.max(0, done) && task.progress.total === nextTotal && (!message || task.message === message)) return;
   task.progress.done = Math.max(0, done);
@@ -506,19 +518,21 @@ async function mutateTaskCore(env: Env, id: string, action: string): Promise<str
     task.status = 'queued';
     task.message = '已恢复';
   } else if (action === 'cancel') {
-    if (task.status === 'running') return '运行中的任务不能取消，请等它结束';
+    if (task.status === 'running') await cancelGithubRun(env, task.githubRunId);
     task.status = 'cancelled';
     task.finishedAt = new Date().toISOString();
     task.message = '已取消';
     await finishPlaceholderRun(env, task.id, 'cancelled', '已取消');
   } else if (action === 'auto-fail') {
     if (task.status !== 'running') return '只有运行中的任务可以自动结束';
+    await cancelGithubRun(env, task.githubRunId);
     task.status = 'failed';
     task.finishedAt = new Date().toISOString();
     task.message = '自动结束：运行超过 20 分钟无进展';
     await finishPlaceholderRun(env, task.id, 'failed', task.message);
   } else if (action === 'force-fail') {
     if (task.status !== 'running') return '只有运行中的任务可以强制结束';
+    await cancelGithubRun(env, task.githubRunId);
     task.status = 'failed';
     task.finishedAt = new Date().toISOString();
     task.message = '手动强制结束';

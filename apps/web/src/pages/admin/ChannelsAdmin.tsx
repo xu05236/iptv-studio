@@ -140,6 +140,25 @@ export function ChannelsAdmin() {
     enabled: mergeOpen,
   });
 
+  const recentMerges = useQuery({
+    queryKey: ['admin', 'channel-merges'],
+    queryFn: () =>
+      api.get<{ items: Array<{ id: string; fromId: string; toId: string; fromName: string | null; toName: string | null; lineCount: number; createdAt: string }> }>(
+        '/api/admin/channels/merges',
+      ),
+    enabled: mergeOpen,
+  });
+
+  const undoMerge = useMutation({
+    mutationFn: (id: string) => api.post<{ restoredLines: number }>(`/api/admin/channels/merges/${id}/undo`, {}),
+    onSuccess: (result) => {
+      show(`已撤销合并，恢复 ${result.restoredLines} 条线路`);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'channels'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'channel-merges'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const mergeChannel = useMutation({
     mutationFn: ({ from, into }: { from: string; into: string }) =>
       api.post<{ merged: number }>('/api/admin/channels/merge', { from: [from], into }),
@@ -151,6 +170,7 @@ export function ChannelsAdmin() {
         return next;
       });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'channels'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'channel-merges'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
   });
@@ -744,6 +764,20 @@ export function ChannelsAdmin() {
         {allChannels.data && !allChannels.data.items.some((item) => item.id.startsWith('x-')) ? (
           <div className="caption">当前没有 x- 开头的自动频道。</div>
         ) : null}
+        <div className="sheet-section">最近合并</div>
+        {(recentMerges.data?.items ?? []).length ? (
+          (recentMerges.data?.items ?? []).map((item) => (
+            <div key={item.id} className="list__row" style={{ alignItems: 'center', gap: 8 }}>
+              <div className="grow" style={{ minWidth: 0 }}>
+                <div className="list__title truncate">{item.fromName || item.fromId} → {item.toName || item.toId}</div>
+                <div className="caption mono">{timeAgo(item.createdAt)} · 迁移 {item.lineCount} 条线路</div>
+              </div>
+              <Button size="sm" loading={undoMerge.isPending} onClick={() => undoMerge.mutate(item.id)}>撤销</Button>
+            </div>
+          ))
+        ) : (
+          <div className="caption">还没有合并记录。</div>
+        )}
       </Sheet>
     </div>
   );

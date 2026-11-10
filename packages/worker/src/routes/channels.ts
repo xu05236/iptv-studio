@@ -7,9 +7,11 @@ import {
   deleteChannel,
   getChannel,
   listChannels,
+  listChannelMerges,
   listSources,
   mergeChannels,
   removeAlias,
+  undoChannelMerge,
   updateChannel,
   audit,
 } from '../db.js';
@@ -20,6 +22,20 @@ import { countryOfGroup, countryRank } from '../lib/channelCountry.js';
 import type { ChannelRow } from '../db.js';
 
 export const channelRoutes = new Hono<AppEnv>();
+
+/** Recent merges, newest first; the merge sheet offers undo for these. */
+channelRoutes.get('/merges', async (c) => {
+  const items = await listChannelMerges(c.env, 10);
+  return ok({ items });
+});
+
+channelRoutes.post('/merges/:id/undo', async (c) => {
+  const id = c.req.param('id');
+  const result = await undoChannelMerge(c.env, id);
+  if (!result) return fail('合并记录不存在或已撤销', 404);
+  await audit(c.env, c.get('actor'), 'channel.merge.undo', id, result);
+  return ok(result);
+});
 
 channelRoutes.get('/alias-conflicts', async (c) => {
   const [{ results: aliasRows }, channels] = await Promise.all([

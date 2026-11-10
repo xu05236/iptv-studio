@@ -289,6 +289,26 @@ export function Pool() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const cleanupOrphans = useMutation({
+    mutationFn: async () => {
+      const report = await api.get<{ total: number }>('/api/admin/pool/orphans');
+      if (!report.total) return null;
+      if (!window.confirm(`删除 ${report.total} 条来自已删除来源的线路？`)) return null;
+      return api.post<{ removed: number }>('/api/admin/pool/orphans/cleanup', {});
+    },
+    onSuccess: (result) => {
+      if (!result) {
+        show('没有来自已删除来源的线路');
+        return;
+      }
+      show(`已清理 ${result.removed} 条孤立线路`);
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const exportPool = useMutation({
     mutationFn: async () => {
       const token = getToken();
@@ -460,6 +480,7 @@ export function Pool() {
             <Button loading={exportPool.isPending} onClick={() => exportPool.mutate()}><Download size={15} /> 导出筛选</Button>
             <Button loading={saveSubscription.isPending} onClick={() => saveSubscription.mutate()}><Layers3 size={15} /> 保存为订阅</Button>
             <Button onClick={() => setTombstonesOpen(true)}><Ban size={15} /> 墓碑</Button>
+            <Button loading={cleanupOrphans.isPending} onClick={() => cleanupOrphans.mutate()}><Trash2 size={15} /> 清理已删源</Button>
           </>
         }
       />

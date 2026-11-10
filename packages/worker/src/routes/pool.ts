@@ -721,3 +721,44 @@ poolRoutes.post('/subscription', async (c) => {
   await audit(c.env, c.get('actor'), 'pool.subscription', row.id, { lines: selected.length });
   return ok({ id: row.id, token: row.token, lines: selected.length });
 });
+
+/**
+ * Lines whose source row was deleted stay in state/lines.json until the
+ * retention sweep removes them. Deleting a broken source should not keep its
+ * lines exportable for LINE_RETENTION_DAYS, so the pool page offers a targeted
+ * cleanup instead of waiting for the sweeper.
+ */
+poolRoutes.get('/orphans', async (c) => {
+  const [state, sources] = await Promise.all([
+    getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json'),
+    listSources(c.env),
+  ]);
+  const live = new Set(sources.map((source) => source.id));
+  const groups = new Map<string, string[]>();
+  for (const line of state?.lines ?? []) {
+    if (live.has(line.sourceId)) continue;
+    const urls = groups.get(line.sourceId) ?? [];
+    urls.push(line.url);
+    groups.set(line.sourceId, urls);
+  }
+  const items = [...groups.entries()].map(([sourceId, urls]) => ({ sourceId, count: urls.length, sample: urls[0] }));
+  return ok({ total: items.reduce((sum, item) => sum + item.count, 0), items });
+});
+
+poolRoutes.post('/orphans/cleanup', async (c) => {
+  const body = await readJson<{ sourceId?: string }>(c);
+  const [state, sources] = await Promise.all([
+    getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json'),
+    listSources(c.env),
+  ]);
+  const live = new Set(sources.map((source) => source.id));
+  const keys = new Set(
+    (state?.lines ?? [])
+      .filter((line) => !live.has(line.sourceId) && (!body?.sourceId || line.sourceId === body.sourceId))
+      .map((line) => line.key),
+  );
+  if (!keys.size) return ok({ removed: 0 });
+  const removed = await removeLinesFromArtifacts(c.env, keys);
+  await audit(c.env, c.get('actor'), 'pool.cleanup_orphans', body?.sourceId ?? 'all', { removed, sourceId: body?.sourceId ?? null });
+  return ok({ removed });
+});

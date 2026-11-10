@@ -131,3 +131,20 @@ export async function workflowRunStatus(env: Env): Promise<unknown> {
     url: run.html_url,
   }));
 }
+
+/** Best-effort cancel of a workflow run (used when a task is stopped by hand). */
+export async function cancelGithubRun(env: Env, runId: number | undefined): Promise<void> {
+  if (!runId || !env.GITHUB_TOKEN || !env.GITHUB_REPO) return;
+  try {
+    await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/actions/runs/${runId}/cancel`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'iptv-studio',
+      },
+    });
+  } catch {
+    // best effort — the task is stopped either way
+  }
+}

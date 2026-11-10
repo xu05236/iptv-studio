@@ -501,20 +501,29 @@ export async function mergeChannels(env: Env, fromIds: string[], intoId: string)
   if (!target) throw new Error('目标频道不存在');
   let merged = 0;
   const fromSet = new Set(fromIds);
+
+  // Read state before mutating so each merge record knows which line keys move.
+  const linesState = await env.KV.get<{ lines: Array<{ key?: string; channelId: string }> }>('state/lines.json', 'json');
+  const probeState = await env.KV.get<{ items: Array<{ channelId?: string; key?: string; lineKey?: string }> }>('state/probe.json', 'json');
+
   for (const id of fromIds) {
     if (id === intoId) continue;
     const source = await getChannel(env, id);
     if (!source) continue;
+    const aliases = (await env.DB.prepare('SELECT alias FROM aliases WHERE channel_id = ?').bind(id).all<{ alias: string }>()).results.map((row) => row.alias);
+    const lineKeys = (linesState?.lines ?? []).filter((line) => line.channelId === id && line.key).map((line) => line.key as string);
     await addAlias(env, intoId, source.name);
     if (source.tvg_id) await addAlias(env, intoId, source.tvg_id);
     await env.DB.prepare('UPDATE aliases SET channel_id = ? WHERE channel_id = ?').bind(intoId, id).run();
     await env.DB.prepare('DELETE FROM channels WHERE id = ?').bind(id).run();
+    await env.DB.prepare('INSERT INTO channel_merges (id, from_id, to_id, snapshot, line_keys) VALUES (?, ?, ?, ?, ?)')
+      .bind(`merge-${crypto.randomUUID()}`, id, intoId, JSON.stringify({ channel: source, aliases }), JSON.stringify(lineKeys))
+      .run();
     merged++;
   }
 
   // Existing probe state still points at the old x- channel. Remap it now so
   // the next export/subscription does not resurrect the deleted channel.
-  const linesState = await env.KV.get<{ lines: Array<{ channelId: string }> }>('state/lines.json', 'json');
   if (linesState?.lines) {
     let changed = 0;
     for (const line of linesState.lines) {
@@ -525,7 +534,6 @@ export async function mergeChannels(env: Env, fromIds: string[], intoId: string)
     }
     if (changed) await env.KV.put('state/lines.json', JSON.stringify(linesState));
   }
-  const probeState = await env.KV.get<{ items: Array<{ channelId?: string }> }>('state/probe.json', 'json');
   if (probeState?.items) {
     let changed = 0;
     for (const item of probeState.items) {
@@ -537,6 +545,83 @@ export async function mergeChannels(env: Env, fromIds: string[], intoId: string)
     if (changed) await env.KV.put('state/probe.json', JSON.stringify(probeState));
   }
   return merged;
+}
+
+export interface ChannelMergeRow {
+  id: string;
+  from_id: string;
+  to_id: string;
+  snapshot: string;
+  line_keys: string;
+  created_at: string;
+}
+
+export async function listChannelMerges(env: Env, limit = 10): Promise<Array<{ id: string; fromId: string; toId: string; fromName: string | null; toName: string | null; lineCount: number; createdAt: string }>> {
+  const { results } = await env.DB.prepare(
+    `SELECT m.id, m.from_id, m.to_id, m.line_keys, m.created_at, f.name AS from_name, t.name AS to_name
+     FROM channel_merges m
+     LEFT JOIN channels f ON f.id = m.from_id
+     LEFT JOIN channels t ON t.id = m.to_id
+     ORDER BY m.created_at DESC LIMIT ?`,
+  ).bind(limit).all<{ id: string; from_id: string; to_id: string; line_keys: string; created_at: string; from_name: string | null; to_name: string | null }>();
+  return results.map((row) => ({
+    id: row.id,
+    fromId: row.from_id,
+    toId: row.to_id,
+    fromName: row.from_name,
+    toName: row.to_name,
+    lineCount: ((JSON.parse(row.line_keys) as string[]) || []).length,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function undoChannelMerge(env: Env, mergeId: string): Promise<{ restoredLines: number } | null> {
+  const row = await env.DB.prepare('SELECT * FROM channel_merges WHERE id = ?').bind(mergeId).first<ChannelMergeRow>();
+  if (!row) return null;
+  const snapshot = JSON.parse(row.snapshot) as { channel: ChannelRow; aliases: string[] };
+  const channel = snapshot.channel;
+  const keys = new Set(JSON.parse(row.line_keys) as string[]);
+  await env.DB.prepare(
+    `INSERT INTO channels (id, name, tvg_id, group_title, logo, number, enabled, sort, aliases, epg_source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name, tvg_id = excluded.tvg_id, group_title = excluded.group_title,
+       logo = excluded.logo, number = excluded.number, enabled = excluded.enabled,
+       sort = excluded.sort, aliases = excluded.aliases, epg_source = excluded.epg_source`,
+  ).bind(
+    channel.id, channel.name, channel.tvg_id ?? null, channel.group_title ?? null, channel.logo ?? null,
+    channel.number ?? null, channel.enabled ?? 1, channel.sort ?? 0, channel.aliases ?? '[]', channel.epg_source ?? null,
+  ).run();
+  for (const alias of snapshot.aliases ?? []) {
+    await env.DB.prepare('INSERT OR IGNORE INTO aliases (alias, channel_id) VALUES (?, ?)').bind(alias, channel.id).run();
+  }
+
+  let restoredLines = 0;
+  const linesState = await env.KV.get<{ lines: Array<{ key?: string; channelId: string }> }>('state/lines.json', 'json');
+  if (linesState?.lines) {
+    for (const line of linesState.lines) {
+      if (line.channelId === row.to_id && line.key && keys.has(line.key)) {
+        line.channelId = channel.id;
+        restoredLines++;
+      }
+    }
+    if (restoredLines) await env.KV.put('state/lines.json', JSON.stringify(linesState));
+  }
+  const probeState = await env.KV.get<{ items: Array<{ channelId?: string; key?: string; lineKey?: string }> }>('state/probe.json', 'json');
+  if (probeState?.items) {
+    let changed = 0;
+    for (const item of probeState.items) {
+      if (item.channelId !== row.to_id) continue;
+      const key = item.lineKey ?? item.key;
+      if (key && keys.has(key)) {
+        item.channelId = channel.id;
+        changed++;
+      }
+    }
+    if (changed) await env.KV.put('state/probe.json', JSON.stringify(probeState));
+  }
+  await env.DB.prepare('DELETE FROM channel_merges WHERE id = ?').bind(mergeId).run();
+  return { restoredLines };
 }
 
 // ---------------------------------------------------------------- subscriptions

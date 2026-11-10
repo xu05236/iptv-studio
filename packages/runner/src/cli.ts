@@ -324,11 +324,33 @@ function normalize(
 async function collectSourceWithRetry(source: SourceRecord, store: ArtifactStore, logger: RunLogger): Promise<CollectedSource> {
   // Retries live in the shared fetch layer (fetchText) so they respect the
   // error classification: 4xx/challenge fail fast, 5xx/timeout/network retry.
+  // A whole-source cap keeps one wedged stream (or parser) from parking the
+  // task for half an hour while the UI looks frozen.
+  const limitMs = Math.max(120_000, Number(source.fetch_timeout_ms ?? 45_000) * 2);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await collectSource(source, store, logger);
+    return await Promise.race([
+      collectSource(source, store, logger),
+      new Promise<CollectedSource>((resolve) => {
+        timer = setTimeout(() => {
+          logger.warn('抓取超时', { source: source.name, limitMs });
+          resolve({
+            source,
+            entries: [],
+            fetched: false,
+            notModified: false,
+            bytes: 0,
+            error: `#1 源处理超过 ${Math.round(limitMs / 1000)} 秒，已放弃`,
+            errorKind: 'timeout',
+          });
+        }, limitMs);
+      }),
+    ]);
   } catch (error) {
     logger.warn('抓取异常', { source: source.name, error: error instanceof Error ? error.message : String(error) });
     return { source, entries: [], fetched: false, notModified: false, bytes: 0, error: '抓取失败', errorKind: 'network' };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -347,9 +369,11 @@ async function collectAll(
   store: ArtifactStore,
   logger: RunLogger,
   onProgress?: (done: number, total: number, label?: string) => void,
+  onStart?: (source: SourceRecord, done: number, total: number) => void,
 ): Promise<CollectedSource[]> {
   let done = 0;
   return mapPool(sources, 4, async (source) => {
+    onStart?.(source, done, sources.length);
     try {
       return await collectSourceWithRetry(source, store, logger);
     } finally {
@@ -581,9 +605,17 @@ async function fetchPhase(
   if (sourceId && !targetSources.length) throw new Error(`采集站不存在或已停用：${sourceId}`);
   const startedMs = Date.now();
 
-  const collected = await collectAll(targetSources, store, logger, (done, total, label) => {
-    void reportTaskProgress(api, done, total, label ? `抓取 ${label}` : '抓取采集站');
-  });
+  const collected = await collectAll(
+    targetSources,
+    store,
+    logger,
+    (done, total, label) => {
+      void reportTaskProgress(api, done, total, label ? `抓取完成 ${label}（${done}/${total}）` : `抓取采集站（${done}/${total}）`);
+    },
+    (source, done, total) => {
+      void reportTaskProgress(api, done, total, `抓取中 · ${source.name}（已完成 ${done}/${total}）`, true);
+    },
+  );
   const registry = buildRegistry(remote);
   const sources = new Map(remote.sources.map((source) => [source.id, source]));
   const retentionDays = Math.max(0, envNumber('LINE_RETENTION_DAYS') ?? settings.lineRetentionDays ?? 30);
@@ -1289,14 +1321,14 @@ let lastProgressAt = 0;
 let lastProgressDone = -1;
 let lastProgressMessage = '';
 
-async function reportTaskProgress(api: ApiClient, done: number, total: number, message?: string): Promise<void> {
+async function reportTaskProgress(api: ApiClient, done: number, total: number, message?: string, force = false): Promise<void> {
   const messageChanged = Boolean(message) && message !== lastProgressMessage;
   if (message) lastProgressMessage = message;
   const taskId = process.env.TASK_ID;
   if (!taskId) return;
   const now = Date.now();
   const final = total > 0 && done >= total;
-  if (!final && !messageChanged && now - lastProgressAt < 10_000 && done - lastProgressDone < 50) return;
+  if (!final && !force && !messageChanged && now - lastProgressAt < 10_000 && done - lastProgressDone < 50) return;
   lastProgressAt = now;
   lastProgressDone = done;
   await api.post(`/api/admin/tasks/${taskId}/progress`, { done, total, message }).catch(() => undefined);
