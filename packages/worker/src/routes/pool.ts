@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { canonicalPoolUrl, channelLogo, compareLines, dedupePoolLines, qualityOf, qualityRank, type LineEntry, type PoolSnapshot, type Quality } from '@iptv/core';
+import { canonicalPoolUrl, channelLogo, compareLines, dedupePoolLines, lineSignature, pickDuplicateOwner, qualityOf, qualityRank, type LineEntry, type PoolSnapshot, type Quality } from '@iptv/core';
 import type { AppEnv, Env } from '../env.js';
 import {
   addCustomPoolLines,
@@ -465,6 +465,49 @@ poolRoutes.post('/reset', async (c) => {
 });
 
 /** Archived long-dead lines are otherwise unreachable; list and restore them. */
+/**
+ * One-off duplicate cleanup: keep a single copy per URL+headers, preferring the
+ * earliest healthy line. Mirrors otherwise duplicate every URL they share.
+ * Default is a dry run; pass `{ dryRun: false }` to actually save.
+ */
+poolRoutes.post('/dedupe', async (c) => {
+  const body = await readJson<{ dryRun?: boolean }>(c);
+  const dryRun = body?.dryRun !== false;
+  const state = await loadLines(c.env);
+  const groups = new Map<string, LineEntry[]>();
+  for (const line of state.lines) {
+    const signature = lineSignature(line);
+    const bucket = groups.get(signature) ?? [];
+    bucket.push(line);
+    groups.set(signature, bucket);
+  }
+  const keep: LineEntry[] = [];
+  let removed = 0;
+  let duplicateGroups = 0;
+  for (const lines of groups.values()) {
+    if (lines.length === 1) {
+      keep.push(lines[0]!);
+      continue;
+    }
+    duplicateGroups += 1;
+    const owner = pickDuplicateOwner(lines);
+    if (!owner) continue;
+    keep.push(owner);
+    removed += lines.length - 1;
+  }
+  if (!dryRun && removed) {
+    await saveLines(c.env, keep, new Date().toISOString());
+  }
+  await audit(c.env, c.get('actor'), 'pool.dedupe', 'bulk', {
+    dryRun,
+    before: state.lines.length,
+    after: keep.length,
+    removed,
+    duplicateGroups,
+  });
+  return ok({ dryRun, before: state.lines.length, after: keep.length, removed, duplicateGroups });
+});
+
 poolRoutes.get('/archive', async (c) => {
   const archive = await getJson<{ generatedAt?: string; lines?: LineEntry[] }>(c.env, 'state/lines-archive.json');
   const lines = archive?.lines ?? [];

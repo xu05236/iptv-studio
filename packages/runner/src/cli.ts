@@ -22,6 +22,8 @@ import {
   tierFor,
   withinRetention,
   isPurgeable,
+  lineSignature,
+  pickDuplicateOwner,
   type AppSettings,
   type ChannelConfig,
   type EpgData,
@@ -140,6 +142,7 @@ export interface SourceDiff {
   disappeared: number;
   skippedRejected: number;
   skippedTombstoned: number;
+  skippedDuplicate: number;
   before: SourceStatusCounts;
   after: SourceStatusCounts;
 }
@@ -178,6 +181,16 @@ function normalize(
   const merged = new Map<string, LineEntry>();
   const report = new Map<string, SourceDiff>();
   const present = new Set<string>();
+  // One copy per URL+headers: later sources must not re-import a URL another
+  // source already owns (mirrors would otherwise grow the state forever).
+  const bySignature = new Map<string, LineEntry[]>();
+  for (const line of previousLines) {
+    const signature = lineSignature(line);
+    const bucket = bySignature.get(signature) ?? [];
+    bucket.push(line);
+    bySignature.set(signature, bucket);
+  }
+  const removed = new Set<string>();
 
   const diffFor = (sourceId: string): SourceDiff => {
     const existing = report.get(sourceId);
@@ -198,6 +211,7 @@ function normalize(
       disappeared: 0,
       skippedRejected: 0,
       skippedTombstoned: 0,
+      skippedDuplicate: 0,
       before: beforeBySource.get(sourceId) ?? emptyStatusCounts(),
       after: emptyStatusCounts(),
     };
@@ -233,6 +247,18 @@ function normalize(
       }
 
       const isOfficial = sourceHasOfficialTag(source);
+      const signature = lineSignature({ urlKey, headers: raw.headers });
+      const owner = pickDuplicateOwner(bySignature.get(signature) ?? []);
+      if (!isOfficial && owner && owner.sourceId !== item.source.id) {
+        if (owner.status !== 'dead') {
+          diff.skippedDuplicate += 1;
+          continue;
+        }
+        // The owning copy is dead: let this fresh line take over the URL.
+        for (const dead of bySignature.get(signature) ?? []) {
+          if (dead.status === 'dead') removed.add(`${dead.sourceId}|${dead.urlKey}`);
+        }
+      }
       const line: LineEntry = {
         key,
         sourceId: item.source.id,
@@ -272,6 +298,9 @@ function normalize(
         official: old?.official ?? isOfficial,
       };
       merged.set(`${line.sourceId}|${line.urlKey}`, line);
+      const bucket = bySignature.get(signature) ?? [];
+      bucket.push(line);
+      bySignature.set(signature, bucket);
       if (old) {
         diff.reused += 1;
         if (old.status === 'alive') diff.reusedAlive += 1;
@@ -291,6 +320,7 @@ function normalize(
     if (!sources.has(old.sourceId)) continue;
     if (tombstoned.has(canonicalPoolUrl(old.url))) continue;
     const key = `${old.sourceId}|${old.urlKey}`;
+    if (removed.has(key)) continue;
     if (!merged.has(key)) merged.set(key, old);
   }
 
@@ -303,6 +333,7 @@ function normalize(
     if (!sources.has(old.sourceId)) continue;
     if (tombstoned.has(canonicalPoolUrl(old.url))) continue;
     const key = `${old.sourceId}|${old.urlKey}`;
+    if (removed.has(key)) continue;
     if (merged.has(key)) continue;
     if (!old.lastProbeAt && old.status === 'unknown') continue;
     if (!withinRetention(old.lastSeenAt, nowMs, retentionDays)) continue;
