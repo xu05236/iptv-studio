@@ -28,9 +28,9 @@ function stampOf(line: LineEntry): number {
 }
 
 /**
- * Dead lines older than `minAgeDays` are archived; a dead line that was never
- * probed (no timestamp at all) counts as old. Alive/suspect/pending lines are
- * never archived.
+ * Dead lines older than `minAgeDays` are archived. A dead line without any
+ * probe/rejected timestamp is left alone (it may be a fresh import that has
+ * not been probed yet); alive/suspect/pending lines are never archived.
  */
 export function splitArchivable(
   lines: LineEntry[],
@@ -41,7 +41,8 @@ export function splitArchivable(
   const keep: LineEntry[] = [];
   const archived: LineEntry[] = [];
   for (const line of lines) {
-    if (line.status === 'dead' && stampOf(line) < cutoff) archived.push(line);
+    const stamp = stampOf(line);
+    if (line.status === 'dead' && stamp > 0 && stamp < cutoff) archived.push(line);
     else keep.push(line);
   }
   return { keep, archived };

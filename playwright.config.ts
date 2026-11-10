@@ -10,7 +10,7 @@ export default defineConfig({
   testDir: 'e2e',
   // The production domain occasionally needs 30-90s through a residential
   // route; per-test timeouts must leave room for a page load plus assertions.
-  timeout: 240_000,
+  timeout: 480_000,
   expect: { timeout: 45_000 },
   fullyParallel: false,
   workers: 1,

@@ -696,7 +696,7 @@ adminRoutes.put('/settings', async (c) => {
     'sourceDegradeThreshold', 'sourcePauseThreshold', 'sourceHalfOpenHours',
     'fetchTimes', 'monthlyReviveEnabled', 'monthlyReviveMinRemainingMinutes', 'monthlyReviveBatchSize',
     'probeBudget', 'concurrency', 'probeAliveHours', 'probePremiumHours', 'probePerChannel',
-    'ffprobeLimit', 'probePrefilterEnabled', 'probePrefilterBudget', 'lineRetentionDays', 'epgUrls', 'regionSuffix',
+    'ffprobeLimit', 'probePrefilterEnabled', 'probePrefilterBudget', 'lineRetentionDays', 'epgUrls', 'regionSuffix', 'epgSourcePriority',
     'autoCollectEnabled', 'autoCollectTimes', 'autoLivenessEnabled', 'autoLivenessTimes',
     'autoProbeEnabled', 'probeBatchSize', 'autoProbeIntervalHours',
     'actionsMonthlyBudgetMinutes', 'actionsReserveMinutes', 'actionsRunCostMinutes',

@@ -75,13 +75,16 @@ jobs:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
         run: |
-          npm run db:migrate -w @iptv/worker > /tmp/migrate.log 2>&1 || true
+          set +e
+          npm run db:migrate -w @iptv/worker > /tmp/migrate.log 2>&1
+          code=$?
           tail -c 380 /tmp/migrate.log > /tmp/tail.txt
           jq -n --arg m "$(cat /tmp/tail.txt)" '{kind:"ci",message:$m,channelId:"ci-deploy"}' > /tmp/fb.json
           curl -s -X POST "$API_BASE_URL/api/admin/feedback" \
             -H "authorization: Bearer $ADMIN_TOKEN" \
             -H 'content-type: application/json' \
             --data-binary @/tmp/fb.json || true
+          exit $code
 
       - name: Ensure ffmpeg/ffprobe
         if: ${{ contains(fromJSON('["collect","probe","probe-batch","probe-lines"]'), github.event.inputs.command || 'collect') }}
@@ -100,6 +103,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PROBE_BUDGET: ${{ github.event.inputs.budget || vars.PROBE_BUDGET || '6000' }}
+          PROBE_CONCURRENCY: ${{ vars.PROBE_CONCURRENCY }}
           PROBE_FORCE: ${{ github.event.inputs.force || 'false' }}
           FETCH_FORCE: ${{ github.event.inputs.force_fetch || 'false' }}
           SOURCE_ID: ${{ github.event.inputs.source_id || '' }}
@@ -157,12 +161,3 @@ jobs:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
           SHOT_LIMIT: ${{ vars.SHOT_LIMIT || '60' }}
         run: npm run shots -w @iptv/runner
-
-      - name: Upload runner log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: runner-log
-          path: |
-            .tmp/*.log
-          if-no-files-found: ignore

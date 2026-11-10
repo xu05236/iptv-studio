@@ -33,6 +33,13 @@ function hex(buffer: ArrayBuffer): string {
   return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/** Only the app's own namespaces may be written to KV through the admin API. */
+function assertArtifactKey(key: string): void {
+  if (!/^(state|out|shots)\//.test(key) || key.includes('..') || key.includes('//') || key.length > 300) {
+    throw new Error(`非法的产物键：${key}`);
+  }
+}
+
 /** Write an artifact into Workers KV with an ETag + content type. */
 export async function putArtifact(
   env: Env,
@@ -40,6 +47,7 @@ export async function putArtifact(
   body: string | Uint8Array | ArrayBuffer,
   contentType = 'application/octet-stream',
 ): Promise<ArtifactMeta> {
+  assertArtifactKey(key);
   const bytes = bytesOf(body);
   if (bytes.byteLength > MAX_VALUE_BYTES) {
     throw new Error(`产物 ${key} 超过 KV 单值 24MB 限制（${Math.round(bytes.byteLength / 1024 / 1024)}MB）`);

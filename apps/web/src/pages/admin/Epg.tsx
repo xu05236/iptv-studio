@@ -251,7 +251,9 @@ export function Epg() {
             />
           </div>
 
-          {unmatched.isLoading ? (
+          {unmatched.isError ? (
+            <EmptyState title="未映射频道加载失败" description={unmatched.error instanceof Error ? unmatched.error.message : '请稍后重试'} />
+          ) : unmatched.isLoading ? (
             <span className="caption">加载中…</span>
           ) : !items.length ? (
             <EmptyState title="没有未映射的 EPG 名" description="当前节目单里的频道名都能对上，或还没有生成过 EPG。" />

@@ -85,7 +85,13 @@ subscriptionRoutes.get('/', async (c) => {
   return ok({
     items: rows.map((row) => {
       const config = subscriptionFromRow(row);
-      const matched = catalog ? catalog.items.filter((item) => item.channel.enabled !== false && channelMatches(item.channel, config)).length : 0;
+      // Pool-based exports ignore channel/groups/ids filters, so counting
+      // catalog channels against those filters would be misleading. Use null
+      // and let the UI label the row as "按池导出".
+      const poolDriven = !config.lineKeys?.length && ['premium', 'premium_backup', 'all', 'pools'].includes(config.poolMode ?? 'premium');
+      const matched = !poolDriven && catalog
+        ? catalog.items.filter((item) => item.channel.enabled !== false && channelMatches(item.channel, config)).length
+        : null;
       return {
         ...row,
         groups: JSON.parse(row.groups) as string[],

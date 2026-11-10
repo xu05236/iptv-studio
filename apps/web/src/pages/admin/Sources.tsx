@@ -161,7 +161,7 @@ export function Sources() {
   const [tagFilter, setTagFilter] = useState('');
   const [view, setView] = useState<'grid' | 'list'>('grid');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['admin', 'sources'],
     queryFn: () => api.get<{ items: SourceItem[]; reportGeneratedAt?: string | null }>('/api/admin/sources'),
     // A fetch task finishes in the background; keep the cards' 「更新」 times
@@ -552,6 +552,7 @@ export function Sources() {
       ) : null}
 
       {isLoading ? <Card><div className="caption">加载中…</div></Card> : null}
+      {isError ? <Card><div className="caption">采集站加载失败：{error instanceof Error ? error.message : '请求失败'}</div></Card> : null}
 
       {!isLoading && !items.length ? (
         <EmptyState
@@ -675,7 +676,7 @@ export function Sources() {
 
       <Sheet
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => { setOpen(false); setName(''); setUrl(''); setContent(''); setPreview(null); setKind('auto'); setSkipFetch(false); }}
         title="添加采集站"
         subtitle="支持 M3U / TXT / JSON / TVBox lives / 华为 JSP，自动识别"
         footer={

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Copy, Eraser, GitMerge, Info, LayoutGrid, Link2, List, Pencil, Search, Tag, Trash2, Tv, Wand2 } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -63,6 +63,7 @@ export function ChannelsAdmin() {
   const [aliasChannel, setAliasChannel] = useState<AdminChannel | null>(null);
   const [aliases, setAliases] = useState<string[]>([]);
   const [aliasInput, setAliasInput] = useState('');
+  const aliasSeq = useRef(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState('');
   const [renameOpen, setRenameOpen] = useState(false);
@@ -301,12 +302,14 @@ export function ChannelsAdmin() {
   });
 
   async function openAliases(channel: AdminChannel): Promise<void> {
+    const seq = ++aliasSeq.current;
     setAliasChannel(channel);
+    setAliases([]);
     try {
       const detail = await api.get<{ aliases: string[] }>(`/api/admin/channels/${channel.id}`);
-      setAliases(detail.aliases ?? []);
+      if (seq === aliasSeq.current) setAliases(detail.aliases ?? []);
     } catch (error) {
-      show(error instanceof Error ? error.message : '读取别名失败', 'error');
+      if (seq === aliasSeq.current) show(error instanceof Error ? error.message : '读取别名失败', 'error');
     }
   }
 
@@ -488,7 +491,7 @@ export function ChannelsAdmin() {
                 >
                   <Pencil size={14} />
                 </Button>
-                <Switch checked={channel.enabled} onChange={() => toggle.mutate(channel.id)} />
+                <Switch checked={channel.enabled} disabled={toggle.isPending} onChange={() => toggle.mutate(channel.id)} />
               </div>
             </div>
           );
@@ -585,7 +588,7 @@ export function ChannelsAdmin() {
         })() : null}
       </Sheet>
 
-      <Sheet open={Boolean(aliasChannel)} onClose={() => setAliasChannel(null)} title="频道别名" subtitle={aliasChannel?.name}>
+      <Sheet open={Boolean(aliasChannel)} onClose={() => { aliasSeq.current++; setAliasChannel(null); }} title="频道别名" subtitle={aliasChannel?.name}>
         <div className="stack">
           <div className="sheet-section">新增别名</div>
           <div className="row">

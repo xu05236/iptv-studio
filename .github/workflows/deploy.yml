@@ -37,8 +37,10 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          npm run typecheck 2>&1 | tee /tmp/checks.log
-          npm test 2>&1 | tee -a /tmp/checks.log
+          status=0
+          npm test 2>&1 | tee /tmp/checks.log || status=1
+          npm run typecheck 2>&1 | tee -a /tmp/checks.log || status=1
+          exit $status
 
       - name: Build web
         id: build
@@ -79,13 +81,20 @@ jobs:
           workingDirectory: packages/worker
           command: deploy
 
+      - name: Smoke test
+        id: smoke
+        if: steps.deploy.outcome == 'success'
+        env:
+          SMOKE_BASE: https://iptv.xu05236.dpdns.org
+        run: node scripts/smoke.mjs
+
       - name: Report failure to the admin inbox
-        if: always() && (steps.checks.outcome == 'failure' || steps.build.outcome == 'failure' || steps.migrate.outcome == 'failure' || steps.deploy.outcome == 'failure')
+        if: always() && (steps.checks.outcome == 'failure' || steps.build.outcome == 'failure' || steps.migrate.outcome == 'failure' || steps.deploy.outcome == 'failure' || steps.smoke.outcome == 'failure')
         env:
           SITE: https://iptv.xu05236.dpdns.org
         run: |
           msg=""
-          for f in checks build mark migrate; do
+          for f in checks build migrate deploy; do
             if [ -f "/tmp/$f.log" ]; then
               line=$(grep -m 3 -E 'ERROR|✘' "/tmp/$f.log" | tail -n 3 | tr '\n' ' ' | tr -d '"' | cut -c1-200)
               msg="$msg [$f] $line"
@@ -96,5 +105,5 @@ jobs:
             --data-binary "{\"channelId\":\"ci-deploy\",\"entryKey\":\"ci-deploy\",\"kind\":\"ci\",\"message\":\"${msg:0:480}\"}" || true
 
       - name: Mark the run failed
-        if: always() && (steps.checks.outcome == 'failure' || steps.build.outcome == 'failure' || steps.migrate.outcome == 'failure' || steps.deploy.outcome == 'failure')
+        if: always() && (steps.checks.outcome == 'failure' || steps.build.outcome == 'failure' || steps.migrate.outcome == 'failure' || steps.deploy.outcome == 'failure' || steps.smoke.outcome == 'failure')
         run: exit 1

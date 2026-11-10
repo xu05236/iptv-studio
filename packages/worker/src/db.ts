@@ -839,7 +839,14 @@ export async function listCustomPools(env: Env): Promise<CustomPoolListItem[]> {
 export async function createCustomPool(env: Env, id: string, name: string): Promise<CustomPoolRow | null> {
   const existing = await env.DB.prepare('SELECT id FROM custom_pools WHERE name = ?').bind(name).first<{ id: string }>();
   if (existing) return null;
-  await env.DB.prepare('INSERT INTO custom_pools (id, name) VALUES (?, ?)').bind(id, name).run();
+  try {
+    await env.DB.prepare('INSERT INTO custom_pools (id, name) VALUES (?, ?)').bind(id, name).run();
+  } catch (error) {
+    // Two requests can pass the SELECT above at the same time and race on the
+    // UNIQUE(name) constraint; treat that as "name already taken" instead of 500.
+    if (error instanceof Error && /unique/i.test(error.message)) return null;
+    throw error;
+  }
   return env.DB.prepare('SELECT * FROM custom_pools WHERE id = ?').bind(id).first<CustomPoolRow>();
 }
 
@@ -863,11 +870,15 @@ export async function deleteCustomPool(env: Env, id: string): Promise<boolean> {
 export async function addCustomPoolLines(env: Env, poolId: string, keys: string[]): Promise<number> {
   const unique = [...new Set(keys)];
   if (!unique.length) return 0;
+  let added = 0;
   for (let i = 0; i < unique.length; i += 100) {
     const chunk = unique.slice(i, i + 100);
-    await env.DB.batch(chunk.map((key) => env.DB.prepare('INSERT OR IGNORE INTO custom_pool_lines (pool_id, line_key) VALUES (?, ?)').bind(poolId, key)));
+    const results = await env.DB.batch(chunk.map((key) => env.DB.prepare('INSERT OR IGNORE INTO custom_pool_lines (pool_id, line_key) VALUES (?, ?)').bind(poolId, key)));
+    // INSERT OR IGNORE reports 0 changes for duplicate keys; callers show the
+    // real number added instead of the number submitted.
+    for (const result of results) added += result.meta.changes ?? 0;
   }
-  return unique.length;
+  return added;
 }
 
 export async function removeCustomPoolLines(env: Env, poolId: string, keys: string[]): Promise<number> {

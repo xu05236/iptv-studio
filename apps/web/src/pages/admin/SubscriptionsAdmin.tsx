@@ -143,7 +143,7 @@ export function SubscriptionsAdmin() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['admin', 'subscriptions'],
     queryFn: () => api.get<{ items: SubscriptionItem[] }>('/api/admin/subscriptions'),
   });
@@ -367,6 +367,7 @@ export function SubscriptionsAdmin() {
       </Card>
 
       {isLoading ? <Card><div className="caption">加载中…</div></Card> : null}
+      {isError ? <Card><div className="caption">订阅加载失败：{error instanceof Error ? error.message : '请求失败'}</div></Card> : null}
 
       {!isLoading && !data?.items.length ? (
         <EmptyState
@@ -407,7 +408,7 @@ export function SubscriptionsAdmin() {
             </div>
 
             <div className="subscription-stats">
-              <div><strong>{item.matchedChannels ?? 0}</strong><span>匹配频道</span></div>
+              <div><strong>{item.matchedChannels == null ? '按池' : item.matchedChannels}</strong><span>匹配频道</span></div>
               <div><strong>{displayLineLimit(item.max_lines_per_channel)}</strong><span>每频道线路</span></div>
               <div><strong>{item.includeEpg ? '含' : '不含'}</strong><span>EPG</span></div>
               <div>

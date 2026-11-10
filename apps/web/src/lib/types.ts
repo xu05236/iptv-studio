@@ -165,7 +165,7 @@ export interface SubscriptionItem {
   poolIds?: string[];
   filter_mode?: string;
   proxy_mode?: string;
-  matchedChannels?: number;
+  matchedChannels?: number | null;
   usage7d?: { requests: number; bytes: number } | null;
   updated_at?: string;
   links: Record<string, string>;

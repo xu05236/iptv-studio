@@ -1,6 +1,18 @@
 import { gunzipSync } from 'node:zlib';
 import { isGzipBytes, type AppSettings, type ChannelConfig, type LineEntry, type Rule } from '@iptv/core';
 
+/**
+ * 4xx responses other than 408/429 will never succeed on retry; retrying them
+ * wastes ~67s per call and delays the failure the operator needs to see.
+ */
+function isRetryableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const status = /-> (\d{3})\b/.exec(message)?.[1];
+  if (!status) return true; // network reset / timeout / abort — transient
+  const code = Number(status);
+  return code === 408 || code === 429 || code >= 500;
+}
+
 export class ApiClient {
   constructor(
     private readonly baseUrl: string,
@@ -15,7 +27,7 @@ export class ApiClient {
     };
   }
 
-  /** Retry transient connect/TLS failures (common after mass probing). */
+  /** Retry transient connect/TLS/5xx failures; 4xx are deterministic and fail fast. */
   private async retry<T>(operation: () => Promise<T>, attempts = 6): Promise<T> {
     const delays = [2_000, 5_000, 10_000, 20_000, 30_000];
     let lastError: unknown;
@@ -24,7 +36,8 @@ export class ApiClient {
         return await operation();
       } catch (error) {
         lastError = error;
-        if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, delays[attempt - 1] ?? 30_000));
+        if (!isRetryableError(error) || attempt >= attempts) break;
+        await new Promise((resolve) => setTimeout(resolve, delays[attempt - 1] ?? 30_000));
       }
     }
     throw lastError;
@@ -84,7 +97,7 @@ export class ApiClient {
   async getArtifact(key: string): Promise<string | null> {
     try {
       return await this.retry(async () => {
-        const response = await fetch(this.artifactUrl(key), { headers: this.headers(), signal: AbortSignal.timeout(60_000) });
+        const response = await fetch(this.artifactUrl(key), { headers: this.headers(), signal: AbortSignal.timeout(120_000) });
         if (response.status === 404) return null;
         if (!response.ok) throw new Error(`GET ${key} -> ${response.status}`);
         const bytes = new Uint8Array(await response.arrayBuffer());
@@ -130,7 +143,13 @@ export class ArtifactStore {
   async getJson<T>(key: string): Promise<T | null> {
     const text = await this.getText(key);
     if (!text) return null;
-    return JSON.parse(text) as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      // A corrupt artifact should not abort the whole run (publish reads the
+      // guide this way); callers treat null as "missing" and fall back.
+      return null;
+    }
   }
 
   async delete(key: string): Promise<void> {

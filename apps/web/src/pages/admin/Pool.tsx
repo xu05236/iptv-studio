@@ -697,6 +697,10 @@ export function Pool() {
         </Card>
       ) : null}
 
+      {lines.isError ? (
+        <Card><div className="caption">线路加载失败：{lines.error instanceof Error ? lines.error.message : '请求失败'}</div></Card>
+      ) : null}
+
       {lines.isLoading ? (
         <div className="stack stack--tight">
           {Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} height={58} radius={14} />)}

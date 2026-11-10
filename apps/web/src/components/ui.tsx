@@ -66,13 +66,14 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
-export function Switch({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label?: string }) {
+export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (value: boolean) => void; label?: string; disabled?: boolean }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       className={clsx('switch', checked && 'switch--on')}
       onClick={() => onChange(!checked)}
     />
