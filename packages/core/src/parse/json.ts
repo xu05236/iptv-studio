@@ -3,7 +3,7 @@ import { isStreamUrl, splitUrlHeaders } from '../util/url.js';
 import { cleanLabel } from '../util/text.js';
 
 const NAME_KEYS = ['name', 'title', 'tvgname', 'channelname', 'cname', 'showname', 'label'];
-const URL_KEYS = ['url', 'urls', 'playbackurl', 'streamurl', 'playurl', 'address', 'addr', 'link', 'src', 'm3u8'];
+const URL_KEYS = ['url', 'urls', 'sources', 'streams', 'playbackurl', 'streamurl', 'playurl', 'address', 'addr', 'link', 'src', 'm3u8'];
 const GROUP_KEYS = ['group', 'grouptitle', 'category', 'class', 'type', 'tag', 'typename'];
 const LOGO_KEYS = ['logo', 'tvglogo', 'icon', 'pic', 'image', 'img'];
 const TVG_KEYS = ['tvgid', 'tvg', 'epgid', 'epg', 'channelid'];
@@ -117,12 +117,17 @@ function walk(node: unknown, ctx: WalkContext, out: RawEntry[], warnings: string
   }
 
   const containerKeys = ['channels', 'channel', 'list', 'data', 'result', 'results', 'items', 'urls', 'groups', 'live', 'content'];
+  // A group node like {"name":"央视","channels":[...]} has no stream URL of its
+  // own. Pass its name down as the group so channels keep their category
+  // (shapes such as {groups:[{name,channels:[{name,sources:[url]}]}]}).
+  const groupLabel = pick(map, NAME_KEYS) ?? pick(map, GROUP_KEYS);
+  const childGroup = groupLabel && !hasUrlValue(map) ? cleanLabel(groupLabel) : ctx.group;
   let descended = false;
   for (const key of containerKeys) {
     const value = map.get(key);
     if (Array.isArray(value)) {
       descended = true;
-      walk(value, { ...ctx, depth: ctx.depth + 1 }, out, warnings);
+      walk(value, { ...ctx, group: childGroup, depth: ctx.depth + 1 }, out, warnings);
     }
   }
   if (descended) return;
@@ -147,11 +152,17 @@ function pick(map: Map<string, unknown>, keys: string[]): string | undefined {
   return undefined;
 }
 
-function looksLikeEntry(map: Map<string, unknown>): boolean {
-  const url = map.get('url') ?? map.get('urls') ?? map.get('playbackurl') ?? map.get('streamurl') ?? map.get('link') ?? map.get('src');
-  if (typeof url === 'string') return isStreamUrl(url);
-  if (Array.isArray(url)) return url.some((item) => typeof item === 'string' && isStreamUrl(item));
+function hasUrlValue(map: Map<string, unknown>): boolean {
+  for (const key of URL_KEYS) {
+    const value = map.get(key);
+    if (typeof value === 'string' && isStreamUrl(value)) return true;
+    if (Array.isArray(value) && value.some((item) => typeof item === 'string' && isStreamUrl(item))) return true;
+  }
   return false;
+}
+
+function looksLikeEntry(map: Map<string, unknown>): boolean {
+  return hasUrlValue(map);
 }
 
 function recordHasUrlArray(record: Record<string, unknown>): boolean {
@@ -161,7 +172,14 @@ function recordHasUrlArray(record: Record<string, unknown>): boolean {
 }
 
 function pushEntry(map: Map<string, unknown>, ctx: WalkContext, out: RawEntry[]): void {
-  const rawUrl = map.get('url') ?? map.get('urls') ?? map.get('playbackurl') ?? map.get('streamurl') ?? map.get('playurl') ?? map.get('link') ?? map.get('src');
+  let rawUrl: unknown;
+  for (const key of URL_KEYS) {
+    const value = map.get(key);
+    if (value !== undefined) {
+      rawUrl = value;
+      break;
+    }
+  }
   const urls: string[] = Array.isArray(rawUrl)
     ? rawUrl.filter((item): item is string => typeof item === 'string')
     : typeof rawUrl === 'string'
