@@ -54,8 +54,9 @@
 ## 容量、归档与告警
 
 - 存储大小见「设置 → 容量」或 `GET /api/admin/storage/sizes`。
+- **线路状态分片**：`state/lines.json` 已拆成 `state/lines-manifest.json` + `state/lines-0.json`…`lines-7.json` 共 8 片，每片 gzip 存储；读取方（runner / Worker）优先读 manifest，没有 manifest 时自动回退旧的单文件。线上 33k 条约 19MB → 8 片合计约 4.4MB（每片 0.5–0.6MB），远低于 KV 25MB 单值上限。发布成功写入分片后会删除旧的 `state/lines.json`。
 - **阈值**：单个产物 15MB 告警、22MB 发布阻断；EPG 有单独的 24MB 保护。
-- **自动归档**：`state/lines.json` 超过 12MB 时，runner 会把「已淘汰且 30 天（线路保留期）没有探测记录」的线路移入 `state/lines-archive.json`（归档最多 20,000 条，按时间倒序保留）。
+- **自动归档**：线路原始体积（未压缩 JSON）超过 12MB 时，runner 会把「已淘汰且 30 天（线路保留期）没有探测记录」的线路移入 `state/lines-archive.json`（归档最多 20,000 条，按时间倒序保留）。分片 + gzip 上线后这一步通常只是兜底，不再承担主要瘦身职责。
   - 归档只针对失效线路，活跃线路不会被动。
   - 归档文件同样计入存储大小，可在设置页看到。
 - **告警**：概览页在任一产物超过 15MB 时显示橙色容量告警，并链到设置页。
