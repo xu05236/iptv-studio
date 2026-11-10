@@ -26,7 +26,16 @@ export async function loadLinesState(store: ArtifactStore): Promise<LinesState> 
     const lines: LineEntry[] = [];
     for (const shard of manifest.shards) {
       const text = await store.getText(shard.key).catch(() => null);
-      if (text) lines.push(...parseLinesBody(text));
+      if (!text) {
+        // Never hand a partial state back to callers: they save it straight away
+        // (single-source fetch, prune, publish) and would erase every shard we
+        // failed to read. Fail loudly and keep the stored state untouched.
+        throw new Error(`线路分片 ${shard.key} 读取失败，已中止以保护现有线路状态`);
+      }
+      lines.push(...parseLinesBody(text));
+    }
+    if (lines.length < manifest.total) {
+      throw new Error(`线路分片读取不完整（${lines.length}/${manifest.total}），已中止以保护现有线路状态`);
     }
     return { generatedAt: manifest.generatedAt, lines };
   }
@@ -35,6 +44,11 @@ export async function loadLinesState(store: ArtifactStore): Promise<LinesState> 
 
 /** Write 8 gzip shards + manifest, then remove the legacy single value. */
 export async function saveLinesState(store: ArtifactStore, lines: LineEntry[], generatedAt: string): Promise<void> {
+  if (!lines.length) {
+    // A zero-line state is almost always a failed read, not an intentional
+    // wipe. Refuse it so one transient shard failure cannot destroy the pool.
+    throw new Error('拒绝写入 0 条线路：疑似读取失败，已保留现有线路状态');
+  }
   const { manifest, shards } = packLines(lines, generatedAt);
   for (const shard of shards) {
     const compressed = new Uint8Array(gzipSync(Buffer.from(shard.body)));

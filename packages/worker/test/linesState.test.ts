@@ -89,4 +89,18 @@ describe('worker sharded lines', () => {
     expect(loaded.generatedAt).toBe('2026-11-09T00:00:00Z');
     expect(loaded.lines[0]!.key).toBe('legacy');
   });
+
+  it('rejects an empty save', async () => {
+    const kv = new FakeKV();
+    await expect(saveLines(envOf(kv), [], '2026-11-10T00:00:00Z')).rejects.toThrow('拒绝写入 0 条线路');
+  });
+
+  it('throws when a shard is missing instead of returning a partial state', async () => {
+    const kv = new FakeKV();
+    await saveLines(envOf(kv), [line()], '2026-11-10T00:00:00Z');
+    const manifest = JSON.parse(new TextDecoder().decode(kv.values.get(LINES_MANIFEST_KEY))) as { shards: Array<{ key: string; count: number }> };
+    const shard = manifest.shards.find((item) => item.count > 0)!;
+    kv.values.delete(shard.key);
+    await expect(loadLines(envOf(kv))).rejects.toThrow('线路分片');
+  });
 });

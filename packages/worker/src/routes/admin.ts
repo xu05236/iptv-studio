@@ -27,7 +27,7 @@ import {
 } from '../db.js';
 import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
-import { loadLines } from '../lib/linesState.js';
+import { loadLines, saveLines } from '../lib/linesState.js';
 import { LINES_SHARD_COUNT, lineShardKey } from '@iptv/core';
 import { getRuntimeJson } from '../lib/runtime-state.js';
 import { clearSnapshots, createSnapshot } from '../lib/snapshots.js';
@@ -157,6 +157,33 @@ adminRoutes.post('/epg/clean-noise', async (c) => {
   }
   await audit(c.env, c.get('actor'), 'epg.clean_noise', String(noise.length));
   return ok({ removed: noise.length });
+});
+
+adminRoutes.post('/recover/lines-from-pool', async (c) => {
+  // Emergency recovery after a bad write wiped the sharded line state: the
+  // pool snapshot still holds every line that was alive at its generatedAt
+  // (url, channel, probe status). Rebuild lines.json from it without touching
+  // the pool/guide/catalog artifacts so subscriptions keep rendering.
+  const pool = await getJson<{ generatedAt?: string; channels?: Record<string, { premium?: LineEntry[]; backup?: LineEntry[]; candidate?: LineEntry[] }> }>(c.env, 'state/pool.json');
+  if (!pool?.channels) return fail('没有可用的线路池快照（state/pool.json）', 404);
+  const byKey = new Map<string, LineEntry>();
+  for (const entry of Object.values(pool.channels)) {
+    for (const bucket of ['premium', 'backup', 'candidate'] as const) {
+      for (const line of entry[bucket] ?? []) {
+        if (line?.key) byKey.set(line.key, line);
+      }
+    }
+  }
+  if (!byKey.size) return fail('池快照里没有线路', 400);
+  const existing = await loadLines(c.env).catch(() => ({ lines: [] as LineEntry[] }));
+  for (const line of existing.lines) {
+    if (line?.key && !byKey.has(line.key)) byKey.set(line.key, line);
+  }
+  const lines = [...byKey.values()];
+  const generatedAt = pool.generatedAt ?? new Date().toISOString();
+  await saveLines(c.env, lines, generatedAt);
+  await audit(c.env, c.get('actor'), 'lines.recover_from_pool', 'state/pool.json', { lines: lines.length, generatedAt });
+  return ok({ lines: lines.length, generatedAt });
 });
 
 /**

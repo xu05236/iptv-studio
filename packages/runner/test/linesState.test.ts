@@ -86,4 +86,18 @@ describe('lines state sharding', () => {
     const loaded = await loadLinesState(store as unknown as ArtifactStore);
     expect(loaded.lines).toHaveLength(200);
   });
+
+  it('refuses to save an empty state so a failed read cannot wipe the pool', async () => {
+    const store = new MemoryStore();
+    await expect(saveLinesState(store as unknown as ArtifactStore, [], '2026-01-05T00:00:00Z')).rejects.toThrow('拒绝写入 0 条线路');
+  });
+
+  it('throws instead of returning a partial state when a shard is unreadable', async () => {
+    const store = new MemoryStore();
+    await saveLinesState(store as unknown as ArtifactStore, [line()], '2026-01-06T00:00:00Z');
+    const manifest = JSON.parse(store.values.get(LINES_MANIFEST_KEY)!) as { shards: Array<{ key: string; count: number }> };
+    const shard = manifest.shards.find((item) => item.count > 0)!;
+    store.values.delete(shard.key);
+    await expect(loadLinesState(store as unknown as ArtifactStore)).rejects.toThrow('线路分片');
+  });
 });

@@ -28,7 +28,7 @@ async function gunzipText(bytes: ArrayBuffer): Promise<string> {
 
 async function readShard(env: Env, key: string): Promise<LineEntry[]> {
   const bytes = await env.KV.get(key, 'arrayBuffer');
-  if (!bytes) return [];
+  if (!bytes) throw new Error(`线路分片 ${key} 读取失败，已中止以保护现有线路状态`);
   const text = isGzipBytes(new Uint8Array(bytes)) ? await gunzipText(bytes) : new TextDecoder().decode(bytes);
   return parseLinesBody(text);
 }
@@ -39,6 +39,9 @@ export async function loadLines(env: Env): Promise<LinesState> {
   if (manifest?.version === LINES_FORMAT_VERSION && manifest.shards?.length) {
     const lines: LineEntry[] = [];
     for (const shard of manifest.shards) lines.push(...(await readShard(env, shard.key)));
+    if (lines.length < manifest.total) {
+      throw new Error(`线路分片读取不完整（${lines.length}/${manifest.total}），已中止以保护现有线路状态`);
+    }
     return { generatedAt: manifest.generatedAt, lines };
   }
   return (await env.KV.get<LinesState>(LINES_LEGACY_KEY, 'json')) ?? { lines: [] };
@@ -46,6 +49,7 @@ export async function loadLines(env: Env): Promise<LinesState> {
 
 /** Write gzip shards + manifest; drop the legacy value once shards exist. */
 export async function saveLines(env: Env, lines: LineEntry[], generatedAt: string): Promise<void> {
+  if (!lines.length) throw new Error('拒绝写入 0 条线路：疑似读取失败，已保留现有线路状态');
   const { manifest, shards } = packLines(lines, generatedAt);
   for (const shard of shards) {
     await putArtifact(env, shard.key, await gzipBytes(shard.body), 'application/json; charset=utf-8');
