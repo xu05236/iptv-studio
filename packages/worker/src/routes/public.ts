@@ -4,7 +4,7 @@ import type { AppEnv } from '../env.js';
 import { fail, hashIp, intParam, ok, randomId, readJson } from '../lib/http.js';
 import { loadChannelShard, loadCatalog, loadGuide, loadIndex, loadPoolSnapshot } from '../lib/catalog.js';
 import { getJson } from '../lib/store.js';
-import { countOpenFeedback, getChannel, insertFeedback, listRuns, listSources, loadSettings } from '../db.js';
+import { countOpenFeedback, getChannel, insertFeedback, listRuns, listSources, listSubscriptions, loadSettings } from '../db.js';
 import { loadTasks } from '../lib/tasks.js';
 import { sourceMetaMap } from '../lib/source.js';
 import { inferResolution, isPrivateHost, type LineEntry } from '@iptv/core';
@@ -88,12 +88,15 @@ publicRoutes.get('/logo/:file', async (c) => {
 });
 
 publicRoutes.get('/overview', async (c) => {
-  const [index, runs, openFeedback, settings, tasks] = await Promise.all([
+  const [index, runs, openFeedback, settings, tasks, sources, subscriptions, poolStats] = await Promise.all([
     loadIndex(c.env),
     listRuns(c.env, 5),
     countOpenFeedback(c.env),
     loadSettings(c.env),
     loadTasks(c.env),
+    listSources(c.env),
+    listSubscriptions(c.env),
+    getJson<Record<string, number>>(c.env, 'state/pool-stats.json'),
   ]);
 
   const taskLabels: Record<string, string> = {
@@ -145,6 +148,9 @@ publicRoutes.get('/overview', async (c) => {
         dead: Math.max(0, index.totalLines - index.aliveLines),
       },
       groups: index.groups,
+      pool: { total: Number(poolStats?.total ?? 0), alive: Number(poolStats?.alive ?? 0) },
+      sources: { total: sources.length, enabled: sources.filter((source) => source.enabled === 1).length },
+      subscriptions: subscriptions.length,
       lastRun,
       runs: mappedRuns,
       openFeedback,

@@ -10,6 +10,9 @@ export interface Overview {
   runId?: string;
   totals: { channels: number; lines: number; alive: number; dead?: number };
   groups: Array<{ group: string; channels: number; alive: number }>;
+  pool?: { total: number; alive: number };
+  sources?: { total: number; enabled: number };
+  subscriptions?: number;
   lastRun?: RunItem | null;
   runs?: RunItem[];
   openFeedback?: number;

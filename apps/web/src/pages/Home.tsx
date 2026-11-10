@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Activity, ArrowRight, BookOpen, Clapperboard, Clock3, CreditCard, Globe, Layers, MapPin, Music, Newspaper, RadioTower, RefreshCw, Trophy, Tv, Wifi } from 'lucide-react';
+import { ArrowRight, BookOpen, Clapperboard, CreditCard, Globe, Layers, Layers3, MapPin, Music, Newspaper, RadioTower, RefreshCw, Share2, Trophy, Tv } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Overview } from '../lib/types';
 import { formatBytes, formatDuration, formatNumber, timeAgo } from '../lib/format';
@@ -45,6 +45,9 @@ export function Home() {
 
   const ready = data?.ready;
   const aliveRatio = data && data.totals.lines > 0 ? Math.round((data.totals.alive / data.totals.lines) * 100) : 0;
+  const poolAlive = data?.pool?.alive ?? 0;
+  const poolTotal = data?.pool?.total ?? 0;
+  const poolRatio = poolTotal > 0 ? Math.round((poolAlive / poolTotal) * 100) : 0;
 
   return (
     <div className="stack" style={{ marginTop: 6 }}>
@@ -57,20 +60,6 @@ export function Home() {
         <section className="hero">
           <div className="hero__label">已发布可用线路</div>
           <div className="hero__value">{formatNumber(data?.totals.alive)}</div>
-          <div className="hero__stats">
-            <div className="hero__stat">
-              <strong>{formatNumber(data?.totals.channels)}</strong>
-              <small>已发布频道</small>
-            </div>
-            <div className="hero__stat">
-              <strong>{formatNumber(data?.totals.lines)}</strong>
-              <small>已发布线路</small>
-            </div>
-            <div className="hero__stat">
-              <strong>{aliveRatio}%</strong>
-              <small>可用率</small>
-            </div>
-          </div>
           <div className="row" style={{ marginTop: 18, gap: 8 }}>
             <Link className="btn btn--glass btn--sm" to="/channels">
               <Tv size={14} /> 浏览频道
@@ -98,40 +87,39 @@ export function Home() {
         </Card>
       )}
 
-      <div className="grid">
-        <Card>
-          <div className="row row--between">
-            <span className="caption">频道分类</span>
-            <Activity size={15} color="var(--label-3)" />
+      {ready ? (
+        <div className="dashboard-stats">
+          <div className="dash-stat">
+            <span className="dash-stat__icon dash-stat__icon--blue"><Tv size={16} /></span>
+            <div><div className="dash-stat__value">{formatNumber(data?.totals.channels ?? 0)}</div><div className="dash-stat__label">已发布频道</div></div>
           </div>
-          <div className="title-2" style={{ marginTop: 6 }}>{data?.groups?.length ?? 0}</div>
-          <div className="caption">个分组</div>
-        </Card>
-        <Card>
-          <div className="row row--between">
-            <span className="caption">最近更新</span>
-            <Clock3 size={15} color="var(--label-3)" />
+          <div className="dash-stat">
+            <span className="dash-stat__icon dash-stat__icon--green"><RadioTower size={16} /></span>
+            <div><div className="dash-stat__value">{formatNumber(data?.totals.alive ?? 0)}</div><div className="dash-stat__label">已发布可用 · {aliveRatio}% / 共 {formatNumber(data?.totals.lines ?? 0)}</div></div>
           </div>
-          <div className="title-2" style={{ marginTop: 6 }}>{timeAgo(data?.generatedAt)}</div>
-          <div className="caption">自动任务每日运行</div>
-        </Card>
-        <Card>
-          <div className="row row--between">
-            <span className="caption">线路健康</span>
-            <Wifi size={15} color="var(--label-3)" />
+          <div className="dash-stat">
+            <span className="dash-stat__icon dash-stat__icon--teal"><Layers3 size={16} /></span>
+            <div><div className="dash-stat__value">{formatNumber(poolAlive)}</div><div className="dash-stat__label">线路池可用 · {poolRatio}% / 共 {formatNumber(poolTotal)}</div></div>
           </div>
-          <div className="title-2" style={{ marginTop: 6 }}>{aliveRatio}%</div>
-          <div className="meter" style={{ marginTop: 8 }}>
-            <div className="meter__fill" style={{ width: `${aliveRatio}%` }} />
+          <div className="dash-stat">
+            <span className="dash-stat__icon dash-stat__icon--orange"><RadioTower size={16} /></span>
+            <div><div className="dash-stat__value">{formatNumber(data?.sources?.enabled ?? 0)}</div><div className="dash-stat__label">启用源 / 共 {formatNumber(data?.sources?.total ?? 0)}</div></div>
           </div>
-        </Card>
-      </div>
+          <div className="dash-stat">
+            <span className="dash-stat__icon dash-stat__icon--purple"><Share2 size={16} /></span>
+            <div><div className="dash-stat__value">{formatNumber(data?.subscriptions ?? 0)}</div><div className="dash-stat__label">订阅出口</div></div>
+          </div>
+        </div>
+      ) : null}
 
       {data?.groups?.length ? (
-        <>
-          <div className="section-title">
-            <h2>按分类浏览</h2>
-            <Link to="/channels">全部频道</Link>
+        <Card>
+          <div className="card__header" style={{ padding: '2px 2px 12px' }}>
+            <div>
+              <div className="title-3">按分类浏览</div>
+              <div className="caption">{data.groups.length} 个分类</div>
+            </div>
+            <Link to="/channels" className="caption">全部频道 →</Link>
           </div>
           <div className="grid grid--wide">
             {data.groups.slice(0, 6).map((group) => (
@@ -145,7 +133,7 @@ export function Home() {
               </Link>
             ))}
           </div>
-        </>
+        </Card>
       ) : null}
 
       {data?.runs?.length ? (
