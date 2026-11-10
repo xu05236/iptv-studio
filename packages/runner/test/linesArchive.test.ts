@@ -38,9 +38,10 @@ describe('splitArchivable', () => {
     expect(archived.map((item) => item.key)).toEqual(['forty']);
   });
 
-  it('archives dead lines that were never probed', () => {
-    const { archived } = splitArchivable([line('never')], NOW);
-    expect(archived.map((item) => item.key)).toEqual(['never']);
+  it('keeps dead lines that were never probed', () => {
+    const { keep, archived } = splitArchivable([line('never')], NOW);
+    expect(archived).toHaveLength(0);
+    expect(keep.map((item) => item.key)).toEqual(['never']);
   });
 });
 
