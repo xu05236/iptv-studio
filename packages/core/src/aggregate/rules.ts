@@ -39,7 +39,7 @@ export function compileRule(rule: Rule): CompiledRule | null {
       if (minRank >= 0 && qualityRank(line.resolution ?? 'unknown') < minRank) return false;
       if (match.minSpeedKbps && (line.speedKbps ?? 0) < match.minSpeedKbps) return false;
       if (sourceIds.length && !sourceIds.includes(line.sourceId)) return false;
-      if (tags.length && !tags.every((tag) => line.tags.includes(tag))) return false;
+      if (tags.length && !tags.every((tag) => (line.tags ?? []).includes(tag))) return false;
       return true;
     },
   };
@@ -66,7 +66,7 @@ export function applyRules(channel: ChannelConfig, lines: LineEntry[], rules: Co
   const kept: LineEntry[] = [];
 
   for (const line of lines) {
-    let nextLine: LineEntry = { ...line, tags: [...line.tags] };
+    let nextLine: LineEntry = { ...line, tags: [...(line.tags ?? [])] };
     let excluded = false;
 
     for (const compiled of rules) {
@@ -79,7 +79,7 @@ export function applyRules(channel: ChannelConfig, lines: LineEntry[], rules: Co
       }
       nextChannel = applyChannelActions(nextChannel, actions);
       if (actions.addTags?.length) {
-        nextLine.tags = [...new Set([...nextLine.tags, ...actions.addTags])];
+        nextLine.tags = [...new Set([...(nextLine.tags ?? []), ...actions.addTags])];
       }
     }
 

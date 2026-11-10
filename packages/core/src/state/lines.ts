@@ -87,10 +87,26 @@ export function packLines(
   return { manifest, shards };
 }
 
+/**
+ * Shards are written slimmed (empty tags/headers removed), so readers must
+ * restore the shape the rest of the pipeline expects. `tags` in particular is
+ * iterated unconditionally by dedupe/rules, and a missing array used to crash
+ * publishing with "line.tags is not iterable".
+ */
+export function normalizeLine(line: LineEntry): LineEntry {
+  const normalized = { ...line };
+  if (!Array.isArray(normalized.tags)) normalized.tags = [];
+  if (!normalized.headers || typeof normalized.headers !== 'object' || Array.isArray(normalized.headers)) {
+    delete normalized.headers;
+  }
+  if (!Array.isArray(normalized.sourceIds)) delete normalized.sourceIds;
+  return normalized;
+}
+
 export function parseLinesBody(text: string): LineEntry[] {
   try {
     const parsed = JSON.parse(text) as { lines?: LineEntry[] };
-    return Array.isArray(parsed.lines) ? parsed.lines : [];
+    return Array.isArray(parsed.lines) ? parsed.lines.map(normalizeLine) : [];
   } catch {
     return [];
   }

@@ -62,9 +62,10 @@ describe('lines state sharding', () => {
     const loaded = await loadLinesState(store as unknown as ArtifactStore);
     expect(loaded.generatedAt).toBe('2026-01-02T00:00:00Z');
     expect(loaded.lines).toHaveLength(1);
-    // slimLine removed the empty headers/tags and redundant sourceIds.
+    // slimLine removed the empty headers/tags and redundant sourceIds; readers
+    // restore tags as an empty array because dedupe/rules iterate it.
     expect(loaded.lines[0]!.headers).toBeUndefined();
-    expect(loaded.lines[0]!.tags).toBeUndefined();
+    expect(loaded.lines[0]!.tags).toEqual([]);
     expect(loaded.lines[0]!.sourceIds).toBeUndefined();
   });
 

@@ -13,7 +13,7 @@ export function dedupeLines(lines: LineEntry[]): LineEntry[] {
     const key = `${line.channelId}\u0001${line.urlKey || line.url}`;
     const existing = byKey.get(key);
     if (!existing) {
-      byKey.set(key, { ...line, tags: [...line.tags] });
+      byKey.set(key, { ...line, tags: [...(line.tags ?? [])] });
       continue;
     }
     const winner = compareLines(existing, line) <= 0 ? existing : line;
@@ -24,7 +24,7 @@ export function dedupeLines(lines: LineEntry[]): LineEntry[] {
       firstSeenAt: earliest(existing.firstSeenAt, line.firstSeenAt),
       lastSeenAt: latest(existing.lastSeenAt, line.lastSeenAt) ?? winner.lastSeenAt,
       lastProbeAt: latest(existing.lastProbeAt, line.lastProbeAt),
-      tags: [...new Set([...existing.tags, ...line.tags])].sort(),
+      tags: [...new Set([...(existing.tags ?? []), ...(line.tags ?? [])])].sort(),
       // preserve the better measurement even if attribution came from the loser
       speedKbps: winner.speedKbps ?? loser.speedKbps,
       resolution: winner.resolution ?? loser.resolution,
