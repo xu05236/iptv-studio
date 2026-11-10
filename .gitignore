@@ -22,3 +22,7 @@ lines.json
 
 reclass.json
 
+
+test-results/
+playwright-report/
+blob-report/
