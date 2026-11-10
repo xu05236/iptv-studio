@@ -1,4 +1,5 @@
 import {
+  compareLines,
   inferResolution,
   isDueForProbe,
   mapPool,
@@ -243,6 +244,92 @@ export async function runProbes(
   });
 
   return summary;
+}
+
+/** URL + request-header signature: identical stream requests can share one probe. */
+function probeSignature(line: LineEntry): string {
+  const headers = line.headers
+    ? JSON.stringify(Object.entries(line.headers).sort(([a], [b]) => a.localeCompare(b)))
+    : '';
+  return `${line.urlKey || line.url}|${headers}`;
+}
+
+/**
+ * Collapse probe targets that point at the same stream (same URL and request
+ * headers) into one representative. Cross-source duplicates are common (~half
+ * the catalog), so probing each unique stream once and sharing the result
+ * saves that much Action time.
+ */
+export function dedupeProbeTargets(lines: LineEntry[]): LineEntry[] {
+  const groups = new Map<string, LineEntry[]>();
+  for (const line of lines) {
+    const key = probeSignature(line);
+    const list = groups.get(key) ?? [];
+    list.push(line);
+    groups.set(key, list);
+  }
+  const targets: LineEntry[] = [];
+  for (const list of groups.values()) {
+    list.sort(
+      (a, b) =>
+        Number(b.status === 'alive') - Number(a.status === 'alive') ||
+        Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) ||
+        Number(Boolean(b.everAlive)) - Number(Boolean(a.everAlive)) ||
+        (Date.parse(b.lastProbeAt ?? '') || 0) - (Date.parse(a.lastProbeAt ?? '') || 0) ||
+        compareLines(a, b),
+    );
+    targets.push(list[0]);
+  }
+  return targets;
+}
+
+/**
+ * Copy each representative's fresh probe result to every line that points at
+ * the same stream (same URL + headers). Lines keep their own identity and
+ * source/channel attribution; official lines are never touched.
+ */
+export function fanoutProbeResults(allLines: LineEntry[], representatives: LineEntry[]): number {
+  const bySignature = new Map<string, LineEntry[]>();
+  for (const line of allLines) {
+    if (line.official) continue;
+    const key = probeSignature(line);
+    const list = bySignature.get(key) ?? [];
+    list.push(line);
+    bySignature.set(key, list);
+  }
+  let copied = 0;
+  for (const representative of representatives) {
+    if (!representative.lastProbeAt) continue;
+    const group = bySignature.get(probeSignature(representative));
+    if (!group?.length) continue;
+    for (const line of group) {
+      if (line.key === representative.key || line.official) continue;
+      copyProbeResult(representative, line);
+      copied++;
+    }
+  }
+  return copied;
+}
+
+function copyProbeResult(from: LineEntry, to: LineEntry): void {
+  to.status = from.status;
+  to.failCount = from.failCount;
+  to.passCount = from.passCount;
+  to.lastProbeAt = from.lastProbeAt;
+  to.everAlive = from.everAlive;
+  to.rejectedAt = from.rejectedAt;
+  to.protocol = from.protocol;
+  to.speedKbps = from.speedKbps;
+  to.latencyMs = from.latencyMs;
+  to.resolution = from.resolution;
+  to.width = from.width;
+  to.height = from.height;
+  to.frameRate = from.frameRate;
+  to.bandwidthKbps = from.bandwidthKbps;
+  to.codecs = from.codecs;
+  to.loop = from.loop;
+  to.error = from.error;
+  to.score = from.score;
 }
 
 async function probeOnce(line: LineEntry, settings: AppSettings, checkedAt: string): Promise<ProbeResult> {

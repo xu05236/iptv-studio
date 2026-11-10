@@ -34,7 +34,7 @@ import { RunLogger } from './logger.js';
 import { notifyTelegram } from './notify.js';
 import { ApiClient, ArtifactStore, loadRemoteConfig, type ChannelRecord, type RemoteConfig, type SourceRecord } from './store.js';
 import { collectSource, type CollectedSource } from './pipeline/collect.js';
-import { planProbes, runProbes } from './pipeline/probe.js';
+import { dedupeProbeTargets, fanoutProbeResults, planProbes, runProbes } from './pipeline/probe.js';
 import { buildArtifacts, publish, type ExportCatalog } from './pipeline/publish.js';
 import { buildGuide, collectEpg, guideIsFresh, mergeGuideFallback, type StoredGuide } from './pipeline/epg.js';
 import { loadLogoPacks } from './pipeline/logoFiles.js';
@@ -688,17 +688,25 @@ async function probePhase(
   const allDue = planProbes(probeCandidates, sources, settings, Number.MAX_SAFE_INTEGER, new Date(), force, premium);
   const budget = configuredBudget > 0 ? Math.min(configuredBudget, allDue.length) : allDue.length;
   const planned = allDue.slice(0, budget);
+  // Half the catalog is cross-source duplicates: probe each unique URL once and
+  // share the result with its siblings instead of spending budget twice.
+  const targets = dedupeProbeTargets(planned);
   logger.info('测速计划', {
     due: allDue.length,
     budget,
     capped: allDue.length > budget,
+    planned: planned.length,
+    uniqueUrls: targets.length,
     force,
     premium: premium.size,
     sourceId: sourceId || undefined,
   });
 
   const aliveBefore = probeCandidates.filter((line) => line.status === 'alive').length;
-  const summary = await runProbes(planned, settings, config.concurrency || settings.concurrency, logger);
+  const summary = await runProbes(targets, settings, config.concurrency || settings.concurrency, logger);
+  const freshTargets = targets.filter((line) => line.lastProbeAt && Date.now() - Date.parse(line.lastProbeAt) < 10 * 60_000);
+  const fannedOut = fanoutProbeResults(lines, freshTargets);
+  if (fannedOut) logger.info('URL 去重同步', { fannedOut });
   const aliveAfter = probeCandidates.filter((line) => line.status === 'alive').length;
   if (aliveBefore >= 20 && summary.probed >= 100 && aliveAfter < aliveBefore * 0.5) {
     throw new Error(`探测异常：可用线路 ${aliveBefore} → ${aliveAfter}，已放弃写入以保护现有订阅`);
@@ -1036,15 +1044,18 @@ async function runBatchProbe(): Promise<void> {
 
     const blocked = await prefilterLiveness(selected, settings, config.concurrency || settings.concurrency || 32, logger);
     const probeList = selected.filter((line) => !blocked.has(line.key));
-    await reportTaskProgress(api, 0, selected.length, `分批探测 · ${phaseLabel} · 本批 ${selected.length} 条`);
-    const summary = await runProbes(probeList, settings, config.concurrency || settings.concurrency, logger, (done) => {
-      void reportTaskProgress(api, done, selected.length, `分批探测 · ${phaseLabel} · ${done}/${selected.length}`);
+    const targets = dedupeProbeTargets(probeList);
+    await reportTaskProgress(api, 0, targets.length, `分批探测 · ${phaseLabel} · 选中 ${selected.length} 条 · 实际探测 ${targets.length} 个 URL`);
+    const summary = await runProbes(targets, settings, config.concurrency || settings.concurrency, logger, (done) => {
+      void reportTaskProgress(api, done, targets.length, `分批探测 · ${phaseLabel} · ${done}/${targets.length}`);
     });
+    const freshTargets = targets.filter((line) => line.lastProbeAt && Date.now() - Date.parse(line.lastProbeAt) < 10 * 60_000);
+    const fannedOut = fanoutProbeResults(lines, freshTargets);
     const ffprobeLimit = Math.max(0, envNumber('FFPROBE_LIMIT') ?? settings.ffprobeLimit ?? 150);
     if (ffprobeLimit > 0) await enrichResolutions(probeList, ffprobeLimit, logger);
     const sourceNames = new Map(remote.sources.map((source) => [source.id, source.name]));
     const bySource = new Map<string, { tested: number; alive: number }>();
-    for (const line of probeList) {
+    for (const line of selected) {
       const item = bySource.get(line.sourceId) ?? { tested: 0, alive: 0 };
       item.tested++;
       if (line.status === 'alive') item.alive++;
@@ -1056,7 +1067,7 @@ async function runBatchProbe(): Promise<void> {
       .map(([id, item]) => `${sourceNames.get(id) ?? id} 测${item.tested}/可用${item.alive}`)
       .join('、');
     const sourceSuffix = sourceDetail ? ` · 来源：${sourceDetail}` : '';
-    await reportTaskProgress(api, selected.length, selected.length, `分批探测完成 · ${phaseLabel} · 测 ${probeList.length} 条 · 可用 ${summary.alive}${sourceSuffix}`);
+    await reportTaskProgress(api, selected.length, selected.length, `分批探测完成 · ${phaseLabel} · 选中 ${selected.length} 条 · 探测 ${targets.length} 个 URL · 可用 ${summary.alive} · 同步 ${fannedOut} 条${sourceSuffix}`);
     logger.info('分批探测完成', { phase, checked: selected.length, probed: summary.probed, alive: summary.alive, dead: summary.dead });
 
     const generatedAt = nowIso();
