@@ -33,7 +33,7 @@ import { getRuntimeJson } from '../lib/runtime-state.js';
 import { clearSnapshots, createSnapshot } from '../lib/snapshots.js';
 import { inferResolution } from '@iptv/core';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
-import { createTask, dispatchNext, finishTask, loadTasks, mutateTask, progressTask, recordFinishedTask, type Task } from '../lib/tasks.js';
+import { createTask, deleteFailedTasks, dispatchNext, finishTask, loadTasks, mutateTask, progressTask, recordFinishedTask, type Task } from '../lib/tasks.js';
 import { registerTelegramWebhook } from '../lib/telegram.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
 import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, nextDueFetchSlot, nextScheduledAt, parseCollectTimes } from '../lib/schedule.js';
@@ -938,6 +938,14 @@ adminRoutes.get('/tasks', async (c) => {
       },
     },
   });
+});
+
+adminRoutes.post('/tasks/cleanup-failed', async (c) => {
+  const body = (await readJson<{ olderThanHours?: number }>(c)) ?? {};
+  const hours = Math.max(0, Number(body.olderThanHours ?? 0) || 0);
+  const removed = await deleteFailedTasks(c.env, hours * 3_600_000);
+  await audit(c.env, c.get('actor'), 'tasks.cleanup_failed', 'bulk', { removed, hours });
+  return ok({ removed });
 });
 
 adminRoutes.patch('/tasks/:id', async (c) => {

@@ -162,6 +162,22 @@ async function saveTasks(env: Env, tasks: Task[]): Promise<void> {
   }
 }
 
+/** Drop failed task records so stale, already-fixed failures stop cluttering the board. */
+export async function deleteFailedTasks(env: Env, olderThanMs = 0): Promise<number> {
+  return withTaskLock(env, async () => {
+    const tasks = await loadTasks(env);
+    const cutoff = Date.now() - olderThanMs;
+    const kept = tasks.filter((task) => {
+      if (task.status !== 'failed') return true;
+      const finished = task.finishedAt ? Date.parse(task.finishedAt) : 0;
+      return finished > cutoff;
+    });
+    const removed = tasks.length - kept.length;
+    if (removed) await saveTasks(env, kept);
+    return removed;
+  });
+}
+
 export async function recordFinishedTask(
   env: Env,
   input: { type: string; source: TaskSource; message: string; payload?: Record<string, string>; total?: number },

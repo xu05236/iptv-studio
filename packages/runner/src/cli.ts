@@ -806,6 +806,12 @@ async function publishPhase(
     logoPacks,
   });
   await reportTaskProgress(api, 2, 5, '频道聚合完成');
+  // Publish used to rebuild only the catalogs, leaving state/pool.json and
+  // pool-stats at the last fetch/probe timestamp. Refresh both here so every
+  // publish also refreshes the pool overview the public page reads.
+  const poolGeneratedAt = nowIso();
+  await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, poolGeneratedAt)), 'application/json');
+  await writePoolStats(store, remote, lines);
   const logKey = await writeLog(store, runId, logger);
   const poolSnapshot = buildPoolSnapshot({
     lines,
