@@ -92,6 +92,7 @@ export interface SourceItem {
     before?: { total: number; alive: number; pending: number; quarantine: number; rejected: number };
     after?: { total: number; alive: number; pending: number; quarantine: number; rejected: number };
   } | null;
+  delta?: { total: number; alive: number; pending: number; quarantine: number; rejected: number } | null;
   filters?: { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number };
   created_at: string;
 }

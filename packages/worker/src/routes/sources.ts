@@ -16,6 +16,7 @@ import { getText, putText } from '../lib/r2.js';
 import { getJson } from '../lib/store.js';
 import { loadLines } from '../lib/linesState.js';
 import { createTask, dispatchNext } from '../lib/tasks.js';
+import { deltaOf, listSourceProgress, parseDelta, saveSourceProgress, type SourceCounts } from '../lib/sourceProgress.js';
 
 export const sourceRoutes = new Hono<AppEnv>();
 
@@ -120,6 +121,40 @@ sourceRoutes.get('/', async (c) => {
     }
     progress.set(line.sourceId, item);
   }
+
+  // Real deltas: compare this report with the probeable counts captured after
+  // the source's previous fetch. Both sides now use the same definition, so a
+  // genuine drop shows up and the "all lines vs probeable lines" mismatch does
+  // not.
+  const progressRows = await listSourceProgress(c.env);
+  const deltas = new Map<string, SourceCounts | null>();
+  const saves: Array<Promise<void>> = [];
+  for (const source of sources) {
+    const report = reportBySource.get(source.id);
+    const reportAt = report && typeof report.fetchedAt === 'string' ? report.fetchedAt : null;
+    if (!reportAt) {
+      deltas.set(source.id, null);
+      continue;
+    }
+    const item = progress.get(source.id);
+    const current: SourceCounts = {
+      total: item?.total ?? 0,
+      alive: item?.alive ?? 0,
+      pending: item?.pendingTotal ?? 0,
+      quarantine: item?.quarantineTotal ?? 0,
+      rejected: item?.rejectedTotal ?? 0,
+    };
+    const previous = progressRows.get(source.id);
+    if (previous && previous.report_at === reportAt) {
+      deltas.set(source.id, parseDelta(previous.delta));
+    } else {
+      const delta = deltaOf(current, previous ?? null);
+      deltas.set(source.id, delta);
+      saves.push(saveSourceProgress(c.env, source.id, reportAt, current, delta));
+    }
+  }
+  if (saves.length) await Promise.all(saves);
+
   return ok({
     items: sources.map((source) => ({
       ...source,
@@ -137,6 +172,7 @@ sourceRoutes.get('/', async (c) => {
       enabled: source.enabled === 1,
       progress: { ...(progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0 }), channels: channelSets.get(source.id)?.size ?? 0 },
       report: reportBySource.get(source.id) ?? null,
+      delta: deltas.get(source.id) ?? null,
       feedbackOpen: feedbackOpen.get(source.id) ?? 0,
       reputation: Math.max(0, Number(source.reputation ?? 0) - (feedbackOpen.get(source.id) ?? 0) * 5),
     })),
@@ -324,12 +360,19 @@ sourceRoutes.get('/:id/detail', async (c) => {
 
   const now = new Date();
   const lines = (state?.lines ?? []).filter((line) => line.sourceId === id);
+  // Count only lines that can actually be probed, so the detail page matches
+  // the source card (invalid channel / rtsp+udp lines are not "待测").
+  const { results: channelRows } = await c.env.DB.prepare('SELECT id FROM channels').all<{ id: string }>();
+  const validChannels = new Set(channelRows.map((row) => row.id));
+  const unprobeable = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
   const stats = { total: lines.length, alive: 0, pending: 0, quarantine: 0, rejected: 0, tested: 0, dueQuarantine: 0, duePending: 0 };
   let lastProbeAt: string | null = null;
   let oldestAliveProbeAt: string | null = null;
   for (const line of lines) {
     if (line.lastProbeAt || line.lastLivenessAt) stats.tested++;
     if (line.lastProbeAt && (!lastProbeAt || line.lastProbeAt > lastProbeAt)) lastProbeAt = line.lastProbeAt;
+    const usable = validChannels.has(line.channelId) && !unprobeable.test(line.url);
+    if (!usable) continue;
     if (line.status === 'alive') {
       stats.alive++;
       if (line.lastProbeAt && (!oldestAliveProbeAt || line.lastProbeAt < oldestAliveProbeAt)) oldestAliveProbeAt = line.lastProbeAt;
@@ -341,6 +384,20 @@ sourceRoutes.get('/:id/detail', async (c) => {
     } else if (line.status === 'unknown' && !line.lastProbeAt) {
       stats.pending++;
       stats.duePending++;
+    }
+  }
+
+  const reportItem = (fetchReport?.sources ?? []).find((item) => item.sourceId === id) ?? null;
+  const reportAt = reportItem && typeof reportItem.fetchedAt === 'string' ? reportItem.fetchedAt : null;
+  let delta: SourceCounts | null = null;
+  if (reportAt) {
+    const rows = await listSourceProgress(c.env);
+    const previous = rows.get(id);
+    if (previous && previous.report_at === reportAt) {
+      delta = parseDelta(previous.delta);
+    } else {
+      delta = deltaOf(stats, previous ?? null);
+      await saveSourceProgress(c.env, id, reportAt, stats, delta);
     }
   }
 
@@ -369,6 +426,7 @@ sourceRoutes.get('/:id/detail', async (c) => {
       enabled: source.enabled === 1,
     },
     stats,
+    delta,
     lastProbeAt,
     oldestAliveProbeAt,
     health: {

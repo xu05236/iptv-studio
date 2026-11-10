@@ -29,5 +29,6 @@ export const MIGRATION_FILES: string[] = [
   "0028_relay_usage.sql",
   "0029_backfill_0014.sql",
   "0030_custom_pools.sql",
-  "0031_channel_merges.sql"
+  "0031_channel_merges.sql",
+  "0032_source_progress.sql"
 ];

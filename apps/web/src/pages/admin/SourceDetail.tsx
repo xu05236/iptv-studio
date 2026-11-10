@@ -43,6 +43,7 @@ interface SourceDetailResponse {
     after?: { total: number; alive: number; pending: number; quarantine: number; rejected: number };
   } | null;
   reportGeneratedAt: string | null;
+  delta?: { total: number; alive: number; pending: number; quarantine: number; rejected: number } | null;
 }
 
 const formatNumber = (value: number): string => value.toLocaleString('zh-CN');
@@ -156,13 +157,14 @@ export function SourceDetail() {
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
-        <Card><Stat value={<>{formatNumber(stats.total)}<Delta value={data.report?.before ? stats.total - data.report.before.total : null} /></>} label="线路总数" /></Card>
-        <Card><Stat value={<>{formatNumber(stats.alive)}<Delta value={data.report?.before ? stats.alive - data.report.before.alive : null} /></>} label="可用" /></Card>
-        <Card><Stat value={<>{formatNumber(stats.pending)}<Delta value={data.report?.before ? stats.pending - data.report.before.pending : null} /></>} label="待测" /></Card>
-        <Card><Stat value={<>{formatNumber(stats.quarantine)}<Delta value={data.report?.before ? stats.quarantine - data.report.before.quarantine : null} /></>} label="待复测" /></Card>
-        <Card><Stat value={<>{formatNumber(stats.rejected)}<Delta value={data.report?.before ? stats.rejected - data.report.before.rejected : null} /></>} label="已淘汰" /></Card>
+        <Card><Stat value={<>{formatNumber(stats.total)}<Delta value={data.delta?.total ?? null} /></>} label="线路总数" /></Card>
+        <Card><Stat value={<>{formatNumber(stats.alive)}<Delta value={data.delta?.alive ?? null} /></>} label="可用" /></Card>
+        <Card><Stat value={<>{formatNumber(stats.pending)}<Delta value={data.delta?.pending ?? null} /></>} label="待测" /></Card>
+        <Card><Stat value={<>{formatNumber(stats.quarantine)}<Delta value={data.delta?.quarantine ?? null} /></>} label="待复测" /></Card>
+        <Card><Stat value={<>{formatNumber(stats.rejected)}<Delta value={data.delta?.rejected ?? null} /></>} label="已淘汰" /></Card>
         <Card><Stat value={formatNumber(stats.tested)} label="已测过" /></Card>
       </div>
+      <div className="caption">可用 / 待测 / 待复测 / 已淘汰只统计可探测线路（频道存在且非 rtsp/udp）；线路总数包含全部。变化值相对该源上一轮抓取（首次没有基线时不显示）。</div>
 
       <Card>
         <div className="card__header" style={{ padding: '2px 2px 12px' }}>

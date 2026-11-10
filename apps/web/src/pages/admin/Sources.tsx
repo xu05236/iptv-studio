@@ -590,7 +590,7 @@ export function Sources() {
           const quarantineTotal = source.progress?.quarantineTotal ?? source.progress?.quarantine ?? 0;
           const cardTone = !source.enabled ? 'orange' : source.status === 'paused' ? 'orange' : source.status === 'degraded' || source.last_error ? 'red' : (source.alive_count ?? 0) > 0 ? 'green' : 'default';
           const report = source.report;
-          const before = report?.before;
+          const before = source.delta ?? null;
           const reportReused = report ? report.reused + report.skippedRejected : 0;
           const reportParsed = report ? (report.parsed ?? (report.added + reportReused + (report.skippedTombstoned ?? 0))) : 0;
           return (
@@ -633,8 +633,8 @@ export function Sources() {
               <div className="source-card__stats">
                 <div><strong>{formatNumber(source.entry_count ?? 0)}<Delta value={before ? (source.entry_count ?? 0) - before.total : null} /></strong><span>线路</span></div>
                 <div><strong>{formatNumber(source.alive_count ?? 0)}<Delta value={before ? (source.alive_count ?? 0) - before.alive : null} /></strong><span>可用</span></div>
-                <div><strong>{pendingDue}<em>/{pendingTotal}</em><Delta value={before ? pendingTotal - before.pending : null} /></strong><span>待测</span></div>
-                <div><strong>{quarantineDue}<em>/{quarantineTotal}</em><Delta value={before ? quarantineTotal - before.quarantine : null} /></strong><span>待复测</span></div>
+                <div title="变化值相对该源上一轮抓取"><strong>{pendingDue}<Delta value={before ? before.pending : null} /><em>/{pendingTotal}</em></strong><span>待测</span></div>
+                <div title="变化值相对该源上一轮抓取"><strong>{quarantineDue}<Delta value={before ? before.quarantine : null} /><em>/{quarantineTotal}</em></strong><span>待复测</span></div>
                 <div><strong>{formatNumber(source.progress?.rejectedTotal ?? 0)}<Delta value={before ? (source.progress?.rejectedTotal ?? 0) - before.rejected : null} /></strong><span>已淘汰</span></div>
               </div>
 
