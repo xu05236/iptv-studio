@@ -62,4 +62,14 @@ describe('putArtifact', () => {
 
     expect(calls).toEqual({ list: 0, get: 3, put: 3 });
   });
+
+  it('allows runner namespaces (logs, snapshots) but rejects traversal', async () => {
+    const { kv } = createKv();
+    const env = { KV: kv } as unknown as Env;
+
+    await expect(putArtifact(env, 'logs/2026-11-10/run-1.jsonl', 'line', 'application/x-ndjson')).resolves.toBeTruthy();
+    await expect(putArtifact(env, 'snapshots/2026-11-10/catalog.json', '{}', 'application/json')).resolves.toBeTruthy();
+    await expect(putArtifact(env, 'other/file.json', '{}', 'application/json')).rejects.toThrow('非法的产物键');
+    await expect(putArtifact(env, 'logs/../state/x.json', '{}', 'application/json')).rejects.toThrow('非法的产物键');
+  });
 });

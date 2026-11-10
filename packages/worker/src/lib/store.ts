@@ -35,7 +35,9 @@ function hex(buffer: ArrayBuffer): string {
 
 /** Only the app's own namespaces may be written to KV through the admin API. */
 function assertArtifactKey(key: string): void {
-  if (!/^(state|out|shots)\//.test(key) || key.includes('..') || key.includes('//') || key.length > 300) {
+  // logs/ and snapshots/ are written by the runner (run logs, daily snapshots),
+  // state/out/shots by the worker; anything else is rejected.
+  if (!/^(state|out|shots|logs|snapshots)\//.test(key) || key.includes('..') || key.includes('//') || key.length > 300) {
     throw new Error(`非法的产物键：${key}`);
   }
 }
