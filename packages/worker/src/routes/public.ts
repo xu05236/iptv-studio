@@ -90,7 +90,7 @@ publicRoutes.get('/logo/:file', async (c) => {
 publicRoutes.get('/overview', async (c) => {
   const [index, runs, openFeedback, settings, tasks] = await Promise.all([
     loadIndex(c.env),
-    listRuns(c.env, 3),
+    listRuns(c.env, 5),
     countOpenFeedback(c.env),
     loadSettings(c.env),
     loadTasks(c.env),
@@ -108,15 +108,17 @@ publicRoutes.get('/overview', async (c) => {
     snapshot: '快照',
   };
   const latest = runs[0] ?? null;
-  const latestTask = latest?.task_id ? tasks.find((task) => task.id === latest.task_id) : undefined;
-  const lastRun = latest
-    ? {
-        ...latest,
-        task_type: latestTask?.type ?? null,
-        task_label: latestTask ? taskLabels[latestTask.type] ?? latestTask.type : null,
-        task_message: latestTask?.message ?? null,
-      }
-    : null;
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const mappedRuns = runs.map((run) => {
+    const task = run.task_id ? taskById.get(run.task_id) : undefined;
+    return {
+      ...run,
+      task_type: task?.type ?? null,
+      task_label: task ? taskLabels[task.type] ?? task.type : null,
+      task_message: task?.message ?? null,
+    };
+  });
+  const lastRun = mappedRuns[0] ?? null;
 
   if (!index) {
     return ok(
@@ -144,6 +146,7 @@ publicRoutes.get('/overview', async (c) => {
       },
       groups: index.groups,
       lastRun,
+      runs: mappedRuns,
       openFeedback,
       features: { relay: settings.relayEnabled, directPlayback: settings.directPlayback },
     },

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Activity, ArrowRight, BookOpen, Clapperboard, Clock3, CreditCard, Globe, Layers, MapPin, Music, Newspaper, RadioTower, RefreshCw, Trophy, Tv, Wifi } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Overview } from '../lib/types';
-import { formatBytes, formatNumber, timeAgo } from '../lib/format';
+import { formatBytes, formatDuration, formatNumber, timeAgo } from '../lib/format';
 import { Badge, Card, EmptyState, Skeleton } from '../components/ui';
 
 function CategoryIcon({ group }: { group: string }) {
@@ -148,54 +148,41 @@ export function Home() {
         </>
       ) : null}
 
-      {data?.lastRun ? (() => {
-        const run = data.lastRun;
-        const isEpg = run.task_type === 'epg';
-        const isProbe = run.task_type === 'probe-batch' || run.task_type === 'probe-lines' || run.task_type === 'liveness';
-        const channelLabel = isEpg ? 'EPG 频道' : isProbe ? '池内频道' : run.task_type === 'publish' ? '发布频道' : '抓取频道';
-        const lineLabel = isEpg ? '线路' : isProbe ? '池内线路' : '线路';
-        const aliveLabel = isProbe ? '池内可用' : '可用';
-        const probedLabel = isProbe ? '本批已测' : '已测';
-        const hasProbe = !isEpg && run.probed > 0;
-        return (
-          <>
-            <div className="section-title">
-              <h2>最近一次运行</h2>
-              <Link to="/admin/runs">全部记录</Link>
+      {data?.runs?.length ? (
+        <>
+          <div className="section-title">
+            <h2>最近运行</h2>
+            <Link to="/admin/runs">全部记录</Link>
+          </div>
+          <Card>
+            <div className="run-list">
+              {data.runs.map((run) => {
+                const tone = run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange';
+                const statusText = run.status === 'success' ? '成功' : run.status === 'partial' ? '部分' : run.status === 'running' ? '运行中' : '失败';
+                return (
+                  <div className={`run-row run-row--${tone}`} key={run.id}>
+                    <div className="run-row__status"><Badge tone={tone}>{statusText}</Badge></div>
+                    <div className="grow">
+                      <div className="run-row__title">{run.task_label ?? '运行记录'}</div>
+                      {(run.task_message ?? run.message) ? <div className="caption run-row__message">{run.task_message ?? run.message}</div> : null}
+                      {run.task_failure_reason ? <div className="caption task-failure">失败原因：{run.task_failure_reason}</div> : null}
+                    </div>
+                    <div className="run-row__metrics">
+                      <span><strong>{formatNumber(run.channels)}</strong> 频道</span>
+                      <span><strong>{formatNumber(run.alive)}</strong> 可用</span>
+                      <span><strong>{formatNumber(run.probed)}</strong> 已测</span>
+                    </div>
+                    <div className="run-row__time">
+                      <span>{timeAgo(run.started_at)}</span>
+                      <span className="caption">{formatDuration(run.duration_ms)}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <Card>
-              <div className="row row--between row--wrap">
-                <div className="row row--wrap" style={{ gap: 8 }}>
-                  <Badge tone={run.status === 'success' ? 'green' : run.status === 'partial' ? 'orange' : 'red'}>
-                    {run.status === 'success' ? '成功' : run.status === 'partial' ? '部分成功' : run.status}
-                  </Badge>
-                  <span className="last-run-label">{run.task_label ?? '运行记录'}</span>
-                  <span className="caption">{timeAgo(run.started_at)}</span>
-                </div>
-                <span className="caption">耗时 {Math.round((run.duration_ms ?? 0) / 1000)}s</span>
-              </div>
-              <div className="divider" />
-              <div className="last-run-stats">
-                <div><div className="title-3">{formatNumber(run.channels)}</div><div className="caption">{channelLabel}</div></div>
-                {isEpg ? (
-                  <div><div className="title-3">{formatBytes(run.bytes)}</div><div className="caption">文件大小</div></div>
-                ) : null}
-                {!isEpg && run.lines > 0 ? (
-                  <div><div className="title-3">{formatNumber(run.lines)}</div><div className="caption">{lineLabel}</div></div>
-                ) : null}
-                {hasProbe ? (
-                  <>
-                    <div><div className="title-3">{formatNumber(run.alive)}</div><div className="caption">{aliveLabel}</div></div>
-                    <div><div className="title-3">{formatNumber(run.probed)}</div><div className="caption">{probedLabel}</div></div>
-                  </>
-                ) : null}
-              </div>
-              {!isEpg && !hasProbe ? <div className="last-run-note">本次运行只执行抓取 / 发布，没有进行测速。</div> : null}
-              {run.task_message ? <div className="last-run-message">{run.task_message}</div> : null}
-            </Card>
-          </>
-        );
-      })() : null}
+          </Card>
+        </>
+      ) : null}
 
       <Link to="/admin" className="btn btn--primary btn--block">
         进入管理后台 <ArrowRight size={15} />

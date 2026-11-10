@@ -11,6 +11,7 @@ export interface Overview {
   totals: { channels: number; lines: number; alive: number; dead?: number };
   groups: Array<{ group: string; channels: number; alive: number }>;
   lastRun?: RunItem | null;
+  runs?: RunItem[];
   openFeedback?: number;
 }
 
