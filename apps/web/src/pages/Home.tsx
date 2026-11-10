@@ -149,13 +149,15 @@ export function Home() {
       ) : null}
 
       {data?.runs?.length ? (
-        <>
-          <div className="section-title">
-            <h2>最近运行</h2>
-            <Link to="/admin/runs">全部记录</Link>
+        <Card>
+          <div className="card__header" style={{ padding: '2px 2px 12px' }}>
+            <div>
+              <div className="title-3">最近运行</div>
+              <div className="caption">最近 {data.runs.length} 次运行记录</div>
+            </div>
+            <Link to="/admin/runs" className="caption">全部记录 →</Link>
           </div>
-          <Card>
-            <div className="run-list">
+          <div className="run-list">
               {data.runs.map((run) => {
                 const tone = run.status === 'success' ? 'green' : run.status === 'failed' ? 'red' : 'orange';
                 const statusText = run.status === 'success' ? '成功' : run.status === 'partial' ? '部分' : run.status === 'running' ? '运行中' : '失败';
@@ -179,9 +181,8 @@ export function Home() {
                   </div>
                 );
               })}
-            </div>
-          </Card>
-        </>
+          </div>
+        </Card>
       ) : null}
 
       <Link to="/admin" className="btn btn--primary btn--block">
