@@ -384,10 +384,18 @@ async function collectAll(
   });
 }
 
-async function writeLog(store: ArtifactStore, runId: string, logger: RunLogger): Promise<string> {  const day = new Date().toISOString().slice(0, 10);
-  const key = `logs/${day}/${runId}.jsonl`;
-  await store.put(key, logger.toJSONL(), 'application/x-ndjson; charset=utf-8');
-  return key;
+async function writeLog(store: ArtifactStore, runId: string, logger: RunLogger): Promise<string> {
+  // A run log is diagnostic only: an upload failure must never fail the task
+  // itself (e.g. a transient 500 from the artifact endpoint).
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const key = `logs/${day}/${runId}.jsonl`;
+    await store.put(key, logger.toJSONL(), 'application/x-ndjson; charset=utf-8');
+    return key;
+  } catch (error) {
+    logger.warn('运行日志上传失败（已忽略，不影响任务结果）', { error: error instanceof Error ? error.message : String(error) });
+    return '';
+  }
 }
 
 async function finishRun(
