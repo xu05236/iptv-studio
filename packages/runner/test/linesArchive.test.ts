@@ -33,6 +33,11 @@ describe('splitArchivable', () => {
     expect(keep.map((item) => item.key).sort()).toEqual(['alive', 'recent']);
   });
 
+  it('archives dead lines older than the 30-day retention window', () => {
+    const { archived } = splitArchivable([line('forty', { lastProbeAt: '2026-10-01T00:00:00Z' })], NOW);
+    expect(archived.map((item) => item.key)).toEqual(['forty']);
+  });
+
   it('archives dead lines that were never probed', () => {
     const { archived } = splitArchivable([line('never')], NOW);
     expect(archived.map((item) => item.key)).toEqual(['never']);
