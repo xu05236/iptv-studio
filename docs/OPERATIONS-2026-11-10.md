@@ -19,7 +19,7 @@
 
 - 用量在 Worker 内刷新，不派 GitHub Actions：GitHub 分钟数走 Actions API；KV/D1 走 Cloudflare 只读分析接口。
 - 需要 Worker secret `CLOUDFLARE_API_TOKEN`（账户级「账户分析·读取」）；账户编号与数据库编号已写在 `wrangler.jsonc` 的 vars 里。没有令牌时 KV/D1 保留上一次的值，GitHub 分钟数照常更新。
-- 刷新频率：每 30 分钟一次（cron `8,38 * * * *`）；后台「刷新用量」也直接在 Worker 内执行。
+- 刷新频率：每小时一次（cron `8 * * * *`）；后台「刷新用量」也直接在 Worker 内执行。
 - 数据写入 `state/usage.json`，供概览用量面板、Telegram `/usage` 和调度额度护栏使用（护栏只看 GitHub 分钟数）。
 
 ## 探测按 URL 去重
