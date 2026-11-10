@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Download, Filter, Layers3, Plus, RefreshCw, RotateCcw, Star, Trash2 } from 'lucide-react';
+import { Ban, Download, Filter, Layers3, Plus, RefreshCw, RotateCcw, Star, Trash2, Undo2 } from 'lucide-react';
 import { api, getToken } from '../../lib/api';
 import { formatResolution, formatSpeed, statusLabel, statusTone } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Pagination, Sheet, Skeleton, useToast } from '../../components/ui';
@@ -296,6 +296,24 @@ export function Pool() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const restoreArchive = useMutation({
+    mutationFn: async () => {
+      const report = await api.get<{ total: number }>('/api/admin/pool/archive');
+      if (!report.total) return null;
+      if (!window.confirm(`归档中有 ${report.total} 条线路，全部恢复到待测？`)) return null;
+      return api.post<{ restored: number }>('/api/admin/pool/archive/restore', {});
+    },
+    onSuccess: (result) => {
+      if (!result) {
+        show('归档为空');
+        return;
+      }
+      show(`已恢复 ${result.restored} 条归档线路，状态为待测`);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'pool'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const cleanupOrphans = useMutation({
     mutationFn: async () => {
       const report = await api.get<{ total: number }>('/api/admin/pool/orphans');
@@ -488,6 +506,7 @@ export function Pool() {
             <Button loading={saveSubscription.isPending} onClick={() => saveSubscription.mutate()}><Layers3 size={15} /> 保存为订阅</Button>
             <Button onClick={() => setTombstonesOpen(true)}><Ban size={15} /> 墓碑</Button>
             <Button loading={cleanupOrphans.isPending} onClick={() => cleanupOrphans.mutate()}><Trash2 size={15} /> 清理已删源</Button>
+            <Button loading={restoreArchive.isPending} onClick={() => restoreArchive.mutate()}><Undo2 size={15} /> 恢复归档</Button>
           </>
         }
       />

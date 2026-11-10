@@ -464,6 +464,50 @@ poolRoutes.post('/reset', async (c) => {
   return ok({ removed });
 });
 
+/** Archived long-dead lines are otherwise unreachable; list and restore them. */
+poolRoutes.get('/archive', async (c) => {
+  const archive = await getJson<{ generatedAt?: string; lines?: LineEntry[] }>(c.env, 'state/lines-archive.json');
+  const lines = archive?.lines ?? [];
+  return ok({
+    generatedAt: archive?.generatedAt ?? null,
+    total: lines.length,
+    sample: lines.slice(0, 50).map((line) => ({
+      key: line.key,
+      name: line.name,
+      sourceId: line.sourceId,
+      channelId: line.channelId,
+      lastProbeAt: line.lastProbeAt ?? null,
+      rejectedAt: line.rejectedAt ?? null,
+    })),
+  });
+});
+
+poolRoutes.post('/archive/restore', async (c) => {
+  const body = (await readJson<{ keys?: string[] }>(c)) ?? {};
+  const archive = await getJson<{ generatedAt?: string; lines?: LineEntry[] }>(c.env, 'state/lines-archive.json');
+  const archived = archive?.lines ?? [];
+  if (!archived.length) return ok({ restored: 0 });
+  const wanted = body.keys?.length ? new Set(body.keys) : null;
+  const restore = archived.filter((line) => !wanted || wanted.has(line.key));
+  if (!restore.length) return ok({ restored: 0 });
+  const state = await loadLines(c.env);
+  const existing = new Set(state.lines.map((line) => line.key));
+  const additions = restore
+    .filter((line) => !existing.has(line.key))
+    .map((line) => ({ ...line, status: 'unknown' as const, lastProbeAt: null, rejectedAt: null }));
+  if (!additions.length) return ok({ restored: 0 });
+  await saveLines(c.env, [...state.lines, ...additions], new Date().toISOString());
+  const restoredKeys = new Set(restore.map((line) => line.key));
+  await putArtifact(
+    c.env,
+    'state/lines-archive.json',
+    JSON.stringify({ generatedAt: archive?.generatedAt ?? new Date().toISOString(), lines: archived.filter((line) => !restoredKeys.has(line.key)) }),
+    'application/json; charset=utf-8',
+  );
+  await audit(c.env, c.get('actor'), 'pool.archive_restore', 'bulk', { requested: restore.length, restored: additions.length });
+  return ok({ restored: additions.length });
+});
+
 poolRoutes.get('/tombstones', async (c) => {
   const items = await listLineTombstones(c.env);
   return ok({ items, urls: items.map((item) => item.url) });
