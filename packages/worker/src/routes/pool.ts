@@ -494,7 +494,7 @@ poolRoutes.post('/archive/restore', async (c) => {
   const existing = new Set(state.lines.map((line) => line.key));
   const additions = restore
     .filter((line) => !existing.has(line.key))
-    .map((line) => ({ ...line, status: 'unknown' as const, lastProbeAt: null, rejectedAt: null }));
+    .map((line) => ({ ...line, status: 'unknown' as const, lastProbeAt: undefined, rejectedAt: undefined }));
   if (!additions.length) return ok({ restored: 0 });
   await saveLines(c.env, [...state.lines, ...additions], new Date().toISOString());
   const restoredKeys = new Set(restore.map((line) => line.key));
