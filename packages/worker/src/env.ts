@@ -17,6 +17,11 @@ export interface Env {
   GITHUB_WORKFLOW?: string;
   GITHUB_REF?: string;
 
+  /** Optional read-only analytics token; enables KV/D1 numbers in the usage snapshot. */
+  CLOUDFLARE_API_TOKEN?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  D1_ID?: string;
+
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
 }

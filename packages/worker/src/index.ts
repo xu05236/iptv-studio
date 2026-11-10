@@ -13,10 +13,10 @@ import { artifactRoutes } from './routes/artifacts.js';
 import { poolRoutes } from './routes/pool.js';
 import { relayRoutes } from './routes/relay.js';
 import { runCron } from './cron.js';
+import { refreshUsage } from './lib/usage.js';
 import { runScheduler } from './lib/schedule.js';
 import { runMonitor } from './lib/monitor.js';
 import { handleTelegramUpdate, runTelegramCommands, verifyTelegramSecret } from './lib/telegram.js';
-import { dispatchWorkflow } from './lib/github.js';
 
 const app = new Hono<AppEnv>();
 export { app };
@@ -78,8 +78,9 @@ app.post('/api/admin/usage', async (c) => {
 });
 
 app.post('/api/admin/usage/refresh', async (c) => {
-  const result = await dispatchWorkflow(c.env, {}, 'usage.yml');
-  return ok({ ...result, message: result.ok ? '已触发用量刷新' : result.message }, result.ok ? 202 : 400);
+  // Runs inside the Worker: no GitHub Actions run, no quota cost.
+  const usage = await refreshUsage(c.env);
+  return ok({ usage, message: '已刷新用量' });
 });
 
 app.route('/api/public', publicRoutes);
@@ -113,7 +114,7 @@ app.onError((error, c) => {
 
 export default {
   fetch: app.fetch,  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    if (controller.cron === '17 */6 * * *') ctx.waitUntil(runCron(env));
+    if (controller.cron === '17 */6 * * *') ctx.waitUntil(Promise.all([runCron(env), refreshUsage(env)]).then(() => undefined));
     else ctx.waitUntil(Promise.all([runScheduler(env), runTelegramCommands(env), runMonitor(env)]).then(() => undefined));
   },
 } satisfies ExportedHandler<Env>;
