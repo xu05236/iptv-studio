@@ -114,7 +114,8 @@ app.onError((error, c) => {
 
 export default {
   fetch: app.fetch,  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    if (controller.cron === '17 */6 * * *') ctx.waitUntil(Promise.all([runCron(env), refreshUsage(env)]).then(() => undefined));
+    if (controller.cron === '17 */6 * * *') ctx.waitUntil(runCron(env));
+    else if (controller.cron === '8,38 * * * *') ctx.waitUntil(refreshUsage(env).then(() => undefined));
     else ctx.waitUntil(Promise.all([runScheduler(env), runTelegramCommands(env), runMonitor(env)]).then(() => undefined));
   },
 } satisfies ExportedHandler<Env>;

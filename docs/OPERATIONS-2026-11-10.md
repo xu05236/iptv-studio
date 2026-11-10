@@ -15,6 +15,13 @@
 - **手动 vs 定时抓源**：手动「立即执行 / 抓源」会强制重抓（`force_fetch`），定时任务按 `refresh_hours` 增量跳过未到期源。`paused` 源不参与抓取。
 - 单源整体处理超过 `max(120s, fetch_timeout_ms × 2)` 会被放弃并记为该源失败，避免一个卡住的流拖住整批。
 
+## 用量快照
+
+- 用量在 Worker 内刷新，不派 GitHub Actions：GitHub 分钟数走 Actions API；KV/D1 走 Cloudflare 只读分析接口。
+- 需要 Worker secret `CLOUDFLARE_API_TOKEN`（账户级「账户分析·读取」）；账户编号与数据库编号已写在 `wrangler.jsonc` 的 vars 里。没有令牌时 KV/D1 保留上一次的值，GitHub 分钟数照常更新。
+- 刷新频率：每 30 分钟一次（cron `8,38 * * * *`）；后台「刷新用量」也直接在 Worker 内执行。
+- 数据写入 `state/usage.json`，供概览用量面板、Telegram `/usage` 和调度额度护栏使用（护栏只看 GitHub 分钟数）。
+
 ## 探测按 URL 去重
 
 - 调度批探测与采集的探测阶段会先按「规范化 URL + 请求头」归并：同一 URL（且请求头相同）只真实探测一次，结果回填给所有来源的同 URL 线路。
