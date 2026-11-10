@@ -1285,10 +1285,18 @@ adminRoutes.get('/artifacts', async (c) => {
 adminRoutes.get('/artifacts/*', async (c) => {
   const key = artifactKey(c.req.path);
   if (!key) return fail('缺少 key');
-  const text = await getText(c.env, key);
-  if (text === null) return fail('产物不存在', 404);
-  return new Response(text, {
-    headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+  // Serve raw bytes: sharded line state is gzip-compressed and must not be
+  // decoded as UTF-8 by KV (that silently corrupts the binary and the runner
+  // would read zero lines). Text artifacts keep working because the runner
+  // decodes non-gzip bytes as UTF-8.
+  const existing = await c.env.KV.getWithMetadata<{ contentType?: string }>(key, 'arrayBuffer');
+  if (!existing.value) return fail('产物不存在', 404);
+  return new Response(existing.value, {
+    headers: {
+      'content-type': existing.metadata?.contentType ?? 'application/octet-stream',
+      'content-length': String(existing.value.byteLength),
+      'cache-control': 'no-store',
+    },
   });
 });
 
