@@ -42,6 +42,8 @@
     "GITHUB_REPO": "xu05236/iptv-studio",
     "GITHUB_WORKFLOW": "collect.yml",
     "GITHUB_REF": "main",
+    "CLOUDFLARE_ACCOUNT_ID": "a26b100f0e528a84918231934f92f8d0",
+    "D1_ID": "da4e65ee-de99-455e-88ed-eb06d10cd139",
     "COMMIT_SHA": "dev",
     "DEPLOYED_AT": ""
   }
