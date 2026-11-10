@@ -48,8 +48,8 @@ export async function loadLines(env: Env): Promise<LinesState> {
 }
 
 /** Write gzip shards + manifest; drop the legacy value once shards exist. */
-export async function saveLines(env: Env, lines: LineEntry[], generatedAt: string): Promise<void> {
-  if (!lines.length) throw new Error('拒绝写入 0 条线路：疑似读取失败，已保留现有线路状态');
+export async function saveLines(env: Env, lines: LineEntry[], generatedAt: string, options: { allowEmpty?: boolean } = {}): Promise<void> {
+  if (!lines.length && !options.allowEmpty) throw new Error('拒绝写入 0 条线路：疑似读取失败，已保留现有线路状态');
   const { manifest, shards } = packLines(lines, generatedAt);
   for (const shard of shards) {
     await putArtifact(env, shard.key, await gzipBytes(shard.body), 'application/json; charset=utf-8');

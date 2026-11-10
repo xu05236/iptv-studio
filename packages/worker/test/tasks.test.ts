@@ -82,4 +82,28 @@ describe('task queue', () => {
     expect(stored.progress.done).toBe(1200);
     expect(stored.message).toBe('完成');
   });
+
+  it('marks the timed-out task cancelled instead of resurrecting it after a retry', async () => {
+    const env = makeEnv();
+    const task = await createTask(env, { type: 'fetch', source: 'manual' });
+    await dispatchNext(env);
+    // Rewind the heartbeat so the watchdog sees a stall.
+    const stale = Date.now() - 60 * 60_000;
+    const stored = JSON.parse((await env.KV.get('state/tasks.json')) as string) as Array<{ id: string; lastHeartbeatAt?: string; startedAt?: string }>;
+    for (const item of stored) {
+      item.startedAt = new Date(stale).toISOString();
+      item.lastHeartbeatAt = new Date(stale).toISOString();
+    }
+    await env.KV.put('state/tasks.json', JSON.stringify(stored));
+
+    const result = await dispatchNext(env);
+    const tasks = await loadTasks(env);
+    const old = tasks.find((item) => item.id === task.id)!;
+    expect(old.status).toBe('cancelled');
+    expect(old.message).toContain('已由重试任务接替');
+    // The retry is running now; the key assertion is that the old task is not
+    // still "running" (which used to make dispatch skip every fresh task).
+    expect(result.task?.id).not.toBe(task.id);
+    expect(tasks.filter((item) => item.status === 'running')).toHaveLength(1);
+  });
 });

@@ -44,10 +44,14 @@ export async function putArtifact(
   if (bytes.byteLength > MAX_VALUE_BYTES) {
     throw new Error(`产物 ${key} 超过 KV 单值 24MB 限制（${Math.round(bytes.byteLength / 1024 / 1024)}MB）`);
   }
+  // Hashing 24MB inside a Worker is too expensive for the free CPU budget, but
+  // a size-only ETag made same-size large artifacts look unchanged forever (a
+  // rebuilt catalog could be skipped). Large payloads therefore skip the
+  // dedupe fast-path and always get a fresh ETag.
   const digest = bytes.byteLength <= 2 * 1024 * 1024
     ? await crypto.subtle.digest('SHA-256', bytes)
     : null;
-  const etag = digest ? `"${hex(digest).slice(0, 32)}"` : `"size-${bytes.byteLength}"`;
+  const etag = digest ? `"${hex(digest).slice(0, 32)}"` : `"size-${bytes.byteLength}-${Date.now().toString(36)}"`;
   const meta: ArtifactMeta = { contentType, etag, size: bytes.byteLength, updatedAt: isoNow() };
   // KV writes are the scarce resource on the free plan. Skip rewriting a value
   // when the bytes and content type are unchanged.

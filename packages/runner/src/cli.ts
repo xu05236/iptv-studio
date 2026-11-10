@@ -1162,8 +1162,11 @@ async function runCollectCombined(): Promise<void> {
 
     const { lines, collected, sourceId } = await fetchPhase(api, remote, store, logger, previousState, tombstones);
     const { summary } = await probePhase(lines, remote, config, logger, sourceId, true);
-    await syncSourceStats(api, remote, lines, collected, sourceId);
     const { output, logKey } = await publishPhase(api, store, config, remote, lines, logger, runId, 'fetch');
+    // Record fetch metadata only after a successful publish: syncing before it
+    // advanced etags/last_fetch_at even when the publish failed, so the next run
+    // got a 304 (or skipped on the interval) and lost the whole batch.
+    await syncSourceStats(api, remote, lines, collected, sourceId);
 
     report = {
       ...report,
@@ -1251,6 +1254,7 @@ async function runLiveness(): Promise<void> {
     const selected = due.slice(0, budget);
     logger.info('轻量测活计划', { due: due.length, budget: selected.length, hours: dueHours });
 
+    const aliveBefore = lines.filter((line) => line.status === 'alive').length;
     let alive = 0;
     let failed = 0;
     let skipped = 0;
@@ -1275,6 +1279,14 @@ async function runLiveness(): Promise<void> {
       failed++;
     });
     logger.info('轻量测活完成', { checked: selected.length, alive, failed, skipped });
+
+    const aliveAfter = lines.filter((line) => line.status === 'alive').length;
+    if (aliveBefore >= 50 && aliveAfter < aliveBefore * 0.5) {
+      // A runner-side network outage used to demote almost the whole pool and
+      // then overwrite pool.json with the demoted state, taking subscriptions
+      // down. Fail the run instead of persisting the collapse.
+      throw new Error(`轻量测活后可用线路从 ${aliveBefore} 降到 ${aliveAfter}（低于 50%），疑似出口网络异常，已放弃写入`);
+    }
 
     const generatedAt = nowIso();
     await saveLinesState(store, lines, generatedAt);
@@ -1509,11 +1521,13 @@ async function runCleanupRejected(): Promise<void> {
       await finishRun(api, report);
       return;
     }
-    await api.post('/api/admin/pool/tombstone', { urls: [...new Set(expired.map((line) => line.url))], reason: 'retention' });
     const removed = new Set(expired.map((line) => line.key));
     const kept = lines.filter((line) => !removed.has(line.key));
     const generatedAt = nowIso();
+    // Save the surviving lines first: tombstones written before the save made
+    // the URLs permanently unimportable even when the save then failed.
     await saveLinesState(store, kept, generatedAt);
+    await api.post('/api/admin/pool/tombstone', { urls: [...new Set(expired.map((line) => line.url))], reason: 'retention' });
     await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, kept, generatedAt)), 'application/json');
     await writePoolStats(store, remote, kept);
     await syncSourceCounts(api, remote, kept);

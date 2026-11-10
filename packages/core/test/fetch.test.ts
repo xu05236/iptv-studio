@@ -73,11 +73,13 @@ describe('fetchText', () => {
     expect(result.attempts).toBe(2);
   });
 
-  it('超过 maxBytes 截断', async () => {
+  it('超过 maxBytes 时拒绝而不是静默截断', async () => {
     const impl = vi.fn(async () => new Response('x'.repeat(100)));
     const result = await fetchText('https://x/y.m3u', { maxBytes: 10, fetchImpl: impl as never });
-    expect(result.ok).toBe(true);
-    expect(result.text?.length).toBe(10);
+    expect(result.ok).toBe(false);
+    expect(result.errorKind).toBe('not_playlist');
+    expect(result.text).toBeUndefined();
+    expect(impl).toHaveBeenCalledTimes(1);
   });
 
   it('源级请求头覆盖默认 UA，保留条件请求', async () => {

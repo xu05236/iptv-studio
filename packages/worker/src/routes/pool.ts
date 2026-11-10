@@ -46,7 +46,7 @@ async function removeLinesFromArtifacts(env: Env, keys: Set<string>): Promise<nu
     const kept = state.lines.filter((line) => !keys.has(line.key));
     removed = state.lines.length - kept.length;
     if (removed) {
-      await saveLines(env, kept, state.generatedAt ?? new Date().toISOString());
+      await saveLines(env, kept, state.generatedAt ?? new Date().toISOString(), { allowEmpty: true });
     }
   }
 

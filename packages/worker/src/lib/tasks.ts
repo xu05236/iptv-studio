@@ -255,8 +255,6 @@ function retryTask(tasks: Task[], task: Task, reason: string): Task | null {
     task.finishedAt = new Date().toISOString();
     return null;
   }
-  const index = tasks.findIndex((item) => item.id === task.id);
-  if (index >= 0) tasks.splice(index, 1);
   const retry: Task = {
     ...task,
     id: `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
@@ -270,6 +268,12 @@ function retryTask(tasks: Task[], task: Task, reason: string): Task | null {
     githubRunId: undefined,
     retryCount: nextRetry,
   };
+  // Keep the old task (as cancelled) instead of splicing it out: saveTasks
+  // merges with the persisted list, so a removed running task was written back
+  // and looked "running" forever while a fresh retry sat in the queue.
+  task.status = 'cancelled';
+  task.finishedAt = new Date().toISOString();
+  task.message = `已由重试任务接替（${nextRetry}/${MAX_RETRIES}）：${reason}`;
   tasks.push(retry);
   return retry;
 }

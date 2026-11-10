@@ -139,7 +139,7 @@ export function Dashboard() {
   const queryClient = useQueryClient();
   const { show } = useToast();
   const [moreOpen, setMoreOpen] = useState(false);
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['admin', 'stats'],
     queryFn: () => api.get<AdminStats>('/api/admin/stats'),
   });
@@ -317,6 +317,20 @@ export function Dashboard() {
           {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} height={92} radius={16} />)}
         </div>
         <Skeleton height={240} radius={16} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="stack">
+        <Card>
+          <EmptyState
+            title="概览加载失败"
+            description={(error as Error).message || '接口暂时不可用，请稍后重试。'}
+            action={<Button size="sm" onClick={() => void refetch()}>重试</Button>}
+          />
+        </Card>
       </div>
     );
   }

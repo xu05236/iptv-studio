@@ -175,7 +175,15 @@ adminRoutes.post('/recover/lines-from-pool', async (c) => {
     }
   }
   if (!byKey.size) return fail('池快照里没有线路', 400);
-  const existing = await loadLines(c.env).catch(() => ({ lines: [] as LineEntry[] }));
+  let existing: { lines: LineEntry[] };
+  try {
+    existing = await loadLines(c.env);
+  } catch (error) {
+    // Never recover on top of an unreadable state: the old catch-all produced
+    // { lines: [] } and the save below then replaced every non-pool line.
+    const message = error instanceof Error ? error.message : String(error);
+    return fail(`读取现有线路失败，已中止恢复（未写入）：${message}`, 500);
+  }
   for (const line of existing.lines) {
     if (line?.key && !byKey.has(line.key)) byKey.set(line.key, line);
   }

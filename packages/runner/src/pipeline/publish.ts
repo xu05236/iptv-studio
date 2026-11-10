@@ -289,11 +289,23 @@ export async function publish(
     }
   }
   if (encoder.encode(linesBody).byteLength > 20 * 1024 * 1024) {
-    logger.warn('线路状态接近 KV 24MB 上限，将丢弃已失效超过 24 小时的墓碑线路');
+    logger.warn('线路状态接近 KV 24MB 上限，将归档并丢弃已失效超过 24 小时的线路');
     const cutoff = Date.now() - 24 * 3_600_000;
-    linesToSave = options.lines.filter(
-      (line) => line.status !== 'dead' || !line.lastProbeAt || new Date(line.lastProbeAt).getTime() > cutoff,
+    const dropped = options.lines.filter(
+      (line) => line.status === 'dead' && (!line.lastProbeAt || new Date(line.lastProbeAt).getTime() <= cutoff),
     );
+    if (dropped.length) {
+      // Move the trimmed lines into the archive first: the old code deleted
+      // them from state outright, so a later archive read could never see them.
+      const previousArchive = await store.getJson<LinesArchive>('state/lines-archive.json').catch(() => null);
+      const mergedArchive = mergeArchive(previousArchive?.lines ?? [], dropped);
+      await store.put('state/lines-archive.json', JSON.stringify({ generatedAt: options.generatedAt, lines: mergedArchive }), json);
+      artifactTotal += 1;
+      step('state/lines-archive.json');
+      logger.warn('紧急裁剪的失效线路已归档', { archived: dropped.length, archiveTotal: mergedArchive.length });
+    }
+    const droppedKeys = new Set(dropped.map((line) => line.key));
+    linesToSave = options.lines.filter((line) => !droppedKeys.has(line.key));
     linesBody = JSON.stringify({ generatedAt: options.generatedAt, lines: linesToSave });
   }
   const guideBody = check('state/guide.json', JSON.stringify(output.guide));

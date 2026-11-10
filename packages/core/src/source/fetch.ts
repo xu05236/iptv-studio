@@ -1,7 +1,7 @@
 import { readBytesCapped } from '../probe/measure.js';
 import { decodeSourceText } from './encoding.js';
 
-export type FetchErrorKind = 'timeout' | 'network' | 'tls' | 'http_4xx' | 'http_5xx' | 'challenge';
+export type FetchErrorKind = 'timeout' | 'network' | 'tls' | 'http_4xx' | 'http_5xx' | 'challenge' | 'not_playlist';
 
 export const FETCH_ERROR_LABELS: Record<FetchErrorKind, string> = {
   timeout: '请求超时',
@@ -10,6 +10,7 @@ export const FETCH_ERROR_LABELS: Record<FetchErrorKind, string> = {
   http_4xx: 'HTTP 4xx（请求被拒绝）',
   http_5xx: 'HTTP 5xx（服务端错误）',
   challenge: 'Cloudflare 质询',
+  not_playlist: '不是有效播放列表',
 };
 
 /** Inspect the undici error cause chain for common TLS certificate failures. */
@@ -207,7 +208,21 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
           attempts: attempt,
         };
       } else {
-        const bytes = await readBytesCapped(response.body, options.maxBytes ?? DEFAULT_MAX_BYTES);
+        const limit = options.maxBytes ?? DEFAULT_MAX_BYTES;
+        const bytes = await readBytesCapped(response.body, limit);
+        if (bytes.byteLength >= limit) {
+          // A body that fills the 24MB cap is almost never a playlist, and the
+          // truncated tail used to be parsed as a valid (silently incomplete)
+          // source. Fail loudly instead of importing half a list.
+          last = {
+            ok: false,
+            status: response.status,
+            error: `响应体超过 ${Math.round(limit / 1024 / 1024)}MB 上限，已拒绝（可能不是播放列表）`,
+            errorKind: 'not_playlist',
+            attempts: attempt,
+          };
+          break;
+        }
         const decoded = decodeSourceText(bytes, response.headers.get('content-type'));
         return {
           ok: true,

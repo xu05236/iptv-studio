@@ -103,4 +103,12 @@ describe('worker sharded lines', () => {
     kv.values.delete(shard.key);
     await expect(loadLines(envOf(kv))).rejects.toThrow('线路分片');
   });
+
+  it('allows clearing the last line only when the caller opts in', async () => {
+    const kv = new FakeKV();
+    await saveLines(envOf(kv), [line()], '2026-11-10T00:00:00Z');
+    await saveLines(envOf(kv), [], '2026-11-10T00:01:00Z', { allowEmpty: true });
+    const loaded = await loadLines(envOf(kv));
+    expect(loaded.lines).toEqual([]);
+  });
 });

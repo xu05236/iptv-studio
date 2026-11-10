@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, Download, Filter, Layers3, Plus, RefreshCw, RotateCcw, Star, Trash2 } from 'lucide-react';
 import { api, getToken } from '../../lib/api';
@@ -111,6 +111,13 @@ export function Pool() {
   const [sortField, setSortField] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [tombstonesOpen, setTombstonesOpen] = useState(false);
+
+  // Bulk actions apply to the selected keys even when the rows are not on the
+  // current page/filter. Reset the selection whenever the visible set changes
+  // so a stale selection can never be deleted or tombstoned by accident.
+  useEffect(() => {
+    setSelected(new Set());
+  }, [page, pageSize, pool, customPool, country, group, channelId, sourceId, transport, resolution, minSpeed, search, sortField, sortOrder, subscriptionId]);
 
   const tree = useQuery({
     queryKey: ['admin', 'pool', 'tree'],
