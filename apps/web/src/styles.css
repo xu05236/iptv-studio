@@ -3620,6 +3620,54 @@ button {
   margin-bottom: 8px;
 }
 
+/* The overview header reuses the public hero gradient; other admin pages keep
+   the light tinted header so dense tool pages stay calm. */
+.admin-hero--gradient {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.18);
+  background:
+    radial-gradient(520px 220px at 8% -20%, rgba(255, 255, 255, 0.22), transparent 65%),
+    radial-gradient(460px 220px at 95% 120%, rgba(255, 255, 255, 0.14), transparent 65%),
+    linear-gradient(135deg, #0a84ff 0%, #5e5ce6 58%, #bf5af2 100%);
+  box-shadow: 0 18px 44px rgba(10, 132, 255, 0.28);
+}
+
+.admin-hero--gradient .large-title {
+  color: #fff;
+}
+
+.admin-hero--gradient .subhead {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.admin-hero--gradient .caption {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.admin-hero--gradient .admin-eyebrow {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.admin-hero--gradient .admin-hero__actions .btn {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #fff;
+}
+
+.admin-hero--gradient .admin-hero__actions .btn:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.admin-hero--gradient .admin-hero__actions .btn--primary {
+  background: #fff;
+  border-color: #fff;
+  color: #0a6bff;
+}
+
+.admin-hero--gradient .admin-hero__actions .btn--primary:hover {
+  background: #f2f6ff;
+}
+
 .admin-hero__content {
   min-width: min(100%, 420px);
 }

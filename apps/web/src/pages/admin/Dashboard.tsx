@@ -363,7 +363,7 @@ export function Dashboard() {
 
   return (
     <div className="stack">
-      <div className="admin-hero">
+      <div className="admin-hero admin-hero--gradient">
         <div className="admin-hero__content">
           <div className="admin-eyebrow">CONTROL CENTER</div>
           <h1 className="large-title">概览</h1>
