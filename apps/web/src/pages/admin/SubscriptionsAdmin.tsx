@@ -5,7 +5,7 @@ import { api } from '../../lib/api';
 import type { AdminChannel, SubscriptionItem } from '../../lib/types';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { formatDateTime } from '../../lib/format';
-import { Badge, Button, Card, CopyField, EmptyState, Field, Sheet, Switch, useToast } from '../../components/ui';
+import { Badge, Button, Card, CopyField, EmptyState, Field, QueryError, Sheet, Switch, useToast } from '../../components/ui';
 
 const FORMATS = ['m3u', 'txt', 'json', 'diyp'];
 
@@ -143,7 +143,7 @@ export function SubscriptionsAdmin() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['admin', 'subscriptions'],
     queryFn: () => api.get<{ items: SubscriptionItem[] }>('/api/admin/subscriptions'),
   });
@@ -367,7 +367,7 @@ export function SubscriptionsAdmin() {
       </Card>
 
       {isLoading ? <Card><div className="caption">加载中…</div></Card> : null}
-      {isError ? <Card><div className="caption">订阅加载失败：{error instanceof Error ? error.message : '请求失败'}</div></Card> : null}
+      {isError ? <Card><QueryError title="订阅加载失败" error={error} onRetry={() => void refetch()} /></Card> : null}
 
       {!isLoading && !data?.items.length ? (
         <EmptyState

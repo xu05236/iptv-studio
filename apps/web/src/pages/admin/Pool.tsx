@@ -3,7 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Ban, Download, Filter, Layers3, Plus, RefreshCw, RotateCcw, Star, Trash2, Undo2 } from 'lucide-react';
 import { api, getToken } from '../../lib/api';
 import { formatResolution, formatSpeed, statusLabel, statusTone } from '../../lib/format';
-import { Badge, Button, Card, EmptyState, Pagination, Sheet, Skeleton, useToast } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Pagination, QueryError, Sheet, Skeleton, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { ReputationBadge } from '../../components/ReputationBadge';
 import { timeAgo } from '../../lib/format';
@@ -717,7 +717,7 @@ export function Pool() {
       ) : null}
 
       {lines.isError ? (
-        <Card><div className="caption">线路加载失败：{lines.error instanceof Error ? lines.error.message : '请求失败'}</div></Card>
+        <Card><QueryError title="线路加载失败" error={lines.error} onRetry={() => void lines.refetch()} /></Card>
       ) : null}
 
       {lines.isLoading ? (

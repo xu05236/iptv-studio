@@ -90,7 +90,7 @@ async function buildReply(env: Env, command: string): Promise<string> {
   ].join('\n');
 }
 
-async function send(env: Env, text: string): Promise<void> {
+export async function sendTelegram(env: Env, text: string): Promise<void> {
   const token = env.TELEGRAM_BOT_TOKEN;
   const chatId = env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
@@ -110,7 +110,7 @@ export async function handleTelegramUpdate(
   if (!chatId || !message?.text || String(message.chat?.id) !== String(chatId)) return;
   const command = message.text.trim().split(/\s+/)[0].toLowerCase().replace(/@.*$/, '');
   if (!command.startsWith('/')) return;
-  await send(env, await buildReply(env, command));
+  await sendTelegram(env, await buildReply(env, command));
 }
 
 const COMMANDS = [

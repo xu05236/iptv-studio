@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CalendarClock, PieChart, RadioTower, Save, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { Badge, Button, EmptyState, Field, Switch, useToast } from '../../components/ui';
+import { Badge, Button, EmptyState, Field, QueryError, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { timeAgo } from '../../lib/format';
 
@@ -252,7 +252,7 @@ export function Epg() {
           </div>
 
           {unmatched.isError ? (
-            <EmptyState title="未映射频道加载失败" description={unmatched.error instanceof Error ? unmatched.error.message : '请稍后重试'} />
+            <QueryError title="未映射频道加载失败" error={unmatched.error} onRetry={() => void unmatched.refetch()} />
           ) : unmatched.isLoading ? (
             <span className="caption">加载中…</span>
           ) : !items.length ? (

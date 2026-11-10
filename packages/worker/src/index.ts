@@ -14,6 +14,7 @@ import { poolRoutes } from './routes/pool.js';
 import { relayRoutes } from './routes/relay.js';
 import { runCron } from './cron.js';
 import { runScheduler } from './lib/schedule.js';
+import { runMonitor } from './lib/monitor.js';
 import { handleTelegramUpdate, runTelegramCommands, verifyTelegramSecret } from './lib/telegram.js';
 import { dispatchWorkflow } from './lib/github.js';
 
@@ -113,6 +114,6 @@ app.onError((error, c) => {
 export default {
   fetch: app.fetch,  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (controller.cron === '17 */6 * * *') ctx.waitUntil(runCron(env));
-    else ctx.waitUntil(Promise.all([runScheduler(env), runTelegramCommands(env)]).then(() => undefined));
+    else ctx.waitUntil(Promise.all([runScheduler(env), runTelegramCommands(env), runMonitor(env)]).then(() => undefined));
   },
 } satisfies ExportedHandler<Env>;

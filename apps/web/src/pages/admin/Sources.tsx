@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ChevronDown, LayoutGrid, List, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Upload, Zap } from 'lucide-react';
+import { Activity, ChevronDown, GitCompare, LayoutGrid, List, Plus, RefreshCw, RadioTower, SlidersHorizontal, Star, Upload, Zap } from 'lucide-react';
 import { api } from '../../lib/api';
 import type { SourceItem } from '../../lib/types';
 import { formatDateTime, timeAgo } from '../../lib/format';
 import { errorKindLabel } from '../../lib/fetchErrors';
-import { Badge, Button, Card, EmptyState, Field, Segmented, Sheet, Switch, useToast } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Field, QueryError, Segmented, Sheet, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { ReputationBadge, reputationTier } from '../../components/ReputationBadge';
 
@@ -161,12 +161,25 @@ export function Sources() {
   const [tagFilter, setTagFilter] = useState('');
   const [view, setView] = useState<'grid' | 'list'>('grid');
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['admin', 'sources'],
     queryFn: () => api.get<{ items: SourceItem[]; reportGeneratedAt?: string | null }>('/api/admin/sources'),
     // A fetch task finishes in the background; keep the cards' 「更新」 times
     // from going stale while the page stays open.
     refetchInterval: 30_000,
+  });
+  const [overlapOpen, setOverlapOpen] = useState(false);
+  const overlap = useQuery({
+    queryKey: ['admin', 'sources', 'overlap'],
+    queryFn: () =>
+      api.get<{
+        totalLines: number;
+        uniqueUrls: number;
+        duplicateUrls: number;
+        duplicatedLines: number;
+        items: Array<{ id: string; name: string; enabled: boolean; reputation: number; total: number; duplicated: number; unique: number; earliestWins: number; share: number }>;
+      }>('/api/admin/sources/overlap'),
+    enabled: overlapOpen,
   });
 
   const health = useQuery({
@@ -403,7 +416,12 @@ export function Sources() {
         title="采集站"
         description="这里列出所有采集来源（GitHub 项目 / 自建站点 / 上传文件），可启停、检查、抽样测速或删除。"
         meta={<>信誉分综合可用率、线路质量、抓取成功率：80+ 优质 / 50–79 正常 / &lt;50 降权，会影响探测排序、复测间隔和每轮预算份额。</>}
-        actions={<Button variant="primary" onClick={() => setOpen(true)}><Plus size={16} /> 添加采集站</Button>}
+        actions={
+          <div className="row" style={{ gap: 8 }}>
+            <Button onClick={() => setOverlapOpen(true)}><GitCompare size={16} /> 重复线路</Button>
+            <Button variant="primary" onClick={() => setOpen(true)}><Plus size={16} /> 添加采集站</Button>
+          </div>
+        }
       />
 
       {sites.length ? (
@@ -552,7 +570,7 @@ export function Sources() {
       ) : null}
 
       {isLoading ? <Card><div className="caption">加载中…</div></Card> : null}
-      {isError ? <Card><div className="caption">采集站加载失败：{error instanceof Error ? error.message : '请求失败'}</div></Card> : null}
+      {isError ? <Card><QueryError title="采集站加载失败" error={error} onRetry={() => void refetch()} /></Card> : null}
 
       {!isLoading && !items.length ? (
         <EmptyState
@@ -830,6 +848,43 @@ export function Sources() {
             </Field>
           </div>
         </div>
+      </Sheet>
+
+      <Sheet open={overlapOpen} onClose={() => setOverlapOpen(false)} title="重复线路" subtitle="按规范化 URL 统计；同一 URL 被多个来源收录时只算一条线路">
+        {overlap.isLoading ? (
+          <div className="caption">统计中…</div>
+        ) : overlap.isError ? (
+          <QueryError title="统计失败" error={overlap.error} onRetry={() => void overlap.refetch()} />
+        ) : overlap.data ? (
+          <div className="stack">
+            <div className="caption">
+              共 {formatNumber(overlap.data.totalLines)} 条线路 / {formatNumber(overlap.data.uniqueUrls)} 个 URL；其中{' '}
+              {formatNumber(overlap.data.duplicateUrls)} 个 URL 被多个来源收录（涉及 {formatNumber(overlap.data.duplicatedLines)} 条线路）。
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="table">
+                <thead>
+                  <tr><th>来源</th><th>线路</th><th>重复</th><th>独有</th><th>重复占比</th><th>最早收录</th></tr>
+                </thead>
+                <tbody>
+                  {overlap.data.items.map((item) => (
+                    <tr key={item.id}>
+                      <td className="truncate" style={{ maxWidth: 200 }}>{item.name}{item.enabled ? '' : '（已停用）'}</td>
+                      <td>{formatNumber(item.total)}</td>
+                      <td>{formatNumber(item.duplicated)}</td>
+                      <td>{formatNumber(item.unique)}</td>
+                      <td>{Math.round(item.share * 100)}%</td>
+                      <td className="mono">{formatNumber(item.earliestWins)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="caption">
+              「最早收录」= 该来源是最早出现某个重复 URL 的次数。独有越多越值得保留；重复占比高、独有少的源可以考虑合并或删除（删源后记得清理它的孤立线路）。
+            </div>
+          </div>
+        ) : null}
       </Sheet>
 
       <Sheet open={Boolean(probeResult)} onClose={() => setProbeResult(null)} title="解析结果" subtitle={activeSource?.name}>

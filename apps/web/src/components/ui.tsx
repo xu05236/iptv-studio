@@ -174,6 +174,18 @@ export function EmptyState({ icon, title, description, action }: { icon?: ReactN
   );
 }
 
+/** One shape for every query failure: message plus an explicit retry. */
+export function QueryError({ title = '加载失败', error, onRetry }: { title?: string; error?: unknown; onRetry?: () => void }) {
+  const message = error instanceof Error ? error.message : typeof error === 'string' && error ? error : '请稍后重试';
+  return (
+    <EmptyState
+      title={title}
+      description={message}
+      action={onRetry ? <Button onClick={onRetry}>重试</Button> : undefined}
+    />
+  );
+}
+
 export function Skeleton({ height = 16, width = '100%', radius = 8 }: { height?: number; width?: number | string; radius?: number }) {
   return <div className="skeleton" style={{ height, width, borderRadius: radius }} />;
 }
