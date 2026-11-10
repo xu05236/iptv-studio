@@ -762,3 +762,44 @@ poolRoutes.post('/orphans/cleanup', async (c) => {
   await audit(c.env, c.get('actor'), 'pool.cleanup_orphans', body?.sourceId ?? 'all', { removed, sourceId: body?.sourceId ?? null });
   return ok({ removed });
 });
+
+/**
+ * Diagnostic: status/age breakdown of state/lines.json without downloading the
+ * 19MB artifact. Used by the capacity/archive work to see whether dead lines
+ * are old enough to archive.
+ */
+poolRoutes.get('/line-stats', async (c) => {
+  const state = await getJson<{ generatedAt?: string; lines: LineEntry[] }>(c.env, 'state/lines.json');
+  const lines = state?.lines ?? [];
+  const now = Date.now();
+  const cutoff = now - 30 * 86_400_000;
+  const byStatus: Record<string, number> = {};
+  const byProtocol: Record<string, number> = {};
+  let deadOld = 0;
+  let deadNoStamp = 0;
+  let suspectOld = 0;
+  for (const line of lines) {
+    const status = line.status ?? 'unknown';
+    byStatus[status] = (byStatus[status] ?? 0) + 1;
+    const protocol = line.protocol ?? 'unknown';
+    byProtocol[protocol] = (byProtocol[protocol] ?? 0) + 1;
+    if (line.status === 'dead') {
+      const stamp = Date.parse(line.lastProbeAt ?? line.rejectedAt ?? '');
+      if (!Number.isFinite(stamp)) deadNoStamp++;
+      else if (stamp < cutoff) deadOld++;
+    } else if (line.status === 'suspect') {
+      const stamp = Date.parse(line.lastProbeAt ?? '');
+      if (Number.isFinite(stamp) && stamp < cutoff) suspectOld++;
+    }
+  }
+  return ok({
+    total: lines.length,
+    bytes: JSON.stringify(state ?? { lines: [] }).length,
+    generatedAt: state?.generatedAt ?? null,
+    byStatus,
+    byProtocol,
+    deadOld,
+    deadNoStamp,
+    suspectOld,
+  });
+});
