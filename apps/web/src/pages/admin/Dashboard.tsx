@@ -166,6 +166,15 @@ export function Dashboard() {
       }>('/api/admin/epg/coverage'),
   });
 
+  const storageQuery = useQuery({
+    queryKey: ['admin', 'storage-sizes'],
+    queryFn: () =>
+      api.get<{ items: Array<{ key: string; bytes: number }>; thresholds: { warnMb: number; blockMb: number } }>(
+        '/api/admin/storage/sizes',
+      ),
+    staleTime: 120_000,
+  });
+
   const dispatch = useMutation({
     mutationFn: (command: 'collect' | 'export' | 'probe') => api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', { command }),
     onSuccess: (result) => {
@@ -332,6 +341,11 @@ export function Dashboard() {
   const kvBlocked = kvWrites >= 920;
   const kvWarn = kvWrites >= 850;
   const kvListWarn = kvLists >= 850;
+  const warnBytes = (storageQuery.data?.thresholds.warnMb ?? 15) * 1024 * 1024;
+  const blockMb = storageQuery.data?.thresholds.blockMb ?? 22;
+  const capacityOver = (storageQuery.data?.items ?? [])
+    .filter((item) => item.bytes >= warnBytes && !item.key.includes('lines-archive'))
+    .sort((a, b) => b.bytes - a.bytes);
 
   return (
     <div className="stack">
@@ -388,6 +402,11 @@ export function Dashboard() {
       {kvListWarn ? (
         <div className="caption" style={{ color: 'var(--orange)', padding: '0 2px' }}>
           KV 今日列表 {formatNumber(kvLists)} / 1,000，接近免费额度。
+        </div>
+      ) : null}
+      {capacityOver.length ? (
+        <div className="caption" style={{ color: 'var(--orange)', padding: '0 2px' }}>
+          容量告警：{capacityOver.map((item) => `${item.key.replace('state/', '').replace('out/', '')} ${formatBytes(item.bytes)}`).join('、')} 已超过 {storageQuery.data?.thresholds.warnMb ?? 15}MB 告警线，发布时超过 {blockMb}MB 会阻断；已失效线路会在主文件超过 12MB 时归档。<Link to="/admin/settings">查看容量</Link>
         </div>
       ) : null}
 

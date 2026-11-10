@@ -54,6 +54,8 @@ IPTV Studio 把这条链路做成了**有状态的数据管道**：
 
 完整的需求对照（含未完成项）见 [docs/FEATURES.md](docs/FEATURES.md)。
 
+日常运维（自定义池、导出预览口径、合并撤销、容量归档、e2e 冒烟）见 [docs/OPERATIONS-2026-11-10.md](docs/OPERATIONS-2026-11-10.md)。
+
 ## 快速开始（本地）
 
 ```bash

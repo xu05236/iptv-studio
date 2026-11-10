@@ -8,10 +8,13 @@ import { defineConfig } from '@playwright/test';
  */
 export default defineConfig({
   testDir: 'e2e',
-  timeout: 120_000,
-  expect: { timeout: 20_000 },
+  // The production domain occasionally needs 30-90s through a residential
+  // route; per-test timeouts must leave room for a page load plus assertions.
+  timeout: 240_000,
+  expect: { timeout: 45_000 },
   fullyParallel: false,
-  retries: 1,
+  workers: 1,
+  retries: 2,
   reporter: [['list']],
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'https://iptv.xu05236.dpdns.org',
