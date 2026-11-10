@@ -27,6 +27,8 @@ import {
 } from '../db.js';
 import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
+import { loadLines } from '../lib/linesState.js';
+import { LINES_SHARD_COUNT, lineShardKey } from '@iptv/core';
 import { getRuntimeJson } from '../lib/runtime-state.js';
 import { clearSnapshots, createSnapshot } from '../lib/snapshots.js';
 import { inferResolution } from '@iptv/core';
@@ -43,7 +45,8 @@ export const adminRoutes = new Hono<AppEnv>();
 
 adminRoutes.get('/storage/sizes', async (c) => {
   const keys = [
-    'state/lines.json',
+    'state/lines-manifest.json',
+    ...Array.from({ length: LINES_SHARD_COUNT }, (_, index) => lineShardKey(index)),
     'state/lines-archive.json',
     'state/probe.json',
     'state/line-index.json',
@@ -144,7 +147,7 @@ adminRoutes.get('/epg/unmatched', async (c) => {
 
 adminRoutes.post('/epg/clean-noise', async (c) => {
   const [state, channels] = await Promise.all([
-    getJson<{ lines?: Array<{ channelId: string }> }>(c.env, 'state/lines.json'),
+    loadLines(c.env),
     listChannels(c.env),
   ]);
   const live = new Set((state?.lines ?? []).map((line) => line.channelId));
@@ -1117,7 +1120,7 @@ adminRoutes.post('/lines/liveness', async (c) => {
     ? [...new Set(body.keys.filter((key): key is string => typeof key === 'string').map((key) => key.trim()).filter(Boolean))].slice(0, 30)
     : [];
   if (!keys.length) return fail('keys 不能为空');
-  const state = await getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json');
+  const state = await loadLines(c.env);
   const byKey = new Map((state?.lines ?? []).map((line) => [line.key, line]));
   const selected = keys.map((key) => byKey.get(key)).filter((line): line is LineEntry => Boolean(line));
   if (!selected.length) return fail('线路不存在', 404);

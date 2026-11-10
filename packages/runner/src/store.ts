@@ -1,4 +1,5 @@
-import type { AppSettings, ChannelConfig, LineEntry, Rule } from '@iptv/core';
+import { gunzipSync } from 'node:zlib';
+import { isGzipBytes, type AppSettings, type ChannelConfig, type LineEntry, type Rule } from '@iptv/core';
 
 export class ApiClient {
   constructor(
@@ -86,11 +87,27 @@ export class ApiClient {
         const response = await fetch(this.artifactUrl(key), { headers: this.headers(), signal: AbortSignal.timeout(60_000) });
         if (response.status === 404) return null;
         if (!response.ok) throw new Error(`GET ${key} -> ${response.status}`);
-        return response.text();
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        // Sharded state values are stored gzipped (no Content-Encoding header,
+        // so fetch does not decompress them for us).
+        return isGzipBytes(bytes) ? gunzipSync(bytes).toString('utf8') : new TextDecoder().decode(bytes);
       });
     } catch (error) {
       throw new Error(`读取 ${key} 失败: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  async deleteArtifact(key: string): Promise<void> {
+    await this.retry(async () => {
+      const response = await fetch(this.artifactUrl(key), {
+        method: 'DELETE',
+        headers: this.headers(),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!response.ok && response.status !== 404) {
+        throw new Error(`DELETE ${key} -> ${response.status}`);
+      }
+    });
   }
 }
 
@@ -114,6 +131,10 @@ export class ArtifactStore {
     const text = await this.getText(key);
     if (!text) return null;
     return JSON.parse(text) as T;
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.api.deleteArtifact(key);
   }
 
   /** F3: 让 Worker 代拉源内容（Actions 出口被源站拦时用），正文不落存储。 */

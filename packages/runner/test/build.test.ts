@@ -1,3 +1,4 @@
+import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { buildArtifacts } from '../src/pipeline/publish.js';
 import type { ArtifactStore } from '../src/store.js';
@@ -94,10 +95,13 @@ describe('buildArtifacts', () => {
 
 describe('publish', () => {
   it('writes catalog, index, shards and logs', async () => {
-    const written: Record<string, string> = {};
+    const written: Record<string, Uint8Array | string> = {};
     const fakeR2 = {
-      put: async (key: string, body: string) => {
-        written[key] = body;
+      put: async (key: string, body: string | Uint8Array) => {
+        written[key] = typeof body === 'string' ? body : new Uint8Array(body);
+      },
+      delete: async (key: string) => {
+        delete written[key];
       },
     } as unknown as ArtifactStore;
 
@@ -124,6 +128,19 @@ describe('publish', () => {
     expect(written['out/catalog.json']).toContain('"cctv1"');
     expect(written['state/index.json']).toContain('"totalChannels"');
     expect(written[`state/bucket/${bucketOf('cctv1', BUCKET_COUNT)}.json`]).toContain('"lines"');
+    // Sharded line state: manifest + 8 gzip shards, no legacy single value.
+    const manifest = JSON.parse(written['state/lines-manifest.json'] as string) as {
+      version: number;
+      total: number;
+      shards: Array<{ key: string; count: number }>;
+    };
+    expect(manifest.version).toBe(2);
+    expect(manifest.total).toBe(1);
+    expect(manifest.shards).toHaveLength(8);
+    expect(written['state/lines.json']).toBeUndefined();
+    const populated = manifest.shards.find((shard) => shard.count > 0)!;
+    const shardText = gunzipSync(written[populated.key] as Uint8Array).toString('utf8');
+    expect(shardText).toContain('"key":"1"');
     // F6: 中继热路径的紧凑索引必须随发布产出。
     expect(written['state/line-index.json']).toContain('"items"');
     expect(written['state/line-index.json']).toContain('"key":"1"');

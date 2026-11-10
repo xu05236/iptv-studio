@@ -28,3 +28,4 @@ export * from './export/index.js';
 export * from './diff.js';
 export * from './refresh.js';
 export * from './linePool.js';
+export * from './state/lines.js';

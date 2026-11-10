@@ -27,6 +27,7 @@ import {
 } from '../db.js';
 import { fail, ok, parseJsonField, randomId, randomToken, readJson } from '../lib/http.js';
 import { getJson, putArtifact } from '../lib/store.js';
+import { loadLines, saveLines } from '../lib/linesState.js';
 import { createTask, dispatchNext } from '../lib/tasks.js';
 import { countryOfGroup } from '../lib/channelCountry.js';
 import { loadIndex } from '../lib/catalog.js';
@@ -40,12 +41,12 @@ export const poolRoutes = new Hono<AppEnv>();
  */
 async function removeLinesFromArtifacts(env: Env, keys: Set<string>): Promise<number> {
   let removed = 0;
-  const state = await getJson<{ generatedAt?: string; lines: LineEntry[] }>(env, 'state/lines.json');
+  const state = await loadLines(env);
   if (state?.lines?.length) {
     const kept = state.lines.filter((line) => !keys.has(line.key));
     removed = state.lines.length - kept.length;
     if (removed) {
-      await putArtifact(env, 'state/lines.json', JSON.stringify({ generatedAt: state.generatedAt, lines: kept }), 'application/json; charset=utf-8');
+      await saveLines(env, kept, state.generatedAt ?? new Date().toISOString());
     }
   }
 
@@ -100,7 +101,7 @@ interface PoolLine extends LineEntry {
 
 async function loadPool(env: Env) {
   const [state, channels, sources, settings, overrides, favorites] = await Promise.all([
-    getJson<{ lines: LineEntry[] }>(env, 'state/lines.json'),
+    loadLines(env),
     listChannels(env),
     listSources(env),
     loadSettings(env),
@@ -495,7 +496,7 @@ poolRoutes.post('/tombstone', async (c) => {
 
   const keys = Array.isArray(body.keys) ? body.keys.filter((key): key is string => typeof key === 'string').slice(0, 200) : [];
   if (!keys.length) return fail('keys 或 urls 不能为空');
-  const state = await getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json');
+  const state = await loadLines(c.env);
   const selected = (state?.lines ?? []).filter((line) => keys.includes(line.key));
   if (!selected.length) return fail('线路不存在或已被删除', 404);
   const tombstoned = await addLineTombstones(
@@ -519,7 +520,7 @@ poolRoutes.post('/untombstone', async (c) => {
 
 /** 一次性迁移：旧待复测（失败≥2 次）改判已淘汰；已淘汰补 rejectedAt 并清掉旧 reviveAt。 */
 poolRoutes.post('/migrate-rejected', async (c) => {
-  const state = await getJson<{ generatedAt?: string; lines: LineEntry[] }>(c.env, 'state/lines.json');
+  const state = await loadLines(c.env);
   if (!state?.lines?.length) return fail('当前没有线路池', 404);
   const generatedAt = new Date().toISOString();
   let rejected = 0;
@@ -548,7 +549,7 @@ poolRoutes.post('/migrate-rejected', async (c) => {
     }
   }
   if (rejected || cleared) {
-    await putArtifact(c.env, 'state/lines.json', JSON.stringify({ generatedAt, lines: state.lines }), 'application/json; charset=utf-8');
+    await saveLines(c.env, state.lines, generatedAt);
   }
   await audit(c.env, c.get('actor'), 'pool.migrate-rejected', 'bulk', { rejected, cleared, total: state.lines.length });
   return ok({ rejected, cleared, total: state.lines.length });
@@ -563,7 +564,7 @@ poolRoutes.post('/revive', async (c) => {
   const sourceId = typeof body.sourceId === 'string' ? body.sourceId.trim().slice(0, 120) : '';
   const limit = Math.max(1, Math.min(1000, Number(body.limit) || 500));
   if (!keys.length && !sourceId) return fail('keys 或 sourceId 不能为空');
-  const state = await getJson<{ generatedAt?: string; lines: LineEntry[] }>(c.env, 'state/lines.json');
+  const state = await loadLines(c.env);
   if (!state?.lines?.length) return fail('当前没有线路池', 404);
   const selected = state.lines
     .filter((line) => line.status === 'dead' && (keys.includes(line.key) || (sourceId && line.sourceId === sourceId)))
@@ -576,7 +577,7 @@ poolRoutes.post('/revive', async (c) => {
     line.lastProbeAt = undefined;
     delete line.rejectedAt;
   }
-  await putArtifact(c.env, 'state/lines.json', JSON.stringify({ generatedAt, lines: state.lines }), 'application/json; charset=utf-8');
+  await saveLines(c.env, state.lines, generatedAt);
   const probeKeys = selected.slice(0, 50).map((line) => line.key);
   const task = await createTask(c.env, {
     type: 'probe-lines',
@@ -730,7 +731,7 @@ poolRoutes.post('/subscription', async (c) => {
  */
 poolRoutes.get('/orphans', async (c) => {
   const [state, sources] = await Promise.all([
-    getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json'),
+    loadLines(c.env),
     listSources(c.env),
   ]);
   const live = new Set(sources.map((source) => source.id));
@@ -748,7 +749,7 @@ poolRoutes.get('/orphans', async (c) => {
 poolRoutes.post('/orphans/cleanup', async (c) => {
   const body = await readJson<{ sourceId?: string }>(c);
   const [state, sources] = await Promise.all([
-    getJson<{ lines: LineEntry[] }>(c.env, 'state/lines.json'),
+    loadLines(c.env),
     listSources(c.env),
   ]);
   const live = new Set(sources.map((source) => source.id));
@@ -769,7 +770,7 @@ poolRoutes.post('/orphans/cleanup', async (c) => {
  * are old enough to archive.
  */
 poolRoutes.get('/line-stats', async (c) => {
-  const state = await getJson<{ generatedAt?: string; lines: LineEntry[] }>(c.env, 'state/lines.json');
+  const state = await loadLines(c.env);
   const lines = state?.lines ?? [];
   const now = Date.now();
   const cutoff = now - 30 * 86_400_000;

@@ -15,6 +15,7 @@ import {
 import type { Env } from '../env.js';
 import { listChannels, listCustomPoolMembers, listLineOverrides, listLineTombstones, type LineOverrideRow, type SubscriptionRow } from '../db.js';
 import { getJson } from './store.js';
+import { loadLines } from './linesState.js';
 import { parseJsonField } from './http.js';
 import { loadCatalog, loadPoolSnapshot, type ExportCatalog } from './catalog.js';
 import { applyProxyMode } from './proxyRewrite.js';
@@ -319,7 +320,7 @@ export async function renderSubscription(
 
   if (config.lineKeys?.length) {
     const [state, channels] = await Promise.all([
-      getJson<{ lines: LineEntry[] }>(env, 'state/lines.json'),
+      loadLines(env),
       listChannels(env),
     ]);
     const keys = new Set(config.lineKeys);

@@ -2,6 +2,7 @@ import type { AppSettings, RunReport, SourceRunStats } from '@iptv/core';
 import { computeParseDrop, DEFAULT_SETTINGS } from '@iptv/core';
 import type { Env } from './env.js';
 import { parseJsonField } from './lib/http.js';
+import { loadLines, saveLines } from './lib/linesState.js';
 
 export interface SourceRow {
   id: string;
@@ -503,7 +504,7 @@ export async function mergeChannels(env: Env, fromIds: string[], intoId: string)
   const fromSet = new Set(fromIds);
 
   // Read state before mutating so each merge record knows which line keys move.
-  const linesState = await env.KV.get<{ lines: Array<{ key?: string; channelId: string }> }>('state/lines.json', 'json');
+  const linesState = await loadLines(env);
   const probeState = await env.KV.get<{ items: Array<{ channelId?: string; key?: string; lineKey?: string }> }>('state/probe.json', 'json');
 
   for (const id of fromIds) {
@@ -532,7 +533,7 @@ export async function mergeChannels(env: Env, fromIds: string[], intoId: string)
         changed++;
       }
     }
-    if (changed) await env.KV.put('state/lines.json', JSON.stringify(linesState));
+    if (changed) await saveLines(env, linesState.lines, linesState.generatedAt ?? new Date().toISOString());
   }
   if (probeState?.items) {
     let changed = 0;
@@ -597,7 +598,7 @@ export async function undoChannelMerge(env: Env, mergeId: string): Promise<{ res
   }
 
   let restoredLines = 0;
-  const linesState = await env.KV.get<{ lines: Array<{ key?: string; channelId: string }> }>('state/lines.json', 'json');
+  const linesState = await loadLines(env);
   if (linesState?.lines) {
     for (const line of linesState.lines) {
       if (line.channelId === row.to_id && line.key && keys.has(line.key)) {
@@ -605,7 +606,7 @@ export async function undoChannelMerge(env: Env, mergeId: string): Promise<{ res
         restoredLines++;
       }
     }
-    if (restoredLines) await env.KV.put('state/lines.json', JSON.stringify(linesState));
+    if (restoredLines) await saveLines(env, linesState.lines, linesState.generatedAt ?? new Date().toISOString());
   }
   const probeState = await env.KV.get<{ items: Array<{ channelId?: string; key?: string; lineKey?: string }> }>('state/probe.json', 'json');
   if (probeState?.items) {

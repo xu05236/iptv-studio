@@ -22,6 +22,7 @@ import type { ArtifactStore } from '../store.js';
 import type { RunLogger } from '../logger.js';
 import { buildGuide, nowPlaying, upcoming } from './epg.js';
 import { LINES_ARCHIVE_TRIGGER_BYTES, mergeArchive, splitArchivable, type LinesArchive } from './archive.js';
+import { saveLinesState } from '../lib/linesState.js';
 import { matchLogoFile, type LogoPack } from './logoFiles.js';
 
 const GROUP_ORDER = ['央视', '卫视', '地方', '港澳台', '国际', '4K', '影视频道', '体育', '少儿', '纪录', '新闻', '音乐', '付费', '其他'];
@@ -272,13 +273,15 @@ export async function publish(
   const catalogBody = check('out/catalog.json', JSON.stringify(output.catalog));
   const indexBody = check('state/index.json', JSON.stringify(output.index));
   const encoder = new TextEncoder();
-  let linesBody = JSON.stringify({ generatedAt: options.generatedAt, lines: options.lines });
+  let linesToSave = options.lines;
+  let linesBody = JSON.stringify({ generatedAt: options.generatedAt, lines: linesToSave });
   if (encoder.encode(linesBody).byteLength > LINES_ARCHIVE_TRIGGER_BYTES) {
     const { keep, archived } = splitArchivable(options.lines, Date.now());
     if (archived.length) {
       const previous = await store.getJson<LinesArchive>('state/lines-archive.json').catch(() => null);
       const mergedArchive = mergeArchive(previous?.lines ?? [], archived);
       await store.put('state/lines-archive.json', JSON.stringify({ generatedAt: options.generatedAt, lines: mergedArchive }), json);
+      linesToSave = keep;
       linesBody = JSON.stringify({ generatedAt: options.generatedAt, lines: keep });
       logger.warn('lines.json 超过 12MB，已归档长期失效线路', { archived: archived.length, kept: keep.length, archiveTotal: mergedArchive.length });
       artifactTotal += 1;
@@ -288,12 +291,11 @@ export async function publish(
   if (encoder.encode(linesBody).byteLength > 20 * 1024 * 1024) {
     logger.warn('线路状态接近 KV 24MB 上限，将丢弃已失效超过 24 小时的墓碑线路');
     const cutoff = Date.now() - 24 * 3_600_000;
-    const trimmed = options.lines.filter(
+    linesToSave = options.lines.filter(
       (line) => line.status !== 'dead' || !line.lastProbeAt || new Date(line.lastProbeAt).getTime() > cutoff,
     );
-    linesBody = JSON.stringify({ generatedAt: options.generatedAt, lines: trimmed });
+    linesBody = JSON.stringify({ generatedAt: options.generatedAt, lines: linesToSave });
   }
-  linesBody = check('state/lines.json', linesBody);
   const guideBody = check('state/guide.json', JSON.stringify(output.guide));
   const nowBody = check('state/now.json', JSON.stringify({ generatedAt: options.generatedAt, channels: output.now }));
   const poolBody = options.poolSnapshot ? check('state/pool.json', JSON.stringify(options.poolSnapshot)) : null;
@@ -338,8 +340,8 @@ export async function publish(
   step('catalog.json');
   await store.put('state/index.json', indexBody, json);
   step('state/index.json');
-  await store.put('state/lines.json', linesBody, json);
-  step('state/lines.json');
+  await saveLinesState(store, linesToSave, options.generatedAt);
+  step('state/lines.json（8 分片）');
   // Never replace a populated guide with an empty one: one bad EPG fetch used
   // to wipe coverage for every player until the next good run.
   const guideChannelCount = Object.keys(output.guide.channels ?? {}).length;

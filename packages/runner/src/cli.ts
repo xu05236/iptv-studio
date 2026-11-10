@@ -38,6 +38,7 @@ import { planProbes, runProbes } from './pipeline/probe.js';
 import { buildArtifacts, publish, type ExportCatalog } from './pipeline/publish.js';
 import { buildGuide, collectEpg, guideIsFresh, mergeGuideFallback, type StoredGuide } from './pipeline/epg.js';
 import { loadLogoPacks } from './pipeline/logoFiles.js';
+import { loadLinesState, saveLinesState } from './lib/linesState.js';
 import { prefilterLiveness } from './pipeline/liveness.js';
 import { publishSubscriptions } from './pipeline/subscriptions.js';
 import { captureScreenshots } from './pipeline/screenshots.js';
@@ -427,7 +428,7 @@ async function runExport(): Promise<void> {
 
   try {
     const remote = await loadRemoteConfig(api);
-    const previousState = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const previousState = await loadLinesState(store);
     const lines = (previousState?.lines ?? []).filter((line) => !tombstones.has(canonicalPoolUrl(line.url)));
     if (!lines.length) throw new Error('没有线路状态，请先运行 fetch');
     report.sources = remote.sources.length;
@@ -845,10 +846,10 @@ async function runFetchPhase(): Promise<void> {
 
   try {
     const remote = await loadRemoteConfig(api);
-    const previousState = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const previousState = await loadLinesState(store);
     report.sources = remote.sources.length;
     const { lines, collected, sourceId } = await fetchPhase(api, remote, store, logger, previousState, tombstones);
-    await store.put('state/lines.json', JSON.stringify({ generatedAt: nowIso(), lines }), 'application/json');
+    await saveLinesState(store, lines, nowIso());
     await syncSourceStats(api, remote, lines, collected, sourceId);
 
     const alive = lines.filter((line) => line.status === 'alive').length;
@@ -908,7 +909,7 @@ async function runProbePhase(): Promise<void> {
 
   try {
     const remote = await loadRemoteConfig(api);
-    const previousState = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const previousState = await loadLinesState(store);
     const lines = previousState?.lines ?? [];
     if (!lines.length) throw new Error('没有线路状态，请先运行 fetch');
     report.sources = remote.sources.length;
@@ -916,7 +917,7 @@ async function runProbePhase(): Promise<void> {
     const { summary } = await probePhase(lines, remote, config, logger, sourceId, false);
 
     const generatedAt = nowIso();
-    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    await saveLinesState(store, lines, generatedAt);
     await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
     await writePoolStats(store, remote, lines);
   await syncSourceCounts(api, remote, lines);
@@ -989,7 +990,7 @@ async function runBatchProbe(): Promise<void> {
   try {
     const remote = await loadRemoteConfig(api);
     const settings = remote.settings;
-    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const previous = await loadLinesState(store);
     const lines = previous?.lines ?? [];
     if (!lines.length) throw new Error('没有线路状态，请先运行 fetch');
     const channelIds = new Set(remote.channels.map((channel) => channel.id));
@@ -1059,7 +1060,7 @@ async function runBatchProbe(): Promise<void> {
     logger.info('分批探测完成', { phase, checked: selected.length, probed: summary.probed, alive: summary.alive, dead: summary.dead });
 
     const generatedAt = nowIso();
-    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    await saveLinesState(store, lines, generatedAt);
     await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
     await writePoolStats(store, remote, lines);
   await syncSourceCounts(api, remote, lines);
@@ -1105,7 +1106,7 @@ async function runBatchProbe(): Promise<void> {
 
   try {
     const remote = await loadRemoteConfig(api);
-    const previousState = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const previousState = await loadLinesState(store);
     const lines = previousState?.lines ?? [];
     if (!lines.length) throw new Error('没有线路状态，请先运行 fetch/probe');
     report.sources = remote.sources.length;
@@ -1155,7 +1156,7 @@ async function runCollectCombined(): Promise<void> {
 
   try {
     const remote = await loadRemoteConfig(api);
-    const previousState = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const previousState = await loadLinesState(store);
     report.sources = remote.sources.length;
     logger.info('配置加载完成', { sources: remote.sources.length, channels: remote.channels.length, rules: remote.rules.length });
 
@@ -1227,7 +1228,7 @@ async function runLiveness(): Promise<void> {
   try {
     const remote = await loadRemoteConfig(api);
     const settings = remote.settings;
-    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const previous = await loadLinesState(store);
     const lines = previous?.lines ?? [];
     const dueHours = Math.max(1, envNumber('LINE_LIVENESS_HOURS') ?? 24);
     const budget = Math.max(1, envNumber('PROBE_BUDGET') ?? settings.probeBudget ?? 1200);
@@ -1276,7 +1277,7 @@ async function runLiveness(): Promise<void> {
     logger.info('轻量测活完成', { checked: selected.length, alive, failed, skipped });
 
     const generatedAt = nowIso();
-    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    await saveLinesState(store, lines, generatedAt);
     const poolSnapshot = buildPoolSnapshot({
       lines,
       channels: remote.channels.map((channel) => ({ id: channel.id, name: channel.name, group: channel.group_title ?? '其他', tvgId: channel.tvg_id, logo: channel.logo })),
@@ -1370,7 +1371,7 @@ async function runSelectedProbes(): Promise<void> {
     if (!keys.size) throw new Error('LINE_KEYS 不能为空');
     const remote = await loadRemoteConfig(api);
     const settings = remote.settings;
-    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const previous = await loadLinesState(store);
     const lines = previous?.lines ?? [];
     const selected = lines.filter((line) => keys.has(line.key));
     if (!selected.length) throw new Error('选中的线路不存在或已被删除');
@@ -1384,7 +1385,7 @@ async function runSelectedProbes(): Promise<void> {
     logger.info('选中线路探测完成', { probed: summary.probed, alive: summary.alive, suspect: summary.suspect, dead: summary.dead });
 
     const generatedAt = nowIso();
-    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    await saveLinesState(store, lines, generatedAt);
     const poolSnapshot = buildPoolSnapshot({
       lines,
       channels: remote.channels.map((channel) => ({ id: channel.id, name: channel.name, group: channel.group_title ?? '其他', tvgId: channel.tvg_id, logo: channel.logo })),
@@ -1441,11 +1442,11 @@ async function runCleanupOrphans(): Promise<void> {
 
   try {
     const remote = await loadRemoteConfig(api);
-    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const previous = await loadLinesState(store);
     const pruned = pruneOrphanLines(remote, previous?.lines ?? []);
     const lines = pruned.lines;
     const generatedAt = nowIso();
-    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    await saveLinesState(store, lines, generatedAt);
     await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
     await writePoolStats(store, remote, lines);
   await syncSourceCounts(api, remote, lines);
@@ -1492,7 +1493,7 @@ async function runCleanupRejected(): Promise<void> {
   try {
     const remote = await loadRemoteConfig(api);
     const settings = remote.settings;
-    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const previous = await loadLinesState(store);
     const lines = previous?.lines ?? [];
     const retention = Math.max(1, Number(settings.rejectedRetentionDays) || 30);
     const expired = lines.filter((line) => line.status === 'dead' && isPurgeable(line, retention, new Date()));
@@ -1512,7 +1513,7 @@ async function runCleanupRejected(): Promise<void> {
     const removed = new Set(expired.map((line) => line.key));
     const kept = lines.filter((line) => !removed.has(line.key));
     const generatedAt = nowIso();
-    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines: kept }), 'application/json');
+    await saveLinesState(store, kept, generatedAt);
     await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, kept, generatedAt)), 'application/json');
     await writePoolStats(store, remote, kept);
     await syncSourceCounts(api, remote, kept);
@@ -1554,7 +1555,7 @@ async function runReviveBatch(): Promise<void> {
   try {
     const remote = await loadRemoteConfig(api);
     const settings = remote.settings;
-    const previous = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const previous = await loadLinesState(store);
     const lines = previous?.lines ?? [];
     const budget = Math.max(1, Number(process.env.PROBE_BUDGET || settings.monthlyReviveBatchSize) || 800);
     const selected = lines
@@ -1593,7 +1594,7 @@ async function runReviveBatch(): Promise<void> {
       }
     }
     const generatedAt = nowIso();
-    await store.put('state/lines.json', JSON.stringify({ generatedAt, lines }), 'application/json');
+    await saveLinesState(store, lines, generatedAt);
     await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
     await writePoolStats(store, remote, lines);
     await syncSourceCounts(api, remote, lines);
@@ -1650,7 +1651,7 @@ async function runRulesPreview(): Promise<void> {
 
   try {
     const remote = await loadRemoteConfig(api);
-    const state = await store.getJson<{ lines: LineEntry[] }>('state/lines.json');
+    const state = await loadLinesState(store);
     const lines = state?.lines ?? [];
     const compiled = compileRules(remote.rules);
     const byChannel = new Map<string, LineEntry[]>();
