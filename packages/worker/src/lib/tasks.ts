@@ -140,13 +140,8 @@ export async function loadTasks(env: Env): Promise<Task[]> {
   }
 }
 
-async function saveTasks(env: Env, tasks: Task[]): Promise<void> {
-  // Merge with current D1 rows first: a stale caller must not erase a task
-  // another request just created, finished, or scheduled.
-  const existing = await loadTasks(env);
-  const merged = new Map(existing.map((task) => [task.id, task]));
-  for (const task of tasks) merged.set(task.id, task);
-  const all = [...merged.values()];
+/** Write the exact task list without merging; only cleanup paths should call this. */
+async function writeTasks(env: Env, all: Task[]): Promise<void> {
   const active = all.filter((task) => task.status === 'queued' || task.status === 'running' || task.status === 'paused' || task.status === 'scheduled');
   const finished = all
     .filter((task) => task.status === 'done' || task.status === 'failed' || task.status === 'cancelled')
@@ -162,6 +157,15 @@ async function saveTasks(env: Env, tasks: Task[]): Promise<void> {
   }
 }
 
+async function saveTasks(env: Env, tasks: Task[]): Promise<void> {
+  // Merge with current D1 rows first: a stale caller must not erase a task
+  // another request just created, finished, or scheduled.
+  const existing = await loadTasks(env);
+  const merged = new Map(existing.map((task) => [task.id, task]));
+  for (const task of tasks) merged.set(task.id, task);
+  await writeTasks(env, [...merged.values()]);
+}
+
 /** Drop failed task records so stale, already-fixed failures stop cluttering the board. */
 export async function deleteFailedTasks(env: Env, olderThanMs = 0): Promise<number> {
   return withTaskLock(env, async () => {
@@ -173,7 +177,7 @@ export async function deleteFailedTasks(env: Env, olderThanMs = 0): Promise<numb
       return finished > cutoff;
     });
     const removed = tasks.length - kept.length;
-    if (removed) await saveTasks(env, kept);
+    if (removed) await writeTasks(env, kept);
     return removed;
   });
 }
