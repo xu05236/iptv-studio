@@ -513,7 +513,10 @@ poolRoutes.post('/untombstone', async (c) => {
   const body = (await readJson<{ urls?: unknown }>(c)) ?? {};
   const urls = Array.isArray(body.urls) ? body.urls.filter((url): url is string => typeof url === 'string' && Boolean(url.trim())).slice(0, 500) : [];
   if (!urls.length) return fail('urls 不能为空');
-  const removed = await removeLineTombstones(c.env, urls);
+  // Tombstones are stored canonicalised; canonicalise lookups too, otherwise a
+  // case/slash/trailing-? difference silently fails to lift the tombstone.
+  const canonical = urls.map((url) => canonicalPoolUrl(url));
+  const removed = await removeLineTombstones(c.env, canonical);
   await audit(c.env, c.get('actor'), 'pool.untombstone', 'bulk', { urls, removed });
   return ok({ removed });
 });

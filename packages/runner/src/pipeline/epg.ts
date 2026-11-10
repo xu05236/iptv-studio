@@ -236,11 +236,14 @@ export function buildGuide(data: EpgData, channelIds: Set<string>, hours = 24): 
   const now = Date.now();
   const horizon = now + hours * 3_600_000;
   const channels: Record<string, GuideProgramme[]> = {};
+  // 30-minute slots is the typical EPG granularity; cap at 2/h plus headroom so
+  // a 24h guide is not silently cut off after ~8h (the old fixed 16).
+  const maxPerChannel = Math.max(16, Math.ceil(hours * 2));
   for (const programme of data.programmes) {
     if (!channelIds.has(programme.channelId)) continue;
     if (programme.start > horizon || (programme.stop ?? programme.start) < now - 3_600_000) continue;
     const list = channels[programme.channelId] ?? [];
-    if (list.length < 16) list.push({ title: programme.title, start: programme.start, stop: programme.stop });
+    if (list.length < maxPerChannel) list.push({ title: programme.title, start: programme.start, stop: programme.stop });
     channels[programme.channelId] = list;
   }
   return { generatedAt: new Date().toISOString(), hours, channels };

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link2, Plus, RefreshCw, SlidersHorizontal, Trash2, Wand2, X } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -61,6 +61,10 @@ export function SubscriptionsAdmin() {
   const queryClient = useQueryClient();
   const { show } = useToast();
   const [open, setOpen] = useState(false);
+  // Monotonic request ids: a slow earlier preview response must not overwrite
+  // the result of a newer keystroke/selection.
+  const formPreviewSeq = useRef(0);
+  const previewSeq = useRef(0);
   const [editing, setEditing] = useState<SubscriptionItem | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [channelIds, setChannelIds] = useState<string[]>([]);
@@ -246,6 +250,7 @@ export function SubscriptionsAdmin() {
       return;
     }
     const timer = setTimeout(() => {
+      const seq = ++formPreviewSeq.current;
       void api
         .post<{ channels: number; lines: number; stats: { indexAlive: number | null; poolLines: number; exported: number } }>(
           '/api/admin/subscriptions/render-preview',
@@ -263,13 +268,18 @@ export function SubscriptionsAdmin() {
             format: form.format,
           },
         )
-        .then((result) => setFormPreview(result))
-        .catch(() => setFormPreview(null));
+        .then((result) => {
+          if (seq === formPreviewSeq.current) setFormPreview(result);
+        })
+        .catch(() => {
+          if (seq === formPreviewSeq.current) setFormPreview(null);
+        });
     }, 600);
     return () => clearTimeout(timer);
   }, [open, form.poolMode, form.poolIds, form.filterMode, form.groups, form.excludeGroups, form.minResolution, form.minSpeedKbps, form.maxLines, form.showRegionSuffix, form.format, channelIds]);
 
   async function loadPreview(item: SubscriptionItem): Promise<void> {
+    const seq = ++previewSeq.current;
     try {
       const result = await api.get<{
         preview: string;
@@ -278,9 +288,11 @@ export function SubscriptionsAdmin() {
         lines?: number;
         stats?: { indexAlive: number | null; poolLines: number; exported: number };
       }>(`/api/admin/subscriptions/${item.id}/preview?format=${item.format}`);
+      if (seq !== previewSeq.current) return;
       setPreview({ name: item.name, body: result.preview, format: result.format, channels: result.channels, lines: result.lines, stats: result.stats });
       show(`实际导出：${result.channels ?? '—'} 个频道 · ${result.lines ?? '—'} 条线路`);
     } catch (error) {
+      if (seq !== previewSeq.current) return;
       show(error instanceof Error ? error.message : '预览失败', 'error');
     }
   }

@@ -96,7 +96,8 @@ artifactRoutes.get('/sub/:file', async (c) => {
 
   // Pool-driven subscriptions are rendered live so manual pool moves apply
   // immediately; a prebuilt file from an older run would shadow that.
-  const poolDriven = !config.lineKeys?.length && (config.poolMode === 'premium' || config.poolMode === 'premium_backup');
+  const poolDriven = !config.lineKeys?.length
+    && (config.poolMode === 'premium' || config.poolMode === 'premium_backup' || config.poolMode === 'all' || config.poolMode === 'pools');
 
   // Fast path: the runner pre-renders catalog subscriptions (zero CPU here).
   const prebuilt = config.format === 'diyp'

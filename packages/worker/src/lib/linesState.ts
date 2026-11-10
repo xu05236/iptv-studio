@@ -38,7 +38,15 @@ export async function loadLines(env: Env): Promise<LinesState> {
   const manifest = await env.KV.get<LinesManifest>(LINES_MANIFEST_KEY, 'json');
   if (manifest?.version === LINES_FORMAT_VERSION && manifest.shards?.length) {
     const lines: LineEntry[] = [];
-    for (const shard of manifest.shards) lines.push(...(await readShard(env, shard.key)));
+    for (const shard of manifest.shards) {
+      const parsed = await readShard(env, shard.key);
+      // Counts in the manifest make an interrupted publish (new shard, old
+      // manifest) fail closed instead of silently loading a mixed state.
+      if (typeof shard.count === 'number' && parsed.length !== shard.count) {
+        throw new Error(`线路分片 ${shard.key} 条数不符（${parsed.length}/${shard.count}），疑似发布中断，已中止以保护现有线路状态`);
+      }
+      lines.push(...parsed);
+    }
     if (lines.length < manifest.total) {
       throw new Error(`线路分片读取不完整（${lines.length}/${manifest.total}），已中止以保护现有线路状态`);
     }

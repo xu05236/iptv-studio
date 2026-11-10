@@ -70,13 +70,14 @@ function ensureLockTable(env: Env): Promise<void> {
  */
 async function withTaskLock<T>(env: Env, fn: () => Promise<T>): Promise<T> {
   if (!env.DB) return fn();
+  const db = env.DB;
   const owner = crypto.randomUUID();
   let executed = false;
   try {
     await ensureLockTable(env);
     for (let attempt = 0; attempt < 40; attempt++) {
       const now = Date.now();
-      const result = await env.DB.prepare(
+      const result = await db.prepare(
         `INSERT INTO task_locks (id, owner, expires_at) VALUES (?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at
          WHERE task_locks.expires_at < ?`,
@@ -85,18 +86,30 @@ async function withTaskLock<T>(env: Env, fn: () => Promise<T>): Promise<T> {
         .run();
       if (Number((result.meta as { changes?: number }).changes ?? 0) > 0) {
         executed = true;
+        // Renew while the mutation runs: dispatching a workflow or a slow D1
+        // call can exceed the 60s lease, which used to let a second request in
+        // and overwrite the queue.
+        const renewal = setInterval(() => {
+          void db.prepare('UPDATE task_locks SET expires_at = ? WHERE id = ? AND owner = ?')
+            .bind(Date.now() + LOCK_TTL_MS, LOCK_ID, owner)
+            .run()
+            .catch(() => undefined);
+        }, Math.max(5_000, Math.floor(LOCK_TTL_MS / 3)));
         try {
           return await fn();
         } finally {
-          await env.DB.prepare('DELETE FROM task_locks WHERE id = ? AND owner = ?').bind(LOCK_ID, owner).run().catch(() => undefined);
+          clearInterval(renewal);
+          await db.prepare('DELETE FROM task_locks WHERE id = ? AND owner = ?').bind(LOCK_ID, owner).run().catch(() => undefined);
         }
       }
       await new Promise((resolve) => setTimeout(resolve, 25 + Math.random() * 50));
     }
   } catch (error) {
     if (executed) throw error;
-    console.error('task lock failed, falling back to unlocked mutation', error);
-    return fn();
+    // Locking is not optional: mutating the shared task list unlocked is what
+    // duplicates/drops tasks under load. Fail closed and let the caller retry.
+    console.error('task lock failed', error);
+    throw new Error('任务队列暂不可用（排队锁获取失败），请稍后重试');
   }
   throw new Error('任务队列繁忙，请稍后重试');
 }

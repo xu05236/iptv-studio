@@ -32,7 +32,11 @@ export async function loadLinesState(store: ArtifactStore): Promise<LinesState> 
         // failed to read. Fail loudly and keep the stored state untouched.
         throw new Error(`线路分片 ${shard.key} 读取失败，已中止以保护现有线路状态`);
       }
-      lines.push(...parseLinesBody(text));
+      const parsed = parseLinesBody(text);
+      if (typeof shard.count === 'number' && parsed.length !== shard.count) {
+        throw new Error(`线路分片 ${shard.key} 条数不符（${parsed.length}/${shard.count}），疑似发布中断，已中止以保护现有线路状态`);
+      }
+      lines.push(...parsed);
     }
     if (lines.length < manifest.total) {
       throw new Error(`线路分片读取不完整（${lines.length}/${manifest.total}），已中止以保护现有线路状态`);

@@ -289,11 +289,8 @@ export function Sources() {
   const bulk = useMutation({
     mutationFn: async (action: { kind: 'enable' | 'disable' | 'delete' | 'tag' | 'priority'; tag?: string; priority?: number }) => {
       const ids = [...selected];
-      if (action.kind === 'delete') {
-        await Promise.all(ids.map((id) => api.del(`/api/admin/sources/${id}`)));
-        return;
-      }
-      await Promise.all(ids.map((id) => {
+      const results = await Promise.allSettled(ids.map((id) => {
+        if (action.kind === 'delete') return api.del(`/api/admin/sources/${id}`);
         if (action.kind === 'tag') {
           const source = data?.items.find((item) => item.id === id);
           const tags = [...new Set([...(source?.tags ?? []), action.tag ?? ''])].filter(Boolean);
@@ -302,13 +299,24 @@ export function Sources() {
         if (action.kind === 'priority') return api.patch(`/api/admin/sources/${id}`, { priority: action.priority ?? 100 });
         return api.patch(`/api/admin/sources/${id}`, { enabled: action.kind === 'enable' ? 1 : 0 });
       }));
+      const failed = results.filter((result) => result.status === 'rejected');
+      if (failed.length) {
+        const first = failed[0] as PromiseRejectedResult;
+        const reason = first.reason instanceof Error ? first.reason.message : '请求失败';
+        throw new Error(`批量操作部分失败（${ids.length - failed.length}/${ids.length} 成功）：${reason}`);
+      }
     },
     onSuccess: () => {
       show('批量操作完成');
       setSelected(new Set());
       void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
     },
-    onError: (error: Error) => show(error.message, 'error'),
+    onError: (error: Error) => {
+      // Half of the requests may have succeeded; refresh so the UI shows the
+      // real state instead of the pre-bulk snapshot.
+      show(error.message, 'error');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
+    },
   });
 
   const probe = useMutation({

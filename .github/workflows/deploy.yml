@@ -7,6 +7,8 @@ on:
     paths:
       - 'packages/worker/**'
       - 'packages/core/**'
+      - 'packages/runner/**'
+      - 'scripts/**'
       - 'apps/web/**'
       - 'package.json'
       - 'package-lock.json'

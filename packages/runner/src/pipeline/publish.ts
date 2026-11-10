@@ -344,7 +344,8 @@ export async function publish(
     logger.warn('EPG 产物偏大', { mb: Math.round((epgBytes / 1024 / 1024) * 10) / 10 });
   }
   const epgBody = options.epgXml && epgBytes <= 24 * 1024 * 1024 ? options.epgXml : null;
-  if (options.epgXml && !epgBody) {
+  const epgTooLarge = Boolean(options.epgXml && !epgBody);
+  if (epgTooLarge) {
     logger.warn('EPG 超过 KV 单值 24MB 限制，已跳过发布', { mb: Math.round(epgBytes / 1024 / 1024) });
   }
 
@@ -414,5 +415,10 @@ export async function publish(
   // not spend 5 extra KV writes on every run.
   step('发布完成');
   logger.info('产物已发布', { objects, buckets: buckets.size, channels: output.catalog.items.length });
+  if (epgTooLarge) {
+    // Other artifacts are already updated; still fail the run so the operator
+    // notices instead of silently serving a stale EPG forever.
+    throw new Error(`EPG 超过 KV 单值 24MB 限制（${Math.round(epgBytes / 1024 / 1024)}MB），已跳过发布；其余产物已更新`);
+  }
   return { objects };
 }

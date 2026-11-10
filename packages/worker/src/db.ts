@@ -500,31 +500,23 @@ export async function deleteLineOverrides(env: Env, keys: string[]): Promise<num
 export async function mergeChannels(env: Env, fromIds: string[], intoId: string): Promise<number> {
   const target = await getChannel(env, intoId);
   if (!target) throw new Error('目标频道不存在');
-  let merged = 0;
   const fromSet = new Set(fromIds);
 
   // Read state before mutating so each merge record knows which line keys move.
   const linesState = await loadLines(env);
   const probeState = await env.KV.get<{ items: Array<{ channelId?: string; key?: string; lineKey?: string }> }>('state/probe.json', 'json');
-
+  // Capture per-source keys before the remap below collapses them into intoId.
+  const keysBySource = new Map<string, string[]>();
   for (const id of fromIds) {
     if (id === intoId) continue;
-    const source = await getChannel(env, id);
-    if (!source) continue;
-    const aliases = (await env.DB.prepare('SELECT alias FROM aliases WHERE channel_id = ?').bind(id).all<{ alias: string }>()).results.map((row) => row.alias);
-    const lineKeys = (linesState?.lines ?? []).filter((line) => line.channelId === id && line.key).map((line) => line.key as string);
-    await addAlias(env, intoId, source.name);
-    if (source.tvg_id) await addAlias(env, intoId, source.tvg_id);
-    await env.DB.prepare('UPDATE aliases SET channel_id = ? WHERE channel_id = ?').bind(intoId, id).run();
-    await env.DB.prepare('DELETE FROM channels WHERE id = ?').bind(id).run();
-    await env.DB.prepare('INSERT INTO channel_merges (id, from_id, to_id, snapshot, line_keys) VALUES (?, ?, ?, ?, ?)')
-      .bind(`merge-${crypto.randomUUID()}`, id, intoId, JSON.stringify({ channel: source, aliases }), JSON.stringify(lineKeys))
-      .run();
-    merged++;
+    keysBySource.set(
+      id,
+      (linesState?.lines ?? []).filter((line) => line.channelId === id && line.key).map((line) => line.key as string),
+    );
   }
 
-  // Existing probe state still points at the old x- channel. Remap it now so
-  // the next export/subscription does not resurrect the deleted channel.
+  // Persist the line/probe remap first. If this write fails, no channel has
+  // been deleted yet, so the merge can be retried without losing lines.
   if (linesState?.lines) {
     let changed = 0;
     for (const line of linesState.lines) {
@@ -544,6 +536,22 @@ export async function mergeChannels(env: Env, fromIds: string[], intoId: string)
       }
     }
     if (changed) await env.KV.put('state/probe.json', JSON.stringify(probeState));
+  }
+
+  let merged = 0;
+  for (const id of fromIds) {
+    if (id === intoId) continue;
+    const source = await getChannel(env, id);
+    if (!source) continue;
+    const aliases = (await env.DB.prepare('SELECT alias FROM aliases WHERE channel_id = ?').bind(id).all<{ alias: string }>()).results.map((row) => row.alias);
+    await addAlias(env, intoId, source.name);
+    if (source.tvg_id) await addAlias(env, intoId, source.tvg_id);
+    await env.DB.prepare('UPDATE aliases SET channel_id = ? WHERE channel_id = ?').bind(intoId, id).run();
+    await env.DB.prepare('DELETE FROM channels WHERE id = ?').bind(id).run();
+    await env.DB.prepare('INSERT INTO channel_merges (id, from_id, to_id, snapshot, line_keys) VALUES (?, ?, ?, ?, ?)')
+      .bind(`merge-${crypto.randomUUID()}`, id, intoId, JSON.stringify({ channel: source, aliases }), JSON.stringify(keysBySource.get(id) ?? []))
+      .run();
+    merged++;
   }
   return merged;
 }

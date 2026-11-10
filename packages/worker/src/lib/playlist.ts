@@ -279,7 +279,7 @@ export function poolEtag(
   const overrideVersion = overrides.reduce((max, row) => (row.updated_at > max ? row.updated_at : max), '');
   const tombstoneVersion = tombstones.reduce((max, row) => (row.created_at > max ? row.created_at : max), '');
   const fingerprint = hashId(
-    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}:${(config.poolIds ?? []).join(',')}:${customVersion}:${config.proxyMode ?? 'direct'}`,
+    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}:${(config.poolIds ?? []).join(',')}:${customVersion}:${config.proxyMode ?? 'direct'}:${config.format}:${config.filterMode ?? 'inherit'}:${config.groups.join(',')}:${config.excludeGroups.join(',')}:${(config.channelIds ?? []).join(',')}:${config.minResolution}:${config.minSpeedKbps}:${(config.protocols ?? []).join(',')}:${config.maxLinesPerChannel}:${config.showRegionSuffix ? 1 : 0}:${config.includeEpg ? 1 : 0}`,
     16,
   );
   return `W/"pool-${fingerprint}"`;
@@ -297,7 +297,11 @@ export async function renderSubscription(
     const mode = config.proxyMode ?? 'direct';
     if (mode === 'direct') return result;
     // 该 token 当日中继配额已用尽时回退直连，避免整份清单都是 429 地址。
-    if (relayQuotaExceeded(`token:${config.token}`)) return result;
+    // 回退后的 body 与中继 body 不同，ETag 必须跟着变，否则条件请求会拿到
+    // 304 + 旧的中继地址（已过期/无签名）。
+    if (relayQuotaExceeded(`token:${config.token}`)) {
+      return { ...result, etag: `W/"quota-${hashId(`${result.etag}:direct`, 16)}"` };
+    }
     const body = await applyProxyMode(result.body, config.format, (url) => signProxyUrl(env, baseUrl, url, config.token, mode));
     return { ...result, body };
   };
@@ -364,7 +368,7 @@ export async function renderSubscription(
   // Pool-driven subscriptions render from the tested-alive snapshot; the
   // catalog remains the fallback until the first publish writes pool.json.
   const poolMode = config.poolMode ?? 'premium';
-  if (poolMode === 'premium' || poolMode === 'premium_backup') {
+  if (poolMode === 'premium' || poolMode === 'premium_backup' || poolMode === 'all') {
     const snapshot = await loadPoolSnapshot(env);
     if (snapshot) {
       const [overrides, tombstones] = await Promise.all([listLineOverrides(env), listLineTombstones(env)]);

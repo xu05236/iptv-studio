@@ -336,7 +336,16 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
                 改用直连
               </Button>
             ) : null}
-            <Button variant="glass" size="sm" onClick={() => setStarted(false)}>
+            <Button
+              variant="glass"
+              size="sm"
+              onClick={() => {
+                // Clear the fatal error too: the error overlay sits above the
+                // video, so only resetting `started` made "重试" a dead button.
+                setError(null);
+                setStarted(false);
+              }}
+            >
               <RotateCcw size={14} /> 重试
             </Button>
           </div>
