@@ -16,7 +16,8 @@ import {
 } from '../db.js';
 import { fail, ok, randomId, randomToken, readJson, toStringList } from '../lib/http.js';
 import { channelMatches, renderSubscription, subscriptionFromRow, type SubscriptionConfig } from '../lib/playlist.js';
-import { loadCatalog } from '../lib/catalog.js';
+import { loadCatalog, loadIndex, loadPoolSnapshot } from '../lib/catalog.js';
+import type { Env } from '../env.js';
 import { extensionFor } from '@iptv/core';
 
 export const subscriptionRoutes = new Hono<AppEnv>();
@@ -112,6 +113,59 @@ subscriptionRoutes.post('/', async (c) => {
   await createSubscription(c.env, row);
   await audit(c.env, c.get('actor'), 'subscription.create', id, { name: row.name });
   return ok({ subscription: row, links: links(c, row) }, 201);
+});
+
+/**
+ * Why a pool export is smaller than the index: the index counts every alive
+ * line, while a subscription only sees lines that made it into the tested pool
+ * snapshot (deduped URL, quality confirmed, channel still present). These
+ * counts power the "2280 vs 2218" explanation in the subscription form.
+ */
+async function exportStats(env: Env, exported: number): Promise<{ indexAlive: number | null; poolLines: number; exported: number }> {
+  const [snapshot, index] = await Promise.all([loadPoolSnapshot(env), loadIndex(env)]);
+  const poolLines = snapshot
+    ? Object.values(snapshot.channels).reduce((sum, entry) => sum + entry.premium.length + entry.backup.length + entry.candidate.length, 0)
+    : 0;
+  return { indexAlive: index?.aliveLines ?? null, poolLines, exported };
+}
+
+function previewConfig(input: Record<string, unknown>): SubscriptionConfig {
+  const list = (value: unknown): string[] => (Array.isArray(value) ? value.map(String) : []);
+  return {
+    id: 'preview',
+    name: '预览',
+    token: 'preview',
+    enabled: true,
+    groups: list(input['groups']),
+    excludeGroups: list(input['excludeGroups']),
+    channelIds: list(input['channelIds'] ?? input['channels']),
+    lineKeys: list(input['lineKeys']),
+    poolIds: list(input['poolIds']),
+    poolMode: String(input['poolMode'] ?? 'premium'),
+    filterMode: String(input['filterMode'] ?? 'inherit'),
+    proxyMode: 'direct',
+    minResolution: (input['minResolution'] as SubscriptionConfig['minResolution']) ?? 'any',
+    minSpeedKbps: Number(input['minSpeedKbps'] ?? 0),
+    protocols: list(input['protocols']) as SubscriptionConfig['protocols'],
+    maxLinesPerChannel: Number(input['maxLinesPerChannel'] ?? 0),
+    showRegionSuffix: Boolean(input['showRegionSuffix']),
+    includeEpg: false,
+    format: (input['format'] as SubscriptionConfig['format']) ?? 'm3u',
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/** Count what the current (unsaved) form would export before creating it. */
+subscriptionRoutes.post('/render-preview', async (c) => {
+  const input = (await readJson<Record<string, unknown>>(c)) ?? {};
+  const config = previewConfig(input);
+  const rendered = await renderSubscription(c.env, config, baseUrl(c));
+  if (!rendered) return fail('尚未生成频道数据，请先运行采集任务', 409);
+  return ok({
+    channels: rendered.channels,
+    lines: rendered.lines,
+    stats: await exportStats(c.env, rendered.lines),
+  });
 });
 
 subscriptionRoutes.get('/:id', async (c) => {
@@ -229,6 +283,7 @@ subscriptionRoutes.get('/:id/preview', async (c) => {
     channels: rendered.channels,
     lines: rendered.lines,
     matched: rendered.channels,
+    stats: await exportStats(c.env, rendered.lines),
     preview: rendered.body.slice(0, 40_000),
   });
 });

@@ -44,6 +44,7 @@ export const adminRoutes = new Hono<AppEnv>();
 adminRoutes.get('/storage/sizes', async (c) => {
   const keys = [
     'state/lines.json',
+    'state/lines-archive.json',
     'state/probe.json',
     'state/line-index.json',
     'state/index.json',

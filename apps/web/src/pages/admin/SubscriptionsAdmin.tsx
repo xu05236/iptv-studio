@@ -65,7 +65,19 @@ export function SubscriptionsAdmin() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [channelIds, setChannelIds] = useState<string[]>([]);
   const [channelSearch, setChannelSearch] = useState('');
-  const [preview, setPreview] = useState<{ name: string; body: string; format: string; channels?: number; lines?: number } | null>(null);
+  const [preview, setPreview] = useState<{
+    name: string;
+    body: string;
+    format: string;
+    channels?: number;
+    lines?: number;
+    stats?: { indexAlive: number | null; poolLines: number; exported: number };
+  } | null>(null);
+  const [formPreview, setFormPreview] = useState<{
+    channels: number;
+    lines: number;
+    stats: { indexAlive: number | null; poolLines: number; exported: number };
+  } | null>(null);
   const [exportLimit, setExportLimit] = useState('0');
   const [frontLimit, setFrontLimit] = useState('0');
   const [maxPerSource, setMaxPerSource] = useState('0');
@@ -228,10 +240,45 @@ export function SubscriptionsAdmin() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  useEffect(() => {
+    if (!open || form.poolMode !== 'pools' || !form.poolIds.length) {
+      setFormPreview(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      void api
+        .post<{ channels: number; lines: number; stats: { indexAlive: number | null; poolLines: number; exported: number } }>(
+          '/api/admin/subscriptions/render-preview',
+          {
+            poolMode: form.poolMode,
+            poolIds: form.poolIds,
+            filterMode: form.filterMode,
+            groups: split(form.groups),
+            excludeGroups: split(form.excludeGroups),
+            channelIds,
+            minResolution: form.minResolution,
+            minSpeedKbps: Number(form.minSpeedKbps || 0),
+            maxLinesPerChannel: Math.max(0, Number(form.maxLines) || 0),
+            showRegionSuffix: form.showRegionSuffix,
+            format: form.format,
+          },
+        )
+        .then((result) => setFormPreview(result))
+        .catch(() => setFormPreview(null));
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [open, form.poolMode, form.poolIds, form.filterMode, form.groups, form.excludeGroups, form.minResolution, form.minSpeedKbps, form.maxLines, form.showRegionSuffix, form.format, channelIds]);
+
   async function loadPreview(item: SubscriptionItem): Promise<void> {
     try {
-      const result = await api.get<{ preview: string; format: string; channels?: number; lines?: number }>(`/api/admin/subscriptions/${item.id}/preview?format=${item.format}`);
-      setPreview({ name: item.name, body: result.preview, format: result.format, channels: result.channels, lines: result.lines });
+      const result = await api.get<{
+        preview: string;
+        format: string;
+        channels?: number;
+        lines?: number;
+        stats?: { indexAlive: number | null; poolLines: number; exported: number };
+      }>(`/api/admin/subscriptions/${item.id}/preview?format=${item.format}`);
+      setPreview({ name: item.name, body: result.preview, format: result.format, channels: result.channels, lines: result.lines, stats: result.stats });
       show(`实际导出：${result.channels ?? '—'} 个频道 · ${result.lines ?? '—'} 条线路`);
     } catch (error) {
       show(error instanceof Error ? error.message : '预览失败', 'error');
@@ -449,6 +496,14 @@ export function SubscriptionsAdmin() {
                   <Button size="sm" variant="ghost" onClick={() => setForm({ ...form, poolIds: [] })}>清空</Button>
                 </div>
               </Field>
+              {formPreview ? (
+                <div className="caption">
+                  本次将导出 {formPreview.lines} 条线路 · {formPreview.channels} 个频道
+                  {formPreview.stats.indexAlive !== null
+                    ? `；索引可用 ${formPreview.stats.indexAlive} 条 → 进池 ${formPreview.stats.poolLines} 条（差 ${Math.max(0, formPreview.stats.indexAlive - formPreview.stats.poolLines)} 条：未进池 / 同 URL 去重 / 质量未确认）`
+                    : ''}
+                </div>
+              ) : null}
               <Field label="过滤方式" hint="不过滤 = 池内每一线路原样导出；保留原过滤 = 使用下方频道/分组/画质条件">
                 <select className="select" value={form.filterMode} onChange={(event) => setForm({ ...form, filterMode: event.target.value })}>
                   <option value="inherit">保留原过滤</option>
@@ -577,6 +632,11 @@ export function SubscriptionsAdmin() {
       </Sheet>
 
       <Sheet open={Boolean(preview)} onClose={() => setPreview(null)} title={`预览 · ${preview?.name ?? ''}`} subtitle={`${preview?.format?.toUpperCase()} · ${preview?.channels ?? '—'} 频道 · ${preview?.lines ?? '—'} 线路 · 前 4 万字符`}>
+        {preview?.stats ? (
+          <div className="caption" style={{ marginBottom: 8 }}>
+            索引可用 {preview.stats.indexAlive ?? '—'} 条 → 池内 {preview.stats.poolLines} 条 → 本次导出 {preview.stats.exported} 条：差额来自频道过滤、同 URL 去重、每频道导出行数上限与质量确认。
+          </div>
+        ) : null}
         <pre className="code">{preview?.body}</pre>
       </Sheet>
     </div>

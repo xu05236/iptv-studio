@@ -813,12 +813,12 @@ export function Pool() {
           <div className="sheet-section">已有池</div>
           {(customPools.data?.items ?? []).length ? (customPools.data?.items ?? []).map((item) => (
             <div key={item.id} className="row" style={{ gap: 6, padding: '8px 10px', border: '1px solid var(--sep)', borderRadius: 12, alignItems: 'center' }}>
-              <button type="button" className="chip" onClick={() => { setCustomPool(item.id); setPoolsOpen(false); resetPage(); }}>{item.name} · {item.count}</button>
+              <button type="button" className="chip" title="只看这个池的线路" onClick={() => { setCustomPool(item.id); setPoolsOpen(false); resetPage(); }}>{item.name} · {item.count}</button>
               <Button size="sm" onClick={() => { const next = window.prompt('新名称', item.name); if (next?.trim()) renamePool.mutate({ id: item.id, name: next.trim() }); }}>改名</Button>
               <Button size="sm" variant="ghost" onClick={() => { if (confirm(`删除池「${item.name}」？只删除池，不影响线路。`)) { if (customPool === item.id) setCustomPool(''); deletePool.mutate(item.id); } }}><Trash2 size={13} /></Button>
             </div>
           )) : <div className="caption">还没有自定义池</div>}
-          <div className="caption">用法：在下方列表勾选线路 → 批量操作条选池 → 「加入池」。池只是线路集合，删池不影响线路本身。</div>
+          <div className="caption">用法：点池名 = 只看该池线路（列表表头可排序）；在下方列表勾选线路 → 批量操作条选池 → 「加入池」。池只是线路集合，删池不影响线路本身。</div>
         </div>
       </Sheet>
 

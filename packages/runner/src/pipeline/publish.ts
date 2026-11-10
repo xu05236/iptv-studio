@@ -21,6 +21,7 @@ import {
 import type { ArtifactStore } from '../store.js';
 import type { RunLogger } from '../logger.js';
 import { buildGuide, nowPlaying, upcoming } from './epg.js';
+import { LINES_ARCHIVE_TRIGGER_BYTES, mergeArchive, splitArchivable, type LinesArchive } from './archive.js';
 import { matchLogoFile, type LogoPack } from './logoFiles.js';
 
 const GROUP_ORDER = ['央视', '卫视', '地方', '港澳台', '国际', '4K', '影视频道', '体育', '少儿', '纪录', '新闻', '音乐', '付费', '其他'];
@@ -248,7 +249,7 @@ export async function publish(
   let objects = 0;
   const json = 'application/json; charset=utf-8';
   let artifactCount = 0;
-  const artifactTotal = 30;
+  let artifactTotal = 30;
   const step = (message: string): void => {
     artifactCount++;
     options.onProgress?.(artifactCount, artifactTotal, message);
@@ -270,8 +271,21 @@ export async function publish(
 
   const catalogBody = check('out/catalog.json', JSON.stringify(output.catalog));
   const indexBody = check('state/index.json', JSON.stringify(output.index));
+  const encoder = new TextEncoder();
   let linesBody = JSON.stringify({ generatedAt: options.generatedAt, lines: options.lines });
-  if (new TextEncoder().encode(linesBody).byteLength > 20 * 1024 * 1024) {
+  if (encoder.encode(linesBody).byteLength > LINES_ARCHIVE_TRIGGER_BYTES) {
+    const { keep, archived } = splitArchivable(options.lines, Date.now());
+    if (archived.length) {
+      const previous = await store.getJson<LinesArchive>('state/lines-archive.json').catch(() => null);
+      const mergedArchive = mergeArchive(previous?.lines ?? [], archived);
+      await store.put('state/lines-archive.json', JSON.stringify({ generatedAt: options.generatedAt, lines: mergedArchive }), json);
+      linesBody = JSON.stringify({ generatedAt: options.generatedAt, lines: keep });
+      logger.warn('lines.json 超过 12MB，已归档长期失效线路', { archived: archived.length, kept: keep.length, archiveTotal: mergedArchive.length });
+      artifactTotal += 1;
+      step('state/lines-archive.json');
+    }
+  }
+  if (encoder.encode(linesBody).byteLength > 20 * 1024 * 1024) {
     logger.warn('线路状态接近 KV 24MB 上限，将丢弃已失效超过 24 小时的墓碑线路');
     const cutoff = Date.now() - 24 * 3_600_000;
     const trimmed = options.lines.filter(

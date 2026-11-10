@@ -243,7 +243,7 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
       >
         <Maximize2 size={15} />
       </button>
-      {!started || (mixed && mode === 'direct') ? (
+          {!started || (mixed && mode === 'direct') ? (
         <div className="player__overlay">
           {mixed && mode === 'direct' ? (
             <>
@@ -255,6 +255,9 @@ export function Player({ url, protocol, lineKey, codecs, relayAvailable = false,
             <>
               <strong>选择播放方式</strong>
               <span style={{ fontSize: 12, opacity: 0.8 }}>直连使用你的网络，中继经过 Cloudflare；哪条通用哪条。</span>
+              {/hvc1|hev1|hvc/i.test(codecs ?? '') ? (
+                <span style={{ fontSize: 12, opacity: 0.8 }}>该线路是 H.265/HEVC：Chrome/Edge 可能无法播放，Safari 或 VLC 可以。</span>
+              ) : null}
             </>
           )}
           <div className="row" style={{ gap: 8 }}>
