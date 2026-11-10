@@ -38,6 +38,7 @@ interface SourceDetailResponse {
     disappeared: number;
     skippedRejected: number;
     skippedTombstoned?: number;
+    skippedDuplicate?: number;
     before?: { total: number; alive: number; pending: number; quarantine: number; rejected: number };
     after?: { total: number; alive: number; pending: number; quarantine: number; rejected: number };
   } | null;
@@ -198,16 +199,17 @@ export function SourceDetail() {
           <>
             <div className="title-3" style={{ marginBottom: 6 }}>来自 {report.fetchedAt ? formatDateTime(report.fetchedAt) : data.reportGeneratedAt ? formatDateTime(data.reportGeneratedAt) : '上一轮'} 的抓取</div>
             <div className="caption">
-              解析 {formatNumber(report.parsed ?? (report.added + report.reused + report.skippedRejected + (report.skippedTombstoned ?? 0)))} 条
+              解析 {formatNumber(report.parsed ?? (report.added + report.reused + report.skippedRejected + (report.skippedDuplicate ?? 0) + (report.skippedTombstoned ?? 0)))} 条
               {' · '}新增 {formatNumber(report.added)} 条
               {' · '}重复 {formatNumber(report.reused + report.skippedRejected)} 条{report.reusedAlive !== undefined ? `（可用 ${formatNumber(report.reusedAlive)} · 待测 ${formatNumber(report.reusedPending ?? 0)} · 待复测 ${formatNumber(report.reusedQuarantine ?? 0)}${report.reusedOther ? ` · 其他 ${formatNumber(report.reusedOther)}` : ''} · 已淘汰 ${formatNumber(report.skippedRejected)}）` : '（明细从下一次抓取开始显示）'}
+              {report.skippedDuplicate ? ` · 跳过重复 ${formatNumber(report.skippedDuplicate)} 条` : ''}
               {report.skippedTombstoned ? ` · 跳过已删除 ${formatNumber(report.skippedTombstoned)}` : ''}
             </div>
             <div className="caption" style={{ marginTop: 6 }}>
               上游消失 {formatNumber(report.disappeared)} 条 · 保留 {formatNumber(report.retained)} 条（消失但仍在保留期内的旧线路，继续留在池中）
             </div>
             <div className="caption" style={{ marginTop: 10 }}>
-              口径：解析=本轮上游出现的线路总数；新增=池中原本没有；重复=池中已有、按抓取前状态分类（已淘汰线路不会再回池）；消失=上游本轮没出现；保留=消失但仍在保留期内、继续留在池中。新增 + 重复 + 跳过已删除 = 解析，能对上。
+              口径：解析=本轮上游出现的线路总数；新增=池中原本没有；重复=池中已有、按抓取前状态分类（已淘汰线路不会再回池）；跳过重复=同一 URL 已由别的来源收录、按最早收录保留；消失=上游本轮没出现；保留=消失但仍在保留期内、继续留在池中。新增 + 重复 + 跳过重复 + 跳过已删除 = 解析，能对上。
             </div>
           </>
         ) : <div className="task-empty">还没有抓取对比记录，源重抓后会出现在这里。</div>}

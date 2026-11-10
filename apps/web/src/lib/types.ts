@@ -88,6 +88,7 @@ export interface SourceItem {
     disappeared: number;
     skippedRejected: number;
     skippedTombstoned?: number;
+    skippedDuplicate?: number;
     before?: { total: number; alive: number; pending: number; quarantine: number; rejected: number };
     after?: { total: number; alive: number; pending: number; quarantine: number; rejected: number };
   } | null;

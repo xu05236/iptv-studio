@@ -649,8 +649,9 @@ export function Sources() {
                 {source.progress?.channels ? ` · 贡献 ${formatNumber(source.progress.channels)} 个频道` : ''}
               </div>
               {report ? (
-                <div className="source-card__meta" title="解析=本轮上游出现的线路总数；新增=池中原本没有；重复=池中已有并按抓取前状态分类；已淘汰=已淘汰线路再次出现、不会回池。卡片上的 +N / -N 是当前值相对本轮抓取前的变化。">
+                <div className="source-card__meta" title="解析=本轮上游出现的线路总数；新增=池中原本没有；重复=池中已有并按抓取前状态分类；跳过重复=同一 URL 已由别的来源收录（按最早收录保留）；已淘汰=已淘汰线路再次出现、不会回池。卡片上的 +N / -N 是当前值相对本轮抓取前的变化。">
                   来自 {report.fetchedAt ? formatDateTime(report.fetchedAt) : data?.reportGeneratedAt ? formatDateTime(data.reportGeneratedAt) : '上一轮'} 的抓取：解析 {formatNumber(reportParsed)} 条 · 新增 {formatNumber(report.added)} 条 · 重复 {formatNumber(reportReused)} 条{report.reusedAlive !== undefined ? `（可用 ${formatNumber(report.reusedAlive)} · 待测 ${formatNumber(report.reusedPending ?? 0)} · 待复测 ${formatNumber(report.reusedQuarantine ?? 0)}${report.reusedOther ? ` · 其他 ${formatNumber(report.reusedOther)}` : ''} · 已淘汰 ${formatNumber(report.skippedRejected)}）` : '（明细从下一次抓取开始显示）'}
+                  {report.skippedDuplicate ? ` · 跳过重复 ${formatNumber(report.skippedDuplicate)} 条` : ''}
                   {report.skippedTombstoned ? ` · 跳过已删除 ${formatNumber(report.skippedTombstoned)}` : ''}
                 </div>
               ) : null}
