@@ -735,19 +735,29 @@ poolRoutes.get('/orphans', async (c) => {
     listSources(c.env),
   ]);
   const live = new Set(sources.map((source) => source.id));
-  const groups = new Map<string, string[]>();
+  const groups = new Map<string, { count: number; alive: number; sample: string }>();
+  let aliveKept = 0;
   for (const line of state?.lines ?? []) {
     if (live.has(line.sourceId)) continue;
-    const urls = groups.get(line.sourceId) ?? [];
-    urls.push(line.url);
-    groups.set(line.sourceId, urls);
+    const group = groups.get(line.sourceId) ?? { count: 0, alive: 0, sample: line.url };
+    if (line.status === 'alive') {
+      // A working stream outlives its playlist: do not offer usable lines to
+      // the one-click cleanup just because the source row is gone.
+      group.alive++;
+      aliveKept++;
+    } else {
+      group.count++;
+    }
+    groups.set(line.sourceId, group);
   }
-  const items = [...groups.entries()].map(([sourceId, urls]) => ({ sourceId, count: urls.length, sample: urls[0] }));
-  return ok({ total: items.reduce((sum, item) => sum + item.count, 0), items });
+  const items = [...groups.entries()]
+    .filter(([, group]) => group.count > 0)
+    .map(([sourceId, group]) => ({ sourceId, count: group.count, alive: group.alive, sample: group.sample }));
+  return ok({ total: items.reduce((sum, item) => sum + item.count, 0), aliveKept, items });
 });
 
 poolRoutes.post('/orphans/cleanup', async (c) => {
-  const body = await readJson<{ sourceId?: string }>(c);
+  const body = await readJson<{ sourceId?: string; includeAlive?: boolean }>(c);
   const [state, sources] = await Promise.all([
     loadLines(c.env),
     listSources(c.env),
@@ -755,7 +765,9 @@ poolRoutes.post('/orphans/cleanup', async (c) => {
   const live = new Set(sources.map((source) => source.id));
   const keys = new Set(
     (state?.lines ?? [])
-      .filter((line) => !live.has(line.sourceId) && (!body?.sourceId || line.sourceId === body.sourceId))
+      .filter((line) => !live.has(line.sourceId)
+        && (body?.includeAlive === true || line.status !== 'alive')
+        && (!body?.sourceId || line.sourceId === body.sourceId))
       .map((line) => line.key),
   );
   if (!keys.size) return ok({ removed: 0 });
