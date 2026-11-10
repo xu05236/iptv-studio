@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { classifyGroup, displayName, normalizeChannelName } from '@iptv/core';
 import type { AppEnv } from '../env.js';
+import { loadTasks } from '../lib/tasks.js';
 import {
   addAlias,
   channelAliases,
@@ -416,6 +417,13 @@ channelRoutes.post('/:id/aliases/remove', async (c) => {
 channelRoutes.post('/merge', async (c) => {
   const body = await readJson<{ from?: string[]; into?: string }>(c);
   if (!body?.into || !Array.isArray(body.from) || !body.from.length) return fail('缺少 from / into');
+  // Merging rewrites the line/probe state. A running fetch or publish would
+  // race with that rewrite and could resurrect the channel we just deleted.
+  const running = (await loadTasks(c.env)).filter((task) => task.status === 'running');
+  if (running.length) {
+    const types = [...new Set(running.map((task) => task.type))].join('、');
+    return fail(`有任务正在运行（${types}），请等任务结束后再合并频道`, 409);
+  }
   const merged = await mergeChannels(c.env, body.from, body.into);
   await audit(c.env, c.get('actor'), 'channel.merge', body.into, { from: body.from, merged });
   return ok({ merged });

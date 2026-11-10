@@ -1297,14 +1297,24 @@ adminRoutes.get('/artifacts/*', async (c) => {
   // decoded as UTF-8 by KV (that silently corrupts the binary and the runner
   // would read zero lines). Text artifacts keep working because the runner
   // decodes non-gzip bytes as UTF-8.
+  // The last publish records every artifact size in state/publish-sizes.json,
+  // so large files can be streamed without first buffering them in memory.
+  const sizes = await getJson<{ items?: Array<{ key: string; bytes: number }> }>(c.env, 'state/publish-sizes.json');
+  const known = sizes?.items?.find((item) => item.key === key);
+  const baseHeaders = (contentType: string, length?: number): Record<string, string> => ({
+    'content-type': contentType,
+    'cache-control': 'no-store',
+    ...(length ? { 'content-length': String(length) } : {}),
+  });
+  if (known && known.bytes > 2 * 1024 * 1024) {
+    const stream = await c.env.KV.get(key, 'stream');
+    if (!stream) return fail('产物不存在', 404);
+    return new Response(stream, { headers: baseHeaders('application/octet-stream', known.bytes) });
+  }
   const existing = await c.env.KV.getWithMetadata<{ contentType?: string }>(key, 'arrayBuffer');
   if (!existing.value) return fail('产物不存在', 404);
   return new Response(existing.value, {
-    headers: {
-      'content-type': existing.metadata?.contentType ?? 'application/octet-stream',
-      'content-length': String(existing.value.byteLength),
-      'cache-control': 'no-store',
-    },
+    headers: baseHeaders(existing.metadata?.contentType ?? 'application/octet-stream', existing.value.byteLength),
   });
 });
 

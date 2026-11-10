@@ -102,7 +102,7 @@ jobs:
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          PROBE_BUDGET: ${{ github.event.inputs.budget || vars.PROBE_BUDGET || '6000' }}
+          PROBE_BUDGET: ${{ github.event.inputs.budget || vars.PROBE_BUDGET || '' }}
           PROBE_CONCURRENCY: ${{ vars.PROBE_CONCURRENCY }}
           PROBE_FORCE: ${{ github.event.inputs.force || 'false' }}
           FETCH_FORCE: ${{ github.event.inputs.force_fetch || 'false' }}
