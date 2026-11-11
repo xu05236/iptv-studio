@@ -1090,7 +1090,7 @@ async function runBatchProbe(): Promise<void> {
     const blocked = await prefilterLiveness(selected, settings, config.concurrency || settings.concurrency || 32, logger);
     const probeList = selected.filter((line) => !blocked.has(line.key));
     const targets = dedupeProbeTargets(probeList);
-    await reportTaskProgress(api, 0, targets.length, `分批探测 · ${phaseLabel} · 选中 ${selected.length} 条 · 实际探测 ${targets.length} 个 URL`);
+    await reportTaskProgress(api, 0, targets.length, `分批探测 · ${phaseLabel} · 选中 ${selected.length} 条 · 预筛拦截 ${blocked.size} 条 · 探测 ${targets.length} 个 URL`);
     const summary = await runProbes(targets, settings, config.concurrency || settings.concurrency, logger, (done) => {
       void reportTaskProgress(api, done, targets.length, `分批探测 · ${phaseLabel} · ${done}/${targets.length}`);
     });
@@ -1100,7 +1100,7 @@ async function runBatchProbe(): Promise<void> {
     if (ffprobeLimit > 0) await enrichResolutions(probeList, ffprobeLimit, logger);
     const sourceNames = new Map(remote.sources.map((source) => [source.id, source.name]));
     const bySource = new Map<string, { tested: number; alive: number }>();
-    for (const line of selected) {
+    for (const line of targets) {
       const item = bySource.get(line.sourceId) ?? { tested: 0, alive: 0 };
       item.tested++;
       if (line.status === 'alive') item.alive++;
@@ -1112,7 +1112,7 @@ async function runBatchProbe(): Promise<void> {
       .map(([id, item]) => `${sourceNames.get(id) ?? id} 测${item.tested}/可用${item.alive}`)
       .join('、');
     const sourceSuffix = sourceDetail ? ` · 来源：${sourceDetail}` : '';
-    await reportTaskProgress(api, selected.length, selected.length, `分批探测完成 · ${phaseLabel} · 选中 ${selected.length} 条 · 探测 ${targets.length} 个 URL · 可用 ${summary.alive} · 同步 ${fannedOut} 条${sourceSuffix}`);
+    await reportTaskProgress(api, selected.length, selected.length, `分批探测完成 · ${phaseLabel} · 选中 ${selected.length} 条 · 预筛拦截 ${blocked.size} 条 · 探测 ${targets.length} 个 URL · 可用 ${summary.alive} · 同步 ${fannedOut} 条${sourceSuffix}`);
     logger.info('分批探测完成', { phase, checked: selected.length, probed: summary.probed, alive: summary.alive, dead: summary.dead });
 
     const generatedAt = nowIso();

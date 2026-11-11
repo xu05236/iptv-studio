@@ -365,6 +365,31 @@ async function reconcileRunningTasks(env: Env, tasks: Task[]): Promise<void> {
   }
 }
 
+const SCHEDULE_STATE_KEYS: Record<string, string> = {
+  fetch: 'state/fetch-schedule.json',
+  'probe-batch': 'state/probe-schedule.json',
+  publish: 'state/publish-schedule.json',
+  epg: 'state/epg-schedule.json',
+  snapshot: 'state/snapshot-schedule.json',
+};
+
+/**
+ * Mirror the terminal result onto the schedule row. Without this the dashboard
+ * keeps showing "queued" (written at dispatch time) after the task finished.
+ * Bookkeeping failures must never fail the task transition.
+ */
+async function recordScheduleResult(env: Env, task: Task, result: string): Promise<void> {
+  if (task.source !== 'schedule') return;
+  const key = SCHEDULE_STATE_KEYS[task.type];
+  if (!key) return;
+  try {
+    const state = (await getRuntimeJson<Record<string, unknown>>(env, key)) ?? {};
+    await putRuntimeJson(env, key, { ...state, result, lastFinishedAt: task.finishedAt ?? new Date().toISOString() });
+  } catch {
+    // Ignore: the task state is authoritative.
+  }
+}
+
 async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed', message?: string): Promise<void> {
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
@@ -378,6 +403,7 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
   task.message = taskMessage;
   if (status === 'done' && task.progress.total > 0) task.progress.done = task.progress.total;
   task.finishedAt = new Date().toISOString();
+  await recordScheduleResult(env, task, status === 'done' ? `done · ${taskMessage}` : `failed · ${taskMessage}`);
   await finishPlaceholderRun(env, taskId, status === 'failed' ? 'failed' : 'success', taskMessage);
   if (status === 'done' && task.type === 'publish') {
     await putRuntimeJson(env, 'state/auto-publish-after-probe.json', { at: task.finishedAt, taskId: task.id });
@@ -560,6 +586,7 @@ async function mutateTaskCore(env: Env, id: string, action: string): Promise<str
     task.finishedAt = new Date().toISOString();
     task.message = '已取消';
     await finishPlaceholderRun(env, task.id, 'cancelled', '已取消');
+    await recordScheduleResult(env, task, 'cancelled · 已取消');
   } else if (action === 'auto-fail') {
     if (task.status !== 'running') return '只有运行中的任务可以自动结束';
     await cancelGithubRun(env, task.githubRunId);
@@ -567,6 +594,7 @@ async function mutateTaskCore(env: Env, id: string, action: string): Promise<str
     task.finishedAt = new Date().toISOString();
     task.message = '自动结束：运行超过 20 分钟无进展';
     await finishPlaceholderRun(env, task.id, 'failed', task.message);
+    await recordScheduleResult(env, task, `failed · ${task.message}`);
   } else if (action === 'force-fail') {
     if (task.status !== 'running') return '只有运行中的任务可以强制结束';
     await cancelGithubRun(env, task.githubRunId);
@@ -574,6 +602,7 @@ async function mutateTaskCore(env: Env, id: string, action: string): Promise<str
     task.finishedAt = new Date().toISOString();
     task.message = '手动强制结束';
     await finishPlaceholderRun(env, task.id, 'failed', task.message);
+    await recordScheduleResult(env, task, `failed · ${task.message}`);
   } else if (action === 'run-now') {
     if (task.status === 'running') return '任务已在运行';
     task.status = 'queued';
