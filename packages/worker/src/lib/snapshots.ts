@@ -1,4 +1,5 @@
 import type { Env } from '../env.js';
+import { upsertRun } from '../db.js';
 import { deleteArtifact, deletePrefix, getJson, putArtifact } from './store.js';
 
 export interface SnapshotItem {
@@ -41,9 +42,40 @@ export async function createSnapshot(env: Env, actor: string): Promise<SnapshotI
   return item;
 }
 
+/**
+ * Snapshot creation is a Worker-side task; write it into the run history too so
+ * the overview, run log, probe center and public home agree with the task board.
+ */
+export async function recordSnapshotRun(
+  env: Env,
+  item: SnapshotItem,
+  trigger: 'schedule' | 'manual' | 'source',
+  taskId?: string,
+): Promise<void> {
+  const finishedAt = new Date().toISOString();
+  await upsertRun(env, {
+    id: `snapshot-${item.id}`,
+    trigger,
+    status: 'success',
+    startedAt: item.createdAt,
+    finishedAt,
+    sources: 0,
+    channels: item.channels,
+    lines: item.lines,
+    alive: item.alive,
+    dead: 0,
+    probed: 0,
+    bytes: 0,
+    durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(item.createdAt)),
+    warnings: [],
+    message: `快照完成 · ${item.channels} 频道 · ${item.lines} 行 · ${item.alive} 可用`,
+    actor: trigger === 'schedule' ? 'scheduler' : 'manual',
+    taskId,
+  });
+}
+
 /** Delete every rollback snapshot and its manifest. */
-export async function clearSnapshots(env: Env): Promise<number> {
-  const manifest = await getJson<{ items: SnapshotItem[] }>(env, 'state/snapshots.json');
+export async function clearSnapshots(env: Env): Promise<number> {  const manifest = await getJson<{ items: SnapshotItem[] }>(env, 'state/snapshots.json');
   let removed = 0;
   for (const item of manifest?.items ?? []) {
     await deletePrefix(env, `state/snapshots/${item.id}/`);

@@ -31,7 +31,7 @@ import { loadLines, saveLines } from '../lib/linesState.js';
 import { LINES_SHARD_COUNT, lineShardKey } from '@iptv/core';
 import { getRuntimeJson } from '../lib/runtime-state.js';
 import { putRuntimeJson } from '../lib/runtime-state.js';
-import { clearSnapshots, createSnapshot } from '../lib/snapshots.js';
+import { clearSnapshots, createSnapshot, recordSnapshotRun } from '../lib/snapshots.js';
 import { inferResolution } from '@iptv/core';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { createTask, deleteFailedTasks, dispatchNext, finishTask, loadTasks, mutateTask, progressTask, recordFinishedTask, type Task } from '../lib/tasks.js';
@@ -548,12 +548,13 @@ adminRoutes.post('/snapshots', async (c) => {
   const origin = body.origin === 'publish' ? 'publish' : 'manual';
   const item = await createSnapshot(c.env, c.get('actor'));
   if (!item) return fail('当前没有可快照的发布产物', 404);
-  await recordFinishedTask(c.env, {
+  const task = await recordFinishedTask(c.env, {
     type: 'snapshot',
     source: origin === 'publish' ? 'source' : 'manual',
     message: `快照完成 · ${item.channels} 频道 · ${item.lines} 行 · ${item.alive} 可用`,
     payload: { origin },
   });
+  await recordSnapshotRun(c.env, item, origin === 'publish' ? 'source' : 'manual', task.id);
   await audit(c.env, c.get('actor'), 'snapshot.create', item.id);
   return ok({ item });
 });

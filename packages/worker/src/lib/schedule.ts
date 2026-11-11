@@ -4,7 +4,7 @@ import { audit, listSources, loadSettings } from '../db.js';
 import { cancelGithubRun, workflowRunStatus } from './github.js';
 import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
-import { createSnapshot } from './snapshots.js';
+import { createSnapshot, recordSnapshotRun } from './snapshots.js';
 import { createTask, dispatchNext, loadTasks, mutateTask, recordFinishedTask, setProbeFinishedHook, type Task } from './tasks.js';
 
 // Event-driven follow-up: when a probe batch finishes, do not wait for the next
@@ -229,12 +229,13 @@ export async function runScheduler(env: Env): Promise<void> {
       if (config.command === 'snapshot') {
         const item = await createSnapshot(env, 'scheduler');
         if (item) {
-          await recordFinishedTask(env, {
+          const snapshotTask = await recordFinishedTask(env, {
             type: 'snapshot',
             source: 'schedule',
             message: `快照完成 · ${item.channels} 频道 · ${item.lines} 行 · ${item.alive} 可用`,
             payload: { origin: 'schedule' },
           });
+          await recordSnapshotRun(env, item, 'schedule', snapshotTask.id);
         }
         await record(config, scheduledAt, item ? '已创建快照' : 'skipped: 没有可发布的产物');
         continue;
