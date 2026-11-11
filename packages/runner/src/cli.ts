@@ -32,7 +32,7 @@ import {
   type RunReport,
 } from '@iptv/core';
 import { loadConfig } from './config.js';
-import { RunLogger } from './logger.js';
+import { RunLogger, redact, redactError } from './logger.js';
 import { notifyTelegram } from './notify.js';
 import { ApiClient, ArtifactStore, loadRemoteConfig, type ChannelRecord, type RemoteConfig, type SourceRecord } from './store.js';
 import { collectSource, type CollectedSource } from './pipeline/collect.js';
@@ -435,7 +435,7 @@ async function finishRun(
 ): Promise<void> {
   const message = report.message ?? (lastProgressMessage || undefined);
   await api.post('/api/admin/runs', { ...report, message, taskId: report.taskId ?? process.env.TASK_ID ?? undefined }).catch((error) => {
-    console.error('上报运行结果失败', error);
+    console.error(redactError('上报运行结果失败', error));
   });
 }
 
@@ -445,7 +445,7 @@ async function loadTombstones(api: ApiClient): Promise<Set<string>> {
     const response = await api.get<{ urls?: string[] }>('/api/admin/pool/tombstones');
     return new Set((response.urls ?? []).map((url) => canonicalPoolUrl(url)));
   } catch (error) {
-    console.error('读取墓碑失败，本轮不跳过任何线路', error);
+    console.error(redactError('读取墓碑失败，本轮不跳过任何线路', error));
     return new Set();
   }
 }
@@ -2011,11 +2011,11 @@ async function main(): Promise<void> {
     await captureScreenshots(store, limit, logger);
     return;
   }
-  console.error(`未知命令: ${command}（可用: collect | export | epg | shots）`);
+  console.error(redact(`未知命令: ${command}（可用: collect | export | epg | shots）`));
   process.exitCode = 1;
 }
 
 main().catch((error) => {
-  console.error(error);
+  console.error(redactError('运行失败', error));
   process.exitCode = 1;
 });

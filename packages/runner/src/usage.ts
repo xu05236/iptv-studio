@@ -1,3 +1,5 @@
+import { redactError } from './logger.js';
+
 interface DayUsage {
   date: string;
   kvWrites: number;
@@ -174,6 +176,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error(error);
+  console.error(redactError('用量上报失败', error));
   process.exit(1);
 });
