@@ -24,6 +24,8 @@ export interface Task {
   runId?: string;
   lastHeartbeatAt?: string;
   retryCount?: number;
+  /** Task that this one retries, used to stop a retry chain together. */
+  retryOf?: string;
   githubRunId?: number;
 }
 
@@ -300,6 +302,7 @@ function retryTask(tasks: Task[], task: Task, reason: string): Task | null {
     lastHeartbeatAt: undefined,
     githubRunId: undefined,
     retryCount: nextRetry,
+    retryOf: task.id,
   };
   // Keep the old task (as cancelled) instead of splicing it out: saveTasks
   // merges with the persisted list, so a removed running task was written back
@@ -309,6 +312,34 @@ function retryTask(tasks: Task[], task: Task, reason: string): Task | null {
   task.message = `已由重试任务接替（${nextRetry}/${MAX_RETRIES}）：${reason}`;
   tasks.push(retry);
   return retry;
+}
+
+/** Tasks spawned by auto-retry, directly or transitively. */
+function retryDescendants(tasks: Task[], rootId: string): Task[] {
+  const out: Task[] = [];
+  const queue = [rootId];
+  while (queue.length) {
+    const id = queue.shift()!;
+    for (const task of tasks) {
+      if (task.retryOf === id) {
+        out.push(task);
+        queue.push(task.id);
+      }
+    }
+  }
+  return out;
+}
+
+/** Stop queued/running retries spawned by a task the operator just ended. */
+async function stopRetryDescendants(env: Env, tasks: Task[], rootId: string): Promise<void> {
+  for (const child of retryDescendants(tasks, rootId)) {
+    if (child.status !== 'queued' && child.status !== 'running' && child.status !== 'scheduled') continue;
+    if (child.status === 'running') await cancelGithubRun(env, child.githubRunId);
+    child.status = 'cancelled';
+    child.finishedAt = new Date().toISOString();
+    child.message = `已随 ${rootId} 结束`;
+    await finishPlaceholderRun(env, child.id, 'cancelled', child.message);
+  }
 }
 
 /** Match running tasks to their GitHub run and release heartbeat-only stalls. */
@@ -379,11 +410,26 @@ const SCHEDULE_STATE_KEYS: Record<string, string> = {
  * Bookkeeping failures must never fail the task transition.
  */
 async function recordScheduleResult(env: Env, task: Task, result: string): Promise<void> {
-  if (task.source !== 'schedule') return;
   const key = SCHEDULE_STATE_KEYS[task.type];
   if (!key) return;
+  if (task.source !== 'schedule' && task.type !== 'probe') return;
   try {
     const state = (await getRuntimeJson<Record<string, unknown>>(env, key)) ?? {};
+    if (task.type === 'probe' && result.startsWith('done')) {
+      // Manual probe runs count as a probe too: push the next auto batch out by
+      // one interval so the scheduler does not fire right after a manual run.
+      const settings = await loadSettings(env);
+      const intervalMs = activeProbeProfile(settings).intervalHours * 3_600_000;
+      const finishedAt = task.finishedAt ?? new Date().toISOString();
+      await putRuntimeJson(env, key, {
+        ...state,
+        result,
+        lastFinishedAt: finishedAt,
+        lastRunAt: finishedAt,
+        nextRunAt: new Date(Date.parse(finishedAt) + intervalMs).toISOString(),
+      });
+      return;
+    }
     await putRuntimeJson(env, key, { ...state, result, lastFinishedAt: task.finishedAt ?? new Date().toISOString() });
   } catch {
     // Ignore: the task state is authoritative.
@@ -394,8 +440,9 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
   if (!task) return;
-  // Late finish from a run the operator already cancelled: keep it cancelled.
-  if (task.status === 'cancelled') return;
+  // A late report from a run we already stopped (cancelled or force-failed)
+  // must not revive the task; queued tasks may still be finished directly.
+  if (task.status === 'cancelled' || task.status === 'failed') return;
   task.status = status;
   const taskMessage = status === 'done'
     ? (message ?? (/抓取完成|分批探测完成|EPG 刷新完成|快照完成/.test(task.message ?? '') ? task.message! : '完成'))
@@ -431,7 +478,8 @@ async function progressTaskCore(env: Env, taskId: string, done: number, total?: 
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
   if (!task) return;
-  if (task.status === 'cancelled') return;
+  // Progress from a stopped run must not touch the task any more.
+  if (task.status === 'cancelled' || task.status === 'failed') return;
   const nextTotal = total && total > 0 ? total : task.progress.total;
   if (task.progress.done === Math.max(0, done) && task.progress.total === nextTotal && (!message || task.message === message)) return;
   task.progress.done = Math.max(0, done);
@@ -588,6 +636,7 @@ async function mutateTaskCore(env: Env, id: string, action: string): Promise<str
     task.message = '已取消';
     await finishPlaceholderRun(env, task.id, 'cancelled', '已取消');
     await recordScheduleResult(env, task, 'cancelled · 已取消');
+    await stopRetryDescendants(env, tasks, task.id);
   } else if (action === 'auto-fail') {
     if (task.status !== 'running') return '只有运行中的任务可以自动结束';
     await cancelGithubRun(env, task.githubRunId);
@@ -604,6 +653,7 @@ async function mutateTaskCore(env: Env, id: string, action: string): Promise<str
     task.message = '手动强制结束';
     await finishPlaceholderRun(env, task.id, 'failed', task.message);
     await recordScheduleResult(env, task, `failed · ${task.message}`);
+    await stopRetryDescendants(env, tasks, task.id);
   } else if (action === 'run-now') {
     if (task.status === 'running') return '任务已在运行';
     task.status = 'queued';

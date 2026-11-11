@@ -1173,7 +1173,7 @@ async function runBatchProbe(): Promise<void> {
     }
     const probeList = selected.filter((line) => !blocked.has(line.key));
     const targets = dedupeProbeTargets(probeList);
-    await reportTaskProgress(api, 0, targets.length, `分批探测 · ${phaseLabel} · 探测 ${targets.length} 个地址 · 预筛拦截 ${blocked.size} 个`);
+    await reportTaskProgress(api, 0, targets.length, `分批探测 · ${phaseLabel} · 选中 ${selected.length} 条 · 预筛拦截 ${blocked.size} 条 · 去重后 ${targets.length} 个地址`);
     const summary = await runProbes(targets, settings, config.concurrency || settings.concurrency, logger, (done) => {
       void reportTaskProgress(api, done, targets.length, `分批探测 · ${phaseLabel} · ${done}/${targets.length}`);
     });
@@ -1195,7 +1195,7 @@ async function runBatchProbe(): Promise<void> {
       .map(([id, item]) => `${sourceNames.get(id) ?? id} 测${item.tested}/可用${item.alive}`)
       .join('、');
     const sourceSuffix = sourceDetail ? ` · 来源：${sourceDetail}` : '';
-    await reportTaskProgress(api, selected.length, selected.length, `分批探测完成 · ${phaseLabel} · 探测 ${targets.length} 个地址 · 可用 ${summary.alive} · 同步 ${fannedOut} 条${sourceSuffix}`);
+    await reportTaskProgress(api, selected.length, selected.length, `分批探测完成 · ${phaseLabel} · 选中 ${selected.length} 条 · 预筛拦截 ${blocked.size} 条 · 去重后 ${targets.length} 个地址 · 可用 ${summary.alive} · 同步 ${fannedOut} 条${sourceSuffix}`);
     logger.info('分批探测完成', { phases: chosenByPhase, checked: selected.length, probed: summary.probed, alive: summary.alive, dead: summary.dead });
 
     const generatedAt = nowIso();

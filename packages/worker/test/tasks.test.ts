@@ -4,6 +4,7 @@ import type { Env } from '../src/env.js';
 vi.mock('../src/lib/github.js', () => ({
   dispatchWorkflow: vi.fn(async () => ({ ok: true, message: 'ok' })),
   listWorkflowRuns: vi.fn(async () => []),
+  cancelGithubRun: vi.fn(async () => true),
 }));
 
 import { dispatchWorkflow } from '../src/lib/github.js';
@@ -105,5 +106,33 @@ describe('task queue', () => {
     // still "running" (which used to make dispatch skip every fresh task).
     expect(result.task?.id).not.toBe(task.id);
     expect(tasks.filter((item) => item.status === 'running')).toHaveLength(1);
+  });
+
+  it('keeps a force-failed task failed when a late finish arrives', async () => {
+    const env = makeEnv();
+    const task = await createTask(env, { type: 'probe-batch', source: 'manual' });
+    await dispatchNext(env);
+    const message = await mutateTask(env, task.id, 'force-fail');
+    expect(message).toBe('已更新');
+
+    await finishTask(env, task.id, 'done');
+
+    const stored = (await loadTasks(env)).find((item) => item.id === task.id)!;
+    expect(stored.status).toBe('failed');
+    expect(stored.message).toBe('手动强制结束');
+  });
+
+  it('cancelling a task also cancels its queued retry', async () => {
+    const env = makeEnv();
+    const task = await createTask(env, { type: 'probe-batch', source: 'manual' });
+    await dispatchNext(env);
+    await finishTask(env, task.id, 'failed', 'fetch failed: network');
+
+    const retry = (await loadTasks(env)).find((item) => item.retryOf === task.id)!;
+    expect(retry?.status).toBe('queued');
+
+    await mutateTask(env, task.id, 'cancel');
+    const stopped = (await loadTasks(env)).find((item) => item.id === retry.id)!;
+    expect(stopped.status).toBe('cancelled');
   });
 });
