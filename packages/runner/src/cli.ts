@@ -24,6 +24,7 @@ import {
   isPurgeable,
   lineSignature,
   pickDuplicateOwner,
+  activeProbeProfile,
   type AppSettings,
   type ChannelConfig,
   type EpgData,
@@ -1077,7 +1078,7 @@ async function runBatchProbe(): Promise<void> {
     const now = Date.now();
     const forcedPhase = (process.env.PROBE_PHASE ?? '').trim() as 'pending' | 'quarantine' | '';
     const paused = new Set(parsePhaseList(settings.probePausedPhases));
-    const batchSize = Math.max(1, Number(settings.probeBatchSize) || 1200);
+    const batchSize = activeProbeProfile(settings).batchSize;
     const perChannel = Math.max(1, Number(settings.probePerChannel) || 24);
     const cooldown = await loadPrefilterCooldown(store);
     const favoriteSources = new Set(remote.sources.filter((source) => source.weight >= 2).map((source) => source.id));

@@ -1,5 +1,5 @@
 import type { AppSettings } from '@iptv/core';
-import { DEFAULT_SETTINGS } from '@iptv/core';
+import { DEFAULT_SETTINGS, activeProbeProfile } from '@iptv/core';
 import type { Env } from '../env.js';
 import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
@@ -521,9 +521,10 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
   const scheduledToday = tasks.filter(
     (task) => task.source === 'schedule' && (task.createdAt ?? '').slice(0, 10) === today,
   ).length;
-  if (next.source === 'schedule' && scheduledToday >= 20) {
+  const maxDaily = activeProbeProfile(settings).maxDailyDispatches;
+  if (next.source === 'schedule' && scheduledToday >= maxDaily) {
     if (changed) await saveTasks(env, tasks);
-    return { task: next, message: `今日自动派发已达 ${scheduledToday}/20 次，任务保持排队` };
+    return { task: next, message: `今日自动派发已达 ${scheduledToday}/${maxDaily} 次，任务保持排队` };
   }
 
   next.status = 'running';

@@ -1,4 +1,4 @@
-import { effectiveRefreshHours, type AppSettings } from '@iptv/core';
+import { effectiveRefreshHours, activeProbeProfile, type AppSettings } from '@iptv/core';
 import type { Env } from '../env.js';
 import { audit, listSources, loadSettings } from '../db.js';
 import { cancelGithubRun, workflowRunStatus } from './github.js';
@@ -569,7 +569,8 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
     });
     if (!earlyWake) return false;
   }
-  const intervalMs = Math.max(1, Number(settings.autoProbeIntervalHours) || 2) * 3_600_000;
+  const profile = activeProbeProfile(settings);
+  const intervalMs = Math.max(1, profile.intervalHours) * 3_600_000;
   const paused = new Set(phaseList(settings.probePausedPhases));
   const hasWork = !stats || PHASES.some((phase) => !paused.has(phase) && Number(stats[phase] ?? 0) > 0);
   if (!hasWork) {
@@ -588,7 +589,7 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
     source: 'schedule',
     priority: 50,
     payload: {},
-    total: Math.max(0, Number(settings.probeBatchSize) || 1200),
+    total: Math.max(0, profile.batchSize),
     unit: 'lines',
   });
   await recordInterval(env, 'state/probe-schedule.json', now, now + intervalMs, 'queued');

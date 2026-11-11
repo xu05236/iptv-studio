@@ -17,17 +17,17 @@ function formatBytes(value: number): string {
   return `${Math.round(value / 1024)} KB`;
 }
 
-function UsageBar({ label, used, limit, format = formatNumber }: { label: string; used: number; limit: number; format?: (value: number) => string }) {
-  const percent = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
-  const color = percent >= 90 ? 'var(--red)' : percent >= 70 ? 'var(--orange)' : 'var(--green)';
+function UsageBar({ label, used, limit, format = formatNumber, infinite = false }: { label: string; used: number; limit: number; format?: (value: number) => string; infinite?: boolean }) {
+  const percent = infinite ? 100 : limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+  const color = infinite ? 'var(--blue, #3b82f6)' : percent >= 90 ? 'var(--red)' : percent >= 70 ? 'var(--orange)' : 'var(--green)';
   return (
     <div style={{ marginTop: 10 }}>
       <div className="row row--between caption">
         <span>{label}</span>
-        <span>{format(used)} / {format(limit)}</span>
+        <span>{infinite ? '无上限' : `${format(used)} / ${format(limit)}`}</span>
       </div>
       <div className="meter" style={{ marginTop: 4 }}>
-        <div className="meter__fill" style={{ width: `${Math.max(1, percent)}%`, background: color }} />
+        <div className="meter__fill" style={{ width: `${infinite ? 100 : Math.max(1, percent)}%`, background: color, opacity: infinite ? 0.35 : 1 }} />
       </div>
     </div>
   );
@@ -147,6 +147,11 @@ export function Dashboard() {
   const usageQuery = useQuery({
     queryKey: ['admin', 'usage'],
     queryFn: () => api.get<{ usage: UsageSnapshot | null }>('/api/admin/usage'),
+  });
+
+  const settingsQuery = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => api.get<{ settings: { actionsRepoMode?: 'private' | 'public' } }>('/api/admin/settings'),
   });
 
   const epgCoverage = useQuery({
@@ -756,6 +761,7 @@ export function Dashboard() {
         {(() => {
           const snapshot = usageQuery.data?.usage ?? null;
           const yesterday = snapshot?.history?.at(-2);
+          const repoMode = settingsQuery.data?.settings.actionsRepoMode === 'public' ? 'public' : 'private';
           return (
             <>
               <Card className="usage-card usage-card--github">
@@ -769,9 +775,9 @@ export function Dashboard() {
                 {snapshot ? (
                   snapshot.github.private === false ? (
                     <>
-                      <div className="caption" style={{ marginTop: 2 }}>公开仓库：标准运行不计费，无需关注 2,000 分钟上限</div>
+                      <UsageBar label="本月已用" used={0} limit={0} infinite format={(value) => `${value} 分钟`} />
                       <div className="caption" style={{ marginTop: 8 }}>
-                        本月 {formatNumber(snapshot.github.runs)} 次运行 · 分钟数不再计量
+                        本月 {formatNumber(snapshot.github.runs)} 次运行 · 公开仓库标准运行不计费
                       </div>
                     </>
                   ) : (
@@ -787,8 +793,12 @@ export function Dashboard() {
                 )}
                 <div className="caption" style={{ marginTop: 6 }}>
                   {snapshot?.github.private === false
-                    ? '公开仓库的 Actions 标准运行不消耗月度分钟数'
-                    : '私有仓库免费 2000 分钟/月，按运行时长估算，账单日重置'}
+                    ? repoMode === 'public'
+                      ? '当前模板：公开（无限制）· 标准运行不消耗月度分钟数'
+                      : '当前模板：私有（配额）· 仓库实际为公开，Actions 不计费'
+                    : repoMode === 'public'
+                      ? '当前模板：公开（无限制），但仓库仍为私有，Actions 仍按分钟计费'
+                      : '当前模板：私有（配额）· 免费 2000 分钟/月，按运行时长估算，账单日重置'}
                 </div>
               </Card>
 

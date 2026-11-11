@@ -363,6 +363,38 @@ export interface AppSettings {
   /** 每个订阅 token 每天最多中继多少字节（默认 2GB）。 */
   relayDailyBytes: number;
   directPlayback: boolean;
+  /** GitHub Actions 仓库模式：private 按分钟额度保守调度，public 使用不计费模板。 */
+  actionsRepoMode: 'private' | 'public';
+  /** 私有仓库模板：每批条数 / 批次间隔（小时）/ 每日自动派发上限。 */
+  privateProbeBatchSize: number;
+  privateProbeIntervalHours: number;
+  privateMaxDailyDispatches: number;
+  /** 公开仓库模板（标准运行不计费）。 */
+  publicProbeBatchSize: number;
+  publicProbeIntervalHours: number;
+  publicMaxDailyDispatches: number;
+}
+
+export interface ProbeProfile {
+  batchSize: number;
+  intervalHours: number;
+  maxDailyDispatches: number;
+}
+
+/** Parameters of the currently selected probe template (private vs public repo). */
+export function activeProbeProfile(settings: AppSettings): ProbeProfile {
+  const isPublic = settings.actionsRepoMode === 'public';
+  return isPublic
+    ? {
+        batchSize: Math.max(1, Number(settings.publicProbeBatchSize) || 2000),
+        intervalHours: Math.max(1, Number(settings.publicProbeIntervalHours) || 2),
+        maxDailyDispatches: Math.max(1, Number(settings.publicMaxDailyDispatches) || 30),
+      }
+    : {
+        batchSize: Math.max(1, Number(settings.privateProbeBatchSize) || 1200),
+        intervalHours: Math.max(1, Number(settings.privateProbeIntervalHours) || 8),
+        maxDailyDispatches: Math.max(1, Number(settings.privateMaxDailyDispatches) || 20),
+      };
 }
 
 export const DEFAULT_EPG_URLS = [
@@ -413,6 +445,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   actionsMonthlyBudgetMinutes: 2000,
   actionsReserveMinutes: 300,
   actionsRunCostMinutes: 6,
+  actionsRepoMode: 'private',
+  privateProbeBatchSize: 1200,
+  privateProbeIntervalHours: 8,
+  privateMaxDailyDispatches: 20,
+  publicProbeBatchSize: 2000,
+  publicProbeIntervalHours: 2,
+  publicMaxDailyDispatches: 30,
   probePhaseOrder: 'pending,quarantine',
   probePausedPhases: '',
   autoFetchEnabled: true,

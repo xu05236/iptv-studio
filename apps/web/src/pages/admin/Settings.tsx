@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, CalendarClock, HardDrive, Save, ShieldAlert, SlidersHorizontal, Wrench } from 'lucide-react';
-import type { AppSettings } from '@iptv/core';
+import { activeProbeProfile, type AppSettings } from '@iptv/core';
 import { api } from '../../lib/api';
 import type { SettingsResponse } from '../../lib/types';
-import { Badge, Button, Card, Field, Skeleton, Switch, useToast } from '../../components/ui';
+import { Badge, Button, Card, Field, Segmented, Skeleton, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { RulesGuide } from '../../components/RulesGuide';
 
@@ -112,7 +112,7 @@ export function SettingsPage() {
       <div className="settings-overview">
         <div><span>采集预算</span><strong>{form.probeBudget.toLocaleString('zh-CN')}</strong><em>条 / 轮</em></div>
         <div><span>并发数</span><strong>{form.concurrency}</strong><em>条同时探测</em></div>
-        <div><span>分批间隔</span><strong>{form.autoProbeIntervalHours ?? 2}</strong><em>小时 / 批</em></div>
+        <div><span>分批间隔</span><strong>{activeProbeProfile(form).intervalHours}</strong><em>小时 / 批</em></div>
         <div><span>每日发布</span><strong>{form.autoPublishEnabled ? (form.autoPublishTimes ?? '08:30') : '关闭'}</strong><em>北京时间</em></div>
       </div>
 
@@ -246,11 +246,38 @@ export function SettingsPage() {
           <div className="list">
             <div className="list__row"><span className="grow">启用自动分批探测（pending → 待复测 → 已淘汰）</span><Switch checked={form.autoProbeEnabled ?? true} onChange={(value) => set('autoProbeEnabled', value)} /></div>
           </div>
-          <div className="row">
-            <div className="grow"><Field label="每批条数" hint="一次 dispatch 最多完整探测多少条；建议 1200"><input className="input" inputMode="numeric" value={form.probeBatchSize ?? 1200} onChange={(event) => set('probeBatchSize', Number(event.target.value))} /></Field></div>
-            <div className="grow"><Field label="批次间隔（小时）" hint="一批完成后至少隔多久再派下一批；全部清空后自动停"><input className="input" inputMode="numeric" value={form.autoProbeIntervalHours ?? 2} onChange={(event) => set('autoProbeIntervalHours', Number(event.target.value))} /></Field></div>
+          <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>Actions 仓库模式与探测模板</div>
+          <Field label="仓库模式" hint="私有仓库有 2,000 分钟额度，按保守模板调度；公开仓库标准运行不计费，可用更高的频率和批量。切换后立即按新模板生效。">
+            <Segmented
+              value={form.actionsRepoMode ?? 'private'}
+              onChange={(value) => set('actionsRepoMode', value as 'private' | 'public')}
+              options={[
+                { label: '私有（额度限制）', value: 'private' },
+                { label: '公开（不计费）', value: 'public' },
+              ]}
+            />
+          </Field>
+          <div className="stack" style={{ gap: 10 }}>
+            <div className="card" style={{ padding: 12 }}>
+              <div className="title-3" style={{ fontSize: 13 }}>私有模板</div>
+              <div className="row">
+                <div className="grow"><Field label="每批条数"><input className="input" inputMode="numeric" value={form.privateProbeBatchSize ?? 1200} onChange={(event) => set('privateProbeBatchSize', Number(event.target.value))} /></Field></div>
+                <div className="grow"><Field label="批次间隔（小时）"><input className="input" inputMode="numeric" value={form.privateProbeIntervalHours ?? 8} onChange={(event) => set('privateProbeIntervalHours', Number(event.target.value))} /></Field></div>
+                <div className="grow"><Field label="每日派发上限"><input className="input" inputMode="numeric" value={form.privateMaxDailyDispatches ?? 20} onChange={(event) => set('privateMaxDailyDispatches', Number(event.target.value))} /></Field></div>
+              </div>
+            </div>
+            <div className="card" style={{ padding: 12 }}>
+              <div className="title-3" style={{ fontSize: 13 }}>公开模板</div>
+              <div className="row">
+                <div className="grow"><Field label="每批条数"><input className="input" inputMode="numeric" value={form.publicProbeBatchSize ?? 2000} onChange={(event) => set('publicProbeBatchSize', Number(event.target.value))} /></Field></div>
+                <div className="grow"><Field label="批次间隔（小时）"><input className="input" inputMode="numeric" value={form.publicProbeIntervalHours ?? 2} onChange={(event) => set('publicProbeIntervalHours', Number(event.target.value))} /></Field></div>
+                <div className="grow"><Field label="每日派发上限"><input className="input" inputMode="numeric" value={form.publicMaxDailyDispatches ?? 30} onChange={(event) => set('publicMaxDailyDispatches', Number(event.target.value))} /></Field></div>
+              </div>
+            </div>
           </div>
-          <div className="caption">每批 1200 条、间隔 8 小时 ≈ 每天 3 批 3600 条，足够覆盖全部池内线路。阶段顺序、提升/延后、暂停在概览页「检测任务」里调整；KV 写入 ≥920 时队列自动暂停。</div>
+          <div className="caption">
+            当前生效（{form.actionsRepoMode === 'public' ? '公开' : '私有'}）：每批 {activeProbeProfile(form).batchSize} 条 · 间隔 {activeProbeProfile(form).intervalHours} 小时 · 每天最多 {activeProbeProfile(form).maxDailyDispatches} 批。阶段顺序、提升/延后、暂停在概览页「检测任务」里调整；KV 写入 ≥920 时队列仍会自动暂停。
+          </div>
 
           <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>抓源</div>
           <div className="list">

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { classifyGroup, compileRules, displayName, mapPool, probeLiveness, probeStream, type AppSettings, type LineEntry, type Rule } from '@iptv/core';
+import { classifyGroup, compileRules, displayName, mapPool, probeLiveness, probeStream, activeProbeProfile, type AppSettings, type LineEntry, type Rule } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   applySourceStats,
@@ -428,7 +428,7 @@ adminRoutes.post('/runs/dispatch', async (c) => {
       line_keys: lineKeys.join(','),
       phase: typeof body.phase === 'string' && ['pending', 'quarantine'].includes(body.phase) ? body.phase : '',
     },
-    total: command === 'probe-batch' ? Math.max(0, Number(settings.probeBatchSize) || 1200) : 0,
+    total: command === 'probe-batch' ? Math.max(0, activeProbeProfile(settings).batchSize) : 0,
     unit: command === 'probe-batch' ? 'lines' : '',
     message: source === 'detection' ? '检测中心发起' : undefined,
   });
@@ -699,6 +699,8 @@ adminRoutes.put('/settings', async (c) => {
     'ffprobeLimit', 'probePrefilterEnabled', 'probePrefilterBudget', 'lineRetentionDays', 'epgUrls', 'regionSuffix', 'epgSourcePriority',
     'autoCollectEnabled', 'autoCollectTimes', 'autoLivenessEnabled', 'autoLivenessTimes',
     'autoProbeEnabled', 'probeBatchSize', 'autoProbeIntervalHours',
+    'actionsRepoMode', 'privateProbeBatchSize', 'privateProbeIntervalHours', 'privateMaxDailyDispatches',
+    'publicProbeBatchSize', 'publicProbeIntervalHours', 'publicMaxDailyDispatches',
     'actionsMonthlyBudgetMinutes', 'actionsReserveMinutes', 'actionsRunCostMinutes',
     'probePhaseOrder', 'probePausedPhases',
     'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishTimes', 'autoPublishIntervalHours', 'autoPublishAfterProbeEnabled', 'epgRefreshEnabled', 'epgRefreshTimes',
@@ -736,6 +738,16 @@ adminRoutes.put('/settings', async (c) => {
   }
   if (clean.probeBatchSize !== undefined) clean.probeBatchSize = Math.max(1, Number(clean.probeBatchSize) || 1200);
   if (clean.autoProbeIntervalHours !== undefined) clean.autoProbeIntervalHours = Math.max(1, Number(clean.autoProbeIntervalHours) || 6);
+  if (clean.actionsRepoMode !== undefined) clean.actionsRepoMode = clean.actionsRepoMode === 'public' ? 'public' : 'private';
+  for (const key of ['privateProbeBatchSize', 'publicProbeBatchSize'] as const) {
+    if (clean[key] !== undefined) clean[key] = Math.max(1, Math.min(20_000, Number(clean[key]) || 1200));
+  }
+  for (const key of ['privateProbeIntervalHours', 'publicProbeIntervalHours'] as const) {
+    if (clean[key] !== undefined) clean[key] = Math.max(1, Math.min(168, Number(clean[key]) || 8));
+  }
+  for (const key of ['privateMaxDailyDispatches', 'publicMaxDailyDispatches'] as const) {
+    if (clean[key] !== undefined) clean[key] = Math.max(1, Math.min(100, Number(clean[key]) || 20));
+  }
   if (clean.actionsMonthlyBudgetMinutes !== undefined) clean.actionsMonthlyBudgetMinutes = Math.max(300, Math.min(100_000, Number(clean.actionsMonthlyBudgetMinutes) || 2_000));
   if (clean.actionsReserveMinutes !== undefined) clean.actionsReserveMinutes = Math.max(0, Math.min(50_000, Number(clean.actionsReserveMinutes) || 0));
   if (clean.actionsRunCostMinutes !== undefined) clean.actionsRunCostMinutes = Math.max(1, Math.min(120, Number(clean.actionsRunCostMinutes) || 6));
@@ -848,7 +860,7 @@ adminRoutes.get('/tasks', async (c) => {
       .map((item) => item.trim())
       .filter(Boolean),
   );
-  const batchSize = Math.max(1, Number(settings.probeBatchSize) || 1200);
+  const batchSize = activeProbeProfile(settings).batchSize;
   const phases = order.map((id) => {
     const count = Math.max(0, Number(stats?.[id] ?? 0));
     return {
@@ -892,7 +904,7 @@ adminRoutes.get('/tasks', async (c) => {
   }
   return ok({
     batchSize,
-    intervalHours: settings.autoProbeIntervalHours,
+    intervalHours: activeProbeProfile(settings).intervalHours,
     phases,
     stats: stats ?? null,
     statsGeneratedAt: stats?.generatedAt ?? null,
