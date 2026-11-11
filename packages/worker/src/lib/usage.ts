@@ -21,6 +21,8 @@ export interface UsageSnapshot {
 
 interface GithubRun {
   run_duration_ms?: number;
+  run_started_at?: string;
+  status?: string;
   created_at: string;
   updated_at: string;
 }
@@ -37,6 +39,9 @@ export function aggregateGithubRuns(
   runs: GithubRun[],
   month: string,
 ): { minutes: number; runs: number; byDay: Map<string, number> } {
+  // A single job never runs for hours; anything longer is queue/cancel time or
+  // an `updated_at` touched by log cleanup, and must not inflate the estimate.
+  const MAX_RUN_MS = 60 * 60_000;
   let minutes = 0;
   let count = 0;
   const byDay = new Map<string, number>();
@@ -44,7 +49,14 @@ export function aggregateGithubRuns(
     const day = run.created_at.slice(0, 10);
     // The created filter is best-effort; never count a previous month.
     if (day < month) continue;
-    const ms = run.run_duration_ms ?? Math.max(0, Date.parse(run.updated_at) - Date.parse(run.created_at));
+    if (run.status === 'queued') {
+      count += 1;
+      continue;
+    }
+    const started = Date.parse(run.run_started_at ?? run.created_at);
+    const ended = Date.parse(run.updated_at);
+    const raw = run.run_duration_ms ?? Math.max(0, ended - started);
+    const ms = Number.isFinite(raw) ? Math.min(Math.max(0, raw), MAX_RUN_MS) : 0;
     minutes += ms / 60_000;
     byDay.set(day, (byDay.get(day) ?? 0) + ms / 60_000);
     count += 1;

@@ -24,4 +24,24 @@ describe('aggregateGithubRuns', () => {
     expect(result.minutes).toBe(1.5);
     expect(result.runs).toBe(1);
   });
+
+  it('prefers run_started_at and caps queue/log-cleanup inflation', () => {
+    const result = aggregateGithubRuns(
+      [
+        { created_at: '2026-11-01T00:00:00Z', run_started_at: '2026-11-01T10:00:00Z', updated_at: '2026-11-01T10:05:00Z' },
+        { created_at: '2026-11-02T00:00:00Z', updated_at: '2026-11-04T00:00:00Z' },
+      ],
+      '2026-11-01',
+    );
+    expect(result.minutes).toBe(65);
+  });
+
+  it('does not count queued runs as minutes', () => {
+    const result = aggregateGithubRuns(
+      [{ status: 'queued', created_at: '2026-11-05T00:00:00Z', updated_at: '2026-11-06T00:00:00Z' }],
+      '2026-11-01',
+    );
+    expect(result.minutes).toBe(0);
+    expect(result.runs).toBe(1);
+  });
 });
