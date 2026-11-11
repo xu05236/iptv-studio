@@ -491,7 +491,7 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
   const usage = await getRuntimeJson<{
     kv?: { day?: string; writes?: number };
     d1?: { day?: string; rowsWritten?: number };
-    github?: { month?: string; minutes?: number };
+    github?: { month?: string; minutes?: number; private?: boolean };
   }>(env, 'state/usage.json');
   const writes = usage?.kv?.day === today ? Number(usage.kv.writes ?? 0) : 0;
   if (writes >= 920) {
@@ -514,7 +514,7 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
   const budgetMinutes = Math.max(0, Number(settings.actionsMonthlyBudgetMinutes ?? 2_000));
   const reserveMinutes = Math.max(0, Number(settings.actionsReserveMinutes ?? 300));
   const autoBudget = Math.max(0, budgetMinutes - reserveMinutes);
-  if (ghMinutes >= autoBudget && next.source !== 'manual') {
+  if (usage?.github?.private !== false && ghMinutes >= autoBudget && next.source !== 'manual') {
     if (changed) await saveTasks(env, tasks);
     return { task: next, message: `GitHub Actions 本月已用 ${ghMinutes}/${budgetMinutes} 分钟（保留 ${reserveMinutes} 分钟手动额度），自动任务保持排队（可手动触发）` };
   }

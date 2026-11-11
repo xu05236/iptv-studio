@@ -15,7 +15,7 @@ export interface UsageSnapshot {
   collectedAt: string;
   kv: { day: string; reads: number; writes: number; lists: number; deletes: number; storageBytes: number };
   d1: { day: string; rowsRead: number; rowsWritten: number };
-  github: { month: string; minutes: number; runs: number };
+  github: { month: string; minutes: number; runs: number; private?: boolean };
   history: DayUsage[];
 }
 
@@ -52,12 +52,30 @@ export function aggregateGithubRuns(
   return { minutes, runs: count, byDay };
 }
 
-async function collectGithub(env: Env): Promise<{ month: string; minutes: number; runs: number; byDay: Map<string, number> }> {
+async function collectGithub(env: Env): Promise<{ month: string; minutes: number; runs: number; private?: boolean; byDay: Map<string, number> }> {
   const month = monthStart();
   const byDay = new Map<string, number>();
   const token = env.GITHUB_TOKEN;
   const repo = env.GITHUB_REPO;
   if (!token || !repo) return { month, minutes: 0, runs: 0, byDay };
+  // Public repositories get unmetered standard runners, so the UI and the
+  // quota guard need to know the visibility alongside the minutes.
+  let isPrivate: boolean | undefined;
+  try {
+    const metaResponse = await fetch(`https://api.github.com/repos/${repo}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'iptv-studio-worker',
+      },
+    });
+    if (metaResponse.ok) {
+      const meta = (await metaResponse.json()) as { private?: boolean };
+      if (typeof meta.private === 'boolean') isPrivate = meta.private;
+    }
+  } catch {
+    // Keep the private default (2,000 min budget) when visibility is unknown.
+  }
   let minutes = 0;
   let runs = 0;
   for (let page = 1; page <= 10; page += 1) {
@@ -80,7 +98,7 @@ async function collectGithub(env: Env): Promise<{ month: string; minutes: number
     for (const [day, value] of agg.byDay) byDay.set(day, (byDay.get(day) ?? 0) + value);
     if (pageRuns.length < 100) break;
   }
-  return { month, minutes: Math.ceil(minutes), runs, byDay };
+  return { month, minutes: Math.ceil(minutes), runs, private: isPrivate, byDay };
 }
 
 async function graphql(token: string, query: string): Promise<Record<string, unknown>> {
@@ -190,7 +208,7 @@ export async function refreshUsage(env: Env): Promise<UsageSnapshot> {
     collectedAt: new Date().toISOString(),
     kv: cloudflare?.kv ?? previous?.kv ?? { day: utcDay(), reads: 0, writes: 0, lists: 0, deletes: 0, storageBytes: 0 },
     d1: cloudflare?.d1 ?? previous?.d1 ?? { day: utcDay(), rowsRead: 0, rowsWritten: 0 },
-    github: { month: github.month, minutes: github.minutes, runs: github.runs },
+    github: { month: github.month, minutes: github.minutes, runs: github.runs, private: github.private },
     history,
   };
   await putRuntimeJson(env, KEY, snapshot);

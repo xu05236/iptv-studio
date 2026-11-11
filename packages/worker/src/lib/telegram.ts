@@ -18,7 +18,7 @@ const TASK_TYPE: Record<string, string> = {
 interface UsageState {
   kv?: { reads?: number; writes?: number; lists?: number; storageBytes?: number };
   d1?: { rowsRead?: number; rowsWritten?: number };
-  github?: { minutes?: number; runs?: number };
+  github?: { minutes?: number; runs?: number; private?: boolean };
 }
 
 function shanghai(value?: string | null): string {
@@ -61,7 +61,9 @@ async function buildReply(env: Env, command: string): Promise<string> {
       '📊 额度使用',
       `KV 读 ${kv?.reads ?? 0} / 写 ${kv?.writes ?? 0} / 列表 ${kv?.lists ?? 0}`,
       `D1 读 ${d1?.rowsRead ?? 0} / 写 ${d1?.rowsWritten ?? 0}`,
-      `GitHub 本月 ${gh?.minutes ?? 0} 分钟 / ${gh?.runs ?? 0} 次`,
+      gh?.private === false
+        ? `GitHub Actions 公开仓库不计费 · 本月 ${gh?.minutes ?? 0} 分钟 / ${gh?.runs ?? 0} 次`
+        : `GitHub 本月 ${gh?.minutes ?? 0} 分钟 / ${gh?.runs ?? 0} 次`,
       `存储 ${Math.round((kv?.storageBytes ?? 0) / 1024 / 1024)} MB`,
     ].join('\n');
   }

@@ -767,16 +767,29 @@ export function Dashboard() {
                   </div>
                 </div>
                 {snapshot ? (
-                  <>
-                    <UsageBar label="本月已用（估算）" used={snapshot.github.minutes} limit={2000} format={(value) => `${value} 分钟`} />
-                    <div className="caption" style={{ marginTop: 8 }}>
-                      本月 {snapshot.github.runs} 次运行 · 剩余约 {Math.max(0, 2000 - snapshot.github.minutes)} 分钟
-                    </div>
-                  </>
+                  snapshot.github.private === false ? (
+                    <>
+                      <div className="caption" style={{ marginTop: 2 }}>公开仓库：标准运行不计费，无需关注 2,000 分钟上限</div>
+                      <div className="caption" style={{ marginTop: 8 }}>
+                        本月约 {formatNumber(snapshot.github.minutes)} 分钟 · {snapshot.github.runs} 次运行
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <UsageBar label="本月已用（估算）" used={snapshot.github.minutes} limit={2000} format={(value) => `${value} 分钟`} />
+                      <div className="caption" style={{ marginTop: 8 }}>
+                        本月 {snapshot.github.runs} 次运行 · 剩余约 {Math.max(0, 2000 - snapshot.github.minutes)} 分钟
+                      </div>
+                    </>
+                  )
                 ) : (
                   <div className="caption" style={{ marginTop: 10 }}>采集结束自动更新用量快照，也可以手动刷新</div>
                 )}
-                <div className="caption" style={{ marginTop: 6 }}>私有仓库免费 2000 分钟/月，按运行时长估算，账单日重置</div>
+                <div className="caption" style={{ marginTop: 6 }}>
+                  {snapshot?.github.private === false
+                    ? '公开仓库的 Actions 标准运行不消耗月度分钟数'
+                    : '私有仓库免费 2000 分钟/月，按运行时长估算，账单日重置'}
+                </div>
               </Card>
 
               <Card className="usage-card usage-card--kv">

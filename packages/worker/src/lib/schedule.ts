@@ -362,16 +362,17 @@ async function loadActionsAllowance(env: Env, settings: AppSettings): Promise<Ac
   const month = now.toISOString().slice(0, 7);
   const today = now.toISOString().slice(0, 10);
   const [usage, tasks] = await Promise.all([
-    getRuntimeJson<{ github?: { month?: string; minutes?: number } }>(env, 'state/usage.json'),
+    getRuntimeJson<{ github?: { month?: string; minutes?: number; private?: boolean } }>(env, 'state/usage.json'),
     loadTasks(env),
   ]);
   const used = usage?.github?.month?.startsWith(month) ? Number(usage.github.minutes ?? 0) : 0;
   const autoRunsToday = tasks.filter(
     (task: Task) => task.source === 'schedule' && (task.createdAt ?? '').slice(0, 10) === today,
   ).length;
+  const publicRepo = usage?.github?.private === false;
   return actionsAllowance({
-    used,
-    budget: Number(settings.actionsMonthlyBudgetMinutes ?? 2_000),
+    used: publicRepo ? 0 : used,
+    budget: publicRepo ? 10_000_000 : Number(settings.actionsMonthlyBudgetMinutes ?? 2_000),
     reserve: Number(settings.actionsReserveMinutes ?? 300),
     runCost: Number(settings.actionsRunCostMinutes ?? 6),
     now: now.getTime(),
