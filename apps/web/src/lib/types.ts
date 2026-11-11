@@ -36,6 +36,8 @@ export interface ChannelDetailResponse {
     logo?: string;
   };
   lines: PublicLine[];
+  /** Line key that supplied the channel logo, when it came from a source line. */
+  logoFromKey?: string | null;
   epg?: {
     now?: { title: string; start: number; stop?: number };
     next?: Array<{ title: string; start: number; stop?: number }>;

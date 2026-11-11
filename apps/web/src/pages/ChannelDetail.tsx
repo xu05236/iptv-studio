@@ -299,6 +299,9 @@ export function ChannelDetail() {
                   </select>
                 </label>
               </div>
+              <div className="caption" style={{ marginTop: 6 }}>
+                默认顺序：收藏 &gt; 精品池 &gt; 备用池 &gt; 候选池 &gt; 评分；#1 为当前首选，播放失败会自动切换。
+              </div>
             </Card>
 
             {visibleLines.map((line, index) => {
@@ -311,6 +314,8 @@ export function ChannelDetail() {
                     <div className="row row--wrap" style={{ gap: 5 }}>
                       <Badge tone={statusTone(line.status)}>{statusLabel(line.status)}</Badge>
                       {line.favorite ? <Badge tone="orange">收藏</Badge> : null}
+                      {order === 1 && lineSort === 'default' ? <Badge tone="blue">首选</Badge> : null}
+                      {query.data?.logoFromKey === line.key ? <Badge tone="green">台标供体</Badge> : null}
                       {line.pool ? <Badge tone={line.pool === 'premium' ? 'green' : line.pool === 'backup' ? 'blue' : 'default'}>{line.pool === 'premium' ? '精品池' : line.pool === 'backup' ? '备用池' : '候选池'}</Badge> : null}
                       {check ? (
                         <Badge tone={check.ok ? 'green' : 'red'}>

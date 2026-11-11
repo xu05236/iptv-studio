@@ -148,3 +148,35 @@ describe('publish', () => {
     expect(written['logs/2026-10-27/run-3.jsonl']).toContain('"ok":true');
   });
 });
+
+describe('channel logo provenance', () => {
+  const settings = { ...DEFAULT_SETTINGS, maxLinesPerChannel: 3, maxLinesPerSource: 2 };
+
+  it('keeps an explicit channel logo instead of a line logo', () => {
+    const registry = new ChannelRegistry([{ id: 'logo-test', name: '测试频道', group: '地方', logo: 'https://cdn.example/channel.png' }]);
+    const output = buildArtifacts({
+      runId: 'run-logo-1',
+      generatedAt: '2026-10-27T04:00:00.000Z',
+      registry,
+      lines: [line({ channelId: 'logo-test', name: '测试频道', url: 'http://line/1.m3u8', urlKey: 'http://line/1.m3u8', logo: 'https://line.example/line.png' })],
+      settings,
+      rules: [],
+      epg: { channels: [], programmes: [] },
+    });
+    expect(output.catalog.items.find((item) => item.channel.id === 'logo-test')?.channel.logo).toBe('https://cdn.example/channel.png');
+  });
+
+  it('fills an empty channel logo from a source line', () => {
+    const registry = new ChannelRegistry([{ id: 'logo-test', name: '测试频道', group: '地方' }]);
+    const output = buildArtifacts({
+      runId: 'run-logo-2',
+      generatedAt: '2026-10-27T04:00:00.000Z',
+      registry,
+      lines: [line({ channelId: 'logo-test', name: '测试频道', url: 'http://line/2.m3u8', urlKey: 'http://line/2.m3u8', logo: 'https://line.example/line.png' })],
+      settings,
+      rules: [],
+      epg: { channels: [], programmes: [] },
+    });
+    expect(output.catalog.items.find((item) => item.channel.id === 'logo-test')?.channel.logo).toBe('https://line.example/line.png');
+  });
+});

@@ -295,6 +295,9 @@ publicRoutes.get('/channels/:id', async (c) => {
       for (const line of entry.backup) poolByKey.set(line.key, 'backup');
       for (const line of entry.candidate) poolByKey.set(line.key, 'candidate');
     }
+    const logoFromKey = shard.channel.logo
+      ? shard.lines.find((line) => line.logo && line.logo === shard.channel.logo)?.key ?? null
+      : null;
     const safeLines = shard.lines.map(({ url, headers: _headers, ...rest }) => ({
       ...rest,
       speedKbps: Math.min(rest.speedKbps ?? 0, 50_000),
@@ -306,6 +309,7 @@ publicRoutes.get('/channels/:id', async (c) => {
     return ok(
       {
         channel: shard.channel,
+        logoFromKey,
         lines: safeLines,
         epg: shard.epg ?? null,
         features: { relay: settings.relayEnabled, directPlayback: settings.directPlayback, frontLineLimit: settings.frontLineLimit ?? 0 },
