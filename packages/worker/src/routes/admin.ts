@@ -37,7 +37,7 @@ import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
 import { createTask, deleteFailedTasks, dispatchNext, finishTask, loadTasks, mutateTask, progressTask, recordFinishedTask, type Task } from '../lib/tasks.js';
 import { registerTelegramWebhook } from '../lib/telegram.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
-import { nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, nextDueFetchSlot, nextScheduledAt, parseCollectTimes } from '../lib/schedule.js';
+import { describeAfterProbeGate, nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, nextDueFetchSlot, nextScheduledAt, parseCollectTimes } from '../lib/schedule.js';
 import { sourceMetaMap } from '../lib/source.js';
 import { summarizeCoverage, type GuideLike } from '../lib/epgCoverage.js';
 import { MIGRATION_FILES } from '../lib/migrations.generated.js';
@@ -921,6 +921,7 @@ adminRoutes.get('/tasks', async (c) => {
   }
   if (settings.autoPublishAfterProbeEnabled) {
     const interval = Math.max(1, Number(settings.autoPublishIntervalHours) || 6);
+    const afterProbeGate = await describeAfterProbeGate(c.env, settings);
     scheduledItems.push({
       id: 'policy-publish-after-probe',
       type: 'publish',
@@ -932,6 +933,7 @@ adminRoutes.get('/tasks', async (c) => {
         afterProbe: 'true',
         intervalHours: interval,
         lastRunAt: publishState?.lastRunAt ?? '',
+        gate: afterProbeGate.ok ? '' : afterProbeGate.reason,
       },
       progress: { done: 0, total: 0, unit: '' },
       createdAt: scheduledAt,

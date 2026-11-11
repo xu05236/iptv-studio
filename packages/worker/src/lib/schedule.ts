@@ -5,7 +5,17 @@ import { cancelGithubRun, workflowRunStatus } from './github.js';
 import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 import { createSnapshot } from './snapshots.js';
-import { createTask, dispatchNext, loadTasks, mutateTask, recordFinishedTask, type Task } from './tasks.js';
+import { createTask, dispatchNext, loadTasks, mutateTask, recordFinishedTask, setProbeFinishedHook, type Task } from './tasks.js';
+
+// Event-driven follow-up: when a probe batch finishes, do not wait for the next
+// 5-minute tick to reconsider "publish after probe".
+setProbeFinishedHook(async (env, task) => {
+  if (task.type !== 'probe-batch') return;
+  const settings = await loadSettings(env);
+  if (await runAutoPublishAfterProbe(env, settings, Date.now())) {
+    await dispatchNext(env);
+  }
+});
 
 /** Beijing is UTC+8 with no DST; the scheduler stores local HH:mm and matches in UTC. */
 const BEIJING_OFFSET_MS = 8 * 3_600_000;
@@ -279,24 +289,43 @@ async function publishIsCurrent(env: Env): Promise<boolean> {
   return recent && Date.parse(index.generatedAt) >= Date.parse(pool.generatedAt);
 }
 
+export interface AfterProbeGate {
+  ok: boolean;
+  reason: string;
+}
+
 /**
- * Probe only updates the line pool. If the pool is newer than the published
- * catalog, publish automatically, but at most once every six hours so hourly
- * probes cannot exhaust the KV write budget.
+ * Explain whether the "publish after probe" policy would fire right now. The
+ * task list shows the reason so a stale pool, an interval guard, or a queued
+ * publish is visible without digging through runtime state.
  */
-async function runAutoPublishAfterProbe(env: Env, settings: AppSettings, now: number): Promise<boolean> {
-  if (!settings.autoPublishAfterProbeEnabled) return false;
-  if ((await loadActionsAllowance(env, settings)).blocked) return false;
+export async function describeAfterProbeGate(env: Env, settings: AppSettings): Promise<AfterProbeGate> {
+  if (!settings.autoPublishAfterProbeEnabled) return { ok: false, reason: '未开启「探测后自动发布」' };
+  if ((await loadActionsAllowance(env, settings)).blocked) return { ok: false, reason: 'Actions 额度不足，自动任务已暂停' };
   const [index, pool, last, tasks] = await Promise.all([
     getJson<{ generatedAt?: string }>(env, 'state/index.json'),
     getJson<{ generatedAt?: string }>(env, 'state/pool-stats.json'),
     getRuntimeJson<{ at?: string }>(env, 'state/auto-publish-after-probe.json'),
     loadTasks(env),
   ]);
-  if (!index?.generatedAt || !pool?.generatedAt) return false;
-  if (Date.parse(pool.generatedAt) <= Date.parse(index.generatedAt)) return false;
-  if (now - Date.parse(last?.at ?? '') < Math.max(1, Number(settings.autoPublishIntervalHours) || 6) * 3_600_000) return false;
-  if (tasks.some((task: Task) => task.type === 'publish' && (task.status === 'queued' || task.status === 'running'))) return false;
+  if (!index?.generatedAt || !pool?.generatedAt) return { ok: false, reason: '缺少发布索引或池快照' };
+  if (Date.parse(pool.generatedAt) <= Date.parse(index.generatedAt)) {
+    return { ok: false, reason: '池快照没有比已发布内容更新，无需发布' };
+  }
+  const intervalMs = Math.max(1, Number(settings.autoPublishIntervalHours) || 6) * 3_600_000;
+  const wait = Date.parse(last?.at ?? '') + intervalMs - Date.now();
+  if (wait > 0) {
+    return { ok: false, reason: `距上次自动发布不足 ${Math.round(intervalMs / 3_600_000)} 小时（约 ${Math.ceil(wait / 60_000)} 分钟后可再发）` };
+  }
+  if (tasks.some((task: Task) => task.type === 'publish' && (task.status === 'queued' || task.status === 'running'))) {
+    return { ok: false, reason: '已有发布任务在排队或运行' };
+  }
+  return { ok: true, reason: '条件满足，等待触发' };
+}
+
+async function runAutoPublishAfterProbe(env: Env, settings: AppSettings, now: number): Promise<boolean> {
+  const gate = await describeAfterProbeGate(env, settings);
+  if (!gate.ok) return false;
   const task = await createTask(env, { type: 'publish', source: 'schedule', priority: 40, payload: { auto: 'after-probe' } });
   await putRuntimeJson(env, 'state/auto-publish-after-probe.json', { at: new Date(now).toISOString(), taskId: task.id });
   await audit(env, 'scheduler', 'schedule.auto-publish-after-probe', task.id);

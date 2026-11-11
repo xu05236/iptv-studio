@@ -579,6 +579,9 @@ export function Dashboard() {
                                 ? `下次 ${formatSnapshot(task.payload.nextAt)}`
                                 : '等待新线路'}
                           </div>
+                          {task.payload.afterProbe === 'true' && task.payload.gate ? (
+                            <div className="caption" style={{ marginTop: 2, color: 'var(--orange)' }}>{String(task.payload.gate)}</div>
+                          ) : null}
                           {task.payload.result && task.payload.result !== 'queued' ? (
                             <div className="caption" style={{ marginTop: 2, color: task.payload.result.startsWith('skipped') ? 'var(--orange)' : undefined }}>
                               上次调度：{describeScheduleResult(task.payload.result)}

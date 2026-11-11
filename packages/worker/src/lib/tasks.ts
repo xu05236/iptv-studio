@@ -404,6 +404,14 @@ const SCHEDULE_STATE_KEYS: Record<string, string> = {
   snapshot: 'state/snapshot-schedule.json',
 };
 
+type ProbeFinishedHook = (env: Env, task: Task) => Promise<void>;
+let probeFinishedHook: ProbeFinishedHook | null = null;
+
+/** Registered by the scheduler: a finished probe batch can trigger the follow-up publish immediately. */
+export function setProbeFinishedHook(hook: ProbeFinishedHook | null): void {
+  probeFinishedHook = hook;
+}
+
 /**
  * Mirror the terminal result onto the schedule row. Without this the dashboard
  * keeps showing "queued" (written at dispatch time) after the task finished.
@@ -412,10 +420,10 @@ const SCHEDULE_STATE_KEYS: Record<string, string> = {
 async function recordScheduleResult(env: Env, task: Task, result: string): Promise<void> {
   const key = SCHEDULE_STATE_KEYS[task.type];
   if (!key) return;
-  if (task.source !== 'schedule' && task.type !== 'probe') return;
+  if (task.source !== 'schedule' && task.type !== 'probe-batch') return;
   try {
     const state = (await getRuntimeJson<Record<string, unknown>>(env, key)) ?? {};
-    if (task.type === 'probe' && result.startsWith('done')) {
+    if (task.type === 'probe-batch' && result.startsWith('done')) {
       // Manual probe runs count as a probe too: push the next auto batch out by
       // one interval so the scheduler does not fire right after a manual run.
       const settings = await loadSettings(env);
@@ -436,13 +444,13 @@ async function recordScheduleResult(env: Env, task: Task, result: string): Promi
   }
 }
 
-async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed', message?: string): Promise<void> {
+async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed', message?: string): Promise<Task | null> {
   const tasks = await loadTasks(env);
   const task = tasks.find((item) => item.id === taskId);
-  if (!task) return;
+  if (!task) return null;
   // A late report from a run we already stopped (cancelled or force-failed)
   // must not revive the task; queued tasks may still be finished directly.
-  if (task.status === 'cancelled' || task.status === 'failed') return;
+  if (task.status === 'cancelled' || task.status === 'failed') return null;
   task.status = status;
   const taskMessage = status === 'done'
     ? (message ?? (/抓取完成|分批探测完成|EPG 刷新完成|快照完成/.test(task.message ?? '') ? task.message! : '完成'))
@@ -464,14 +472,24 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
     } else {
       await notifyTaskFailure(env, task, task.message);
     }
-    return;
+    return null;
   }
   await saveTasks(env, tasks);
   if (status === 'failed') await notifyTaskFailure(env, task, task.message);
+  return status === 'done' ? task : null;
 }
 
-export function finishTask(...args: Parameters<typeof finishTaskCore>): ReturnType<typeof finishTaskCore> {
-  return withTaskLock(args[0], () => finishTaskCore(...args));
+export async function finishTask(...args: Parameters<typeof finishTaskCore>): Promise<void> {
+  const finished = await withTaskLock(args[0], () => finishTaskCore(...args));
+  // Run the follow-up outside the task lock: creating the publish task and
+  // dispatching it both acquire the same lock.
+  if (finished && args[2] === 'done' && finished.type === 'probe-batch' && probeFinishedHook) {
+    try {
+      await probeFinishedHook(args[0], finished);
+    } catch {
+      // Best effort: the 5-minute scheduler still retries the publish check.
+    }
+  }
 }
 
 async function progressTaskCore(env: Env, taskId: string, done: number, total?: number, message?: string): Promise<void> {
