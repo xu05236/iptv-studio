@@ -90,7 +90,7 @@ export function nextAutoLivenessAt(settings: AppSettings, nowMs = Date.now()): n
 }
 
 export function nextAutoPublishAt(settings: AppSettings, nowMs = Date.now()): number | null {
-  if (settings.autoPublishStrategy !== 'times' || !settings.autoPublishEnabled) return null;
+  if (!settings.autoPublishEnabled) return null;
   return nextScheduledAt(parseCollectTimes(settings.autoPublishTimes), nowMs);
 }
 
@@ -117,7 +117,7 @@ function schedulerConfigs(settings: AppSettings): SchedulerConfig[] {
     },
     {
       command: 'publish',
-      enabled: settings.autoPublishStrategy === 'times' && Boolean(settings.autoPublishEnabled),
+      enabled: Boolean(settings.autoPublishEnabled),
       times: settings.autoPublishTimes,
       stateKey: 'state/publish-schedule.json',
     },
@@ -285,7 +285,6 @@ async function publishIsCurrent(env: Env): Promise<boolean> {
  * probes cannot exhaust the KV write budget.
  */
 async function runAutoPublishAfterProbe(env: Env, settings: AppSettings, now: number): Promise<boolean> {
-  if (settings.autoPublishStrategy !== 'afterProbe') return false;
   if (!settings.autoPublishAfterProbeEnabled) return false;
   if ((await loadActionsAllowance(env, settings)).blocked) return false;
   const [index, pool, last, tasks] = await Promise.all([

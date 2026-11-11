@@ -296,32 +296,22 @@ export function SettingsPage() {
           </Field>
           <div className="caption">新增/导入源时系统会立刻建一次抓源任务，与这个开关无关；这里只控制已有源的定期重抓。单源覆盖：采集站 → 过滤 / 更新策略 → 更新间隔（留空跟随分档，0 = 不自动重抓，24 = 每天，48 = 每 2 天）。分档规则：7 天内新源 24 小时、重点源（权重 ≥ 2）12 小时、其它 72 小时。</div>
 
-          <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>发布策略</div>
-          <Segmented
-            value={(form.autoPublishStrategy ?? 'afterProbe') as 'times' | 'afterProbe'}
-            onChange={(value) => {
-              set('autoPublishStrategy', value);
-              set('autoPublishAfterProbeEnabled', value === 'afterProbe');
-            }}
-            options={[
-              { value: 'afterProbe', label: '探测后自动' },
-              { value: 'times', label: '每天固定时段' },
-            ]}
-          />
-          <div className="caption">
-            {form.autoPublishStrategy === 'times'
-              ? '只在填写的时刻发布；探测结果不会触发发布。'
-              : '探测让线路池发生变化后自动发布；两次发布至少间隔下面的最小间隔。'}
+          <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>每日发布</div>
+          <div className="list">
+            <div className="list__row"><span className="grow">启用每日发布（只更新 EPG/catalog，不探测）</span><Switch checked={form.autoPublishEnabled ?? true} onChange={(value) => set('autoPublishEnabled', value)} /></div>
           </div>
-          {form.autoPublishStrategy === 'times' ? (
-            <Field label="每天发布时刻（北京时间）" hint="只更新线路相关产物，不抓 EPG；可填多个时刻，用逗号分隔">
-              <input className="input" value={form.autoPublishTimes ?? '08:30'} onChange={(event) => set('autoPublishTimes', event.target.value)} />
-            </Field>
-          ) : (
-            <Field label="自动发布最小间隔（小时）" hint="探测更新线路池后，自动发布至少间隔多久；默认 6 小时，最小 1 小时">
-              <input className="input" inputMode="numeric" value={form.autoPublishIntervalHours ?? 6} onChange={(event) => set('autoPublishIntervalHours', Math.max(1, Number(event.target.value) || 1))} />
-            </Field>
-          )}
+          <Field label="每天发布时刻（北京时间）" hint="只更新线路相关产物，不抓 EPG；可填多个时刻，用逗号分隔">
+            <input className="input" value={form.autoPublishTimes ?? '08:30'} onChange={(event) => set('autoPublishTimes', event.target.value)} />
+          </Field>
+          <Field label="自动发布最小间隔（小时）" hint="探测更新线路池后，自动发布至少间隔多久；默认 6 小时，最小 1 小时">
+            <input className="input" inputMode="numeric" value={form.autoPublishIntervalHours ?? 6} onChange={(event) => set('autoPublishIntervalHours', Math.max(1, Number(event.target.value) || 1))} />
+          </Field>
+          <div className="list">
+            <div className="list__row">
+              <span className="grow">探测后自动发布（关闭后只按每日时刻发布）</span>
+              <Switch checked={form.autoPublishAfterProbeEnabled ?? false} onChange={(value) => set('autoPublishAfterProbeEnabled', value)} />
+            </div>
+          </div>
         </div>
       </Card>
 

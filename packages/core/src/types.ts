@@ -337,8 +337,6 @@ export interface AppSettings {
   fetchIntervalDays: number;
   /** Daily publish-only (EPG/catalog) without probing. */
   autoPublishEnabled: boolean;
-  /** 'times' = fixed daily slots, 'afterProbe' = driven by probe changes. */
-  autoPublishStrategy: 'times' | 'afterProbe';
   autoPublishTimes: string;
   /** Minimum hours between automatic publish-after-probe runs. */
   autoPublishIntervalHours: number;
@@ -460,7 +458,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fetchTimes: '06:30',
   fetchIntervalDays: 1,
   autoPublishEnabled: true,
-  autoPublishStrategy: 'afterProbe',
   autoPublishTimes: '08:30',
   autoPublishIntervalHours: 6,
   autoPublishAfterProbeEnabled: false,
