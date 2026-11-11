@@ -257,15 +257,7 @@ export function SettingsPage() {
               ]}
             />
           </Field>
-          <div className="stack" style={{ gap: 10 }}>
-            <div className="card" style={{ padding: 12 }}>
-              <div className="title-3" style={{ fontSize: 13 }}>私有模板</div>
-              <div className="row">
-                <div className="grow"><Field label="每批条数"><input className="input" inputMode="numeric" value={form.privateProbeBatchSize ?? 1200} onChange={(event) => set('privateProbeBatchSize', Number(event.target.value))} /></Field></div>
-                <div className="grow"><Field label="批次间隔（小时）"><input className="input" inputMode="numeric" value={form.privateProbeIntervalHours ?? 8} onChange={(event) => set('privateProbeIntervalHours', Number(event.target.value))} /></Field></div>
-                <div className="grow"><Field label="每日派发上限"><input className="input" inputMode="numeric" value={form.privateMaxDailyDispatches ?? 20} onChange={(event) => set('privateMaxDailyDispatches', Number(event.target.value))} /></Field></div>
-              </div>
-            </div>
+          {form.actionsRepoMode === 'public' ? (
             <div className="card" style={{ padding: 12 }}>
               <div className="title-3" style={{ fontSize: 13 }}>公开模板</div>
               <div className="row">
@@ -274,9 +266,18 @@ export function SettingsPage() {
                 <div className="grow"><Field label="每日派发上限"><input className="input" inputMode="numeric" value={form.publicMaxDailyDispatches ?? 30} onChange={(event) => set('publicMaxDailyDispatches', Number(event.target.value))} /></Field></div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="card" style={{ padding: 12 }}>
+              <div className="title-3" style={{ fontSize: 13 }}>私有模板</div>
+              <div className="row">
+                <div className="grow"><Field label="每批条数"><input className="input" inputMode="numeric" value={form.privateProbeBatchSize ?? 1200} onChange={(event) => set('privateProbeBatchSize', Number(event.target.value))} /></Field></div>
+                <div className="grow"><Field label="批次间隔（小时）"><input className="input" inputMode="numeric" value={form.privateProbeIntervalHours ?? 8} onChange={(event) => set('privateProbeIntervalHours', Number(event.target.value))} /></Field></div>
+                <div className="grow"><Field label="每日派发上限"><input className="input" inputMode="numeric" value={form.privateMaxDailyDispatches ?? 20} onChange={(event) => set('privateMaxDailyDispatches', Number(event.target.value))} /></Field></div>
+              </div>
+            </div>
+          )}
           <div className="caption">
-            当前生效（{form.actionsRepoMode === 'public' ? '公开' : '私有'}）：每批 {activeProbeProfile(form).batchSize} 条 · 间隔 {activeProbeProfile(form).intervalHours} 小时 · 每天最多 {activeProbeProfile(form).maxDailyDispatches} 批。阶段顺序、提升/延后、暂停在概览页「检测任务」里调整；KV 写入 ≥920 时队列仍会自动暂停。
+            只显示当前模式对应的模板；另一套参数会保留，切回去时不变。当前生效（{form.actionsRepoMode === 'public' ? '公开' : '私有'}）：每批 {activeProbeProfile(form).batchSize} 条 · 间隔 {activeProbeProfile(form).intervalHours} 小时 · 每天最多 {activeProbeProfile(form).maxDailyDispatches} 批。阶段顺序、提升/延后、暂停在概览页「检测任务」里调整；KV 写入 ≥920 时队列仍会自动暂停。
           </div>
 
           <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>抓源</div>

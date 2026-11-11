@@ -27,7 +27,7 @@ function UsageBar({ label, used, limit, format = formatNumber, infinite = false 
         <span>{infinite ? '无上限' : `${format(used)} / ${format(limit)}`}</span>
       </div>
       <div className="meter" style={{ marginTop: 4 }}>
-        <div className="meter__fill" style={{ width: `${infinite ? 100 : Math.max(1, percent)}%`, background: color, opacity: infinite ? 0.35 : 1 }} />
+        <div className="meter__fill" style={{ width: `${infinite ? 100 : Math.max(1, percent)}%`, background: color }} />
       </div>
     </div>
   );
@@ -773,7 +773,7 @@ export function Dashboard() {
                   </div>
                 </div>
                 {snapshot ? (
-                  snapshot.github.private === false ? (
+                  repoMode === 'public' ? (
                     <>
                       <UsageBar label="本月已用" used={0} limit={0} infinite format={(value) => `${value} 分钟`} />
                       <div className="caption" style={{ marginTop: 8 }}>
@@ -792,13 +792,9 @@ export function Dashboard() {
                   <div className="caption" style={{ marginTop: 10 }}>采集结束自动更新用量快照，也可以手动刷新</div>
                 )}
                 <div className="caption" style={{ marginTop: 6 }}>
-                  {snapshot?.github.private === false
-                    ? repoMode === 'public'
-                      ? '当前模板：公开（无限制）· 标准运行不消耗月度分钟数'
-                      : '当前模板：私有（配额）· 仓库实际为公开，Actions 不计费'
-                    : repoMode === 'public'
-                      ? '当前模板：公开（无限制），但仓库仍为私有，Actions 仍按分钟计费'
-                      : '当前模板：私有（配额）· 免费 2000 分钟/月，按运行时长估算，账单日重置'}
+                  {repoMode === 'public'
+                    ? '当前模板：公开（无限制）· 标准运行不消耗月度分钟数'
+                    : '当前模板：私有（配额）· 免费 2000 分钟/月，按运行时长估算，账单日重置'}
                 </div>
               </Card>
 
