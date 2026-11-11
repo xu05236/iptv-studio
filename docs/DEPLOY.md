@@ -199,3 +199,50 @@ node --env-file=.env node_modules/.bin/tsx packages/runner/src/cli.ts collect
 - Worker：`wrangler rollback`（控制台 Deployments 也可）
 - 产物：`snapshots/<日期>/catalog.json` 保留 7 天；可手动 `PUT` 回 `out/catalog.json`
 - 数据库：D1 Time Travel（控制台 → D1 → Backups）可恢复到任意时间点
+
+## 12. 换账号 / 迁移部署
+
+把项目部署到另一个 GitHub 账号或 Cloudflare 账号时，代码可以直接 fork / 导入，不需要本地文件，但资源 ID 与域名不同，要按下面清单改。
+
+### 12.1 必须改的配置
+
+`packages/worker/wrangler.jsonc`：
+
+| 位置 | 改成 |
+| --- | --- |
+| `routes` | 新账号能用的域名；不绑定自定义域名时删掉整个 `routes`，改用 `https://<worker>.<子域>.workers.dev` |
+| `zone_name` | 仅当域名在该 Cloudflare 账号下时需要，与 `routes.pattern` 同域 |
+| `vars.PUBLIC_BASE_URL` | 新 Worker 的公网地址（播放器要能访问） |
+| `vars.GITHUB_REPO` | `新用户名/iptv-studio`（Worker 触发 Actions 用） |
+| `vars.CLOUDFLARE_ACCOUNT_ID` | 新账号的 Account ID |
+| `vars.D1_ID` | 新 D1 数据库 ID |
+| `d1_databases[0].database_id` | 同上 |
+| `kv_namespaces[0].id` | 新建 KV 命名空间 ID |
+
+### 12.2 Cloudflare 侧
+
+1. 新建 D1：`npx wrangler d1 create iptv-studio`（或在控制台创建）；
+2. 新建 KV：`npx wrangler kv namespace create KV`；
+3. 部署后在 Workers → Settings → Domains & Routes 绑自定义域名；
+4. 想让「用量」面板显示 KV/D1 实时数字，给 `CLOUDFLARE_API_TOKEN` 加 Account Analytics Read 权限（可选）。
+
+### 12.3 GitHub Secrets
+
+| Secret | 说明 |
+| --- | --- |
+| `API_BASE_URL` | 新 Worker 地址 |
+| `ADMIN_TOKEN` | 与 Worker 的一致 |
+| `CLOUDFLARE_API_TOKEN` | Workers / D1 / KV 编辑权限 |
+| `CLOUDFLARE_ACCOUNT_ID` | 新账号 ID |
+| `D1_ID` / `KV_ID` | 可选；不配时工作流会回退到仓库默认值，换账号后建议显式配置 |
+
+### 12.4 数据不会自动迁移
+
+- 源、设置、任务记录在 **D1**；频道、线路、EPG、快照在 **KV**。
+- 新账号部署后是空库。最省事的做法是只迁移 D1 里的源与设置，再重新抓取/探测生成产物。
+- 迁移 D1（在旧账号仓库目录导出，在新账号仓库目录导入）：
+  ```bash
+  npx wrangler d1 export iptv-studio --remote --output=d1-export.sql
+  npx wrangler d1 execute iptv-studio --remote --file=d1-export.sql
+  ```
+- 不想导 D1 也可以在后台重新添加源、重新配置设置，产物靠一次采集重建。
