@@ -236,7 +236,7 @@ export async function refreshUsage(env: Env): Promise<UsageSnapshot> {
       date,
       kvWrites: cloudflare?.kvWritesByDay.get(date) ?? prior?.kvWrites ?? 0,
       d1Writes: cloudflare?.d1WritesByDay.get(date) ?? prior?.d1Writes ?? 0,
-      githubMinutes: Math.ceil(github.byDay.get(date) ?? prior?.githubMinutes ?? 0),
+      githubMinutes: github.private === false ? 0 : Math.ceil(github.byDay.get(date) ?? prior?.githubMinutes ?? 0),
     };
   });
 
