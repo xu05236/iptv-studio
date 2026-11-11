@@ -737,6 +737,10 @@ adminRoutes.put('/settings', async (c) => {
     if (!times.length) return fail('快照时间格式应为 HH:mm（北京时间）');
     clean.snapshotScheduleTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
   }
+  if (clean.autoPublishIntervalHours !== undefined) {
+    const hours = Number(clean.autoPublishIntervalHours);
+    clean.autoPublishIntervalHours = Number.isFinite(hours) ? Math.max(0, Math.min(168, hours)) : 6;
+  }
   if (clean.probeBatchSize !== undefined) clean.probeBatchSize = Math.max(1, Number(clean.probeBatchSize) || 1200);
   if (clean.autoProbeIntervalHours !== undefined) clean.autoProbeIntervalHours = Math.max(1, Number(clean.autoProbeIntervalHours) || 6);
   if (clean.actionsRepoMode !== undefined) clean.actionsRepoMode = clean.actionsRepoMode === 'public' ? 'public' : 'private';
@@ -920,7 +924,8 @@ adminRoutes.get('/tasks', async (c) => {
     scheduledItems.push({ id: 'scheduled-publish', type: 'publish', label: '线路发布 · 定时', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: nextPublish ? new Date(nextPublish).toISOString() : '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
   }
   if (settings.autoPublishAfterProbeEnabled) {
-    const interval = Math.max(1, Number(settings.autoPublishIntervalHours) || 6);
+    const rawInterval = Number(settings.autoPublishIntervalHours);
+    const interval = Number.isFinite(rawInterval) ? Math.max(0, rawInterval) : 6;
     const afterProbeGate = await describeAfterProbeGate(c.env, settings);
     scheduledItems.push({
       id: 'policy-publish-after-probe',

@@ -303,8 +303,8 @@ export function SettingsPage() {
           <Field label="每天发布时刻（北京时间）" hint="只更新线路相关产物，不抓 EPG；可填多个时刻，用逗号分隔">
             <input className="input" value={form.autoPublishTimes ?? '08:30'} onChange={(event) => set('autoPublishTimes', event.target.value)} />
           </Field>
-          <Field label="自动发布最小间隔（小时）" hint="探测更新线路池后，自动发布至少间隔多久；默认 6 小时，最小 1 小时">
-            <input className="input" inputMode="numeric" value={form.autoPublishIntervalHours ?? 6} onChange={(event) => set('autoPublishIntervalHours', Math.max(1, Number(event.target.value) || 1))} />
+          <Field label="自动发布最小间隔（小时）" hint="探测更新线路池后，自动发布至少间隔多久；默认 6 小时，填 0 表示不限制（每次探测后都可发布）">
+            <input className="input" inputMode="numeric" value={form.autoPublishIntervalHours ?? 6} onChange={(event) => set('autoPublishIntervalHours', Math.max(0, Number(event.target.value) || 0))} />
           </Field>
           <div className="list">
             <div className="list__row">

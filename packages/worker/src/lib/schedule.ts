@@ -312,7 +312,9 @@ export async function describeAfterProbeGate(env: Env, settings: AppSettings): P
   if (Date.parse(pool.generatedAt) <= Date.parse(index.generatedAt)) {
     return { ok: false, reason: '池快照没有比已发布内容更新，无需发布' };
   }
-  const intervalMs = Math.max(1, Number(settings.autoPublishIntervalHours) || 6) * 3_600_000;
+  const rawInterval = Number(settings.autoPublishIntervalHours);
+  const intervalHours = Number.isFinite(rawInterval) ? Math.max(0, rawInterval) : 6;
+  const intervalMs = intervalHours * 3_600_000;
   const wait = Date.parse(last?.at ?? '') + intervalMs - Date.now();
   if (wait > 0) {
     return { ok: false, reason: `距上次自动发布不足 ${Math.round(intervalMs / 3_600_000)} 小时（约 ${Math.ceil(wait / 60_000)} 分钟后可再发）` };
