@@ -365,11 +365,16 @@ async function loadActionsAllowance(env: Env, settings: AppSettings): Promise<Ac
     getRuntimeJson<{ github?: { month?: string; minutes?: number; private?: boolean } }>(env, 'state/usage.json'),
     loadTasks(env),
   ]);
-  const used = usage?.github?.month?.startsWith(month) ? Number(usage.github.minutes ?? 0) : 0;
+  const rawUsed = usage?.github?.month?.startsWith(month) ? Number(usage.github.minutes ?? 0) : 0;
+  // A month cannot contain more than ~45k runner-minutes; anything above is a
+  // stale/bogus estimate (e.g. the 1.7M-minute upload) and must not block work.
+  const used = Number.isFinite(rawUsed) && rawUsed >= 0 && rawUsed <= 50_000 ? rawUsed : 0;
   const autoRunsToday = tasks.filter(
     (task: Task) => task.source === 'schedule' && (task.createdAt ?? '').slice(0, 10) === today,
   ).length;
-  const publicRepo = usage?.github?.private === false;
+  // The selected repo mode is authoritative for the guard: public repositories
+  // are not billed even if a stale snapshot still has no visibility field.
+  const publicRepo = settings.actionsRepoMode === 'public' || usage?.github?.private === false;
   return actionsAllowance({
     used: publicRepo ? 0 : used,
     budget: publicRepo ? 10_000_000 : Number(settings.actionsMonthlyBudgetMinutes ?? 2_000),

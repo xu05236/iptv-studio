@@ -71,10 +71,11 @@ app.get('/api/admin/usage', async (c) => {
 });
 
 app.post('/api/admin/usage', async (c) => {
-  const body = await readJson<Record<string, unknown>>(c);
-  if (!body || typeof body['collectedAt'] !== 'string') return fail('缺少 collectedAt');
-  await putRuntimeJson(c.env, 'state/usage.json', body);
-  return ok({ saved: true });
+  // Legacy endpoint used by the Actions usage workflow. Its run-timestamp
+  // estimate can be wildly wrong after log cleanup (it once wrote 1.7M minutes),
+  // so ignore the posted body and let the Worker collect the snapshot itself.
+  const usage = await refreshUsage(c.env);
+  return ok({ saved: true, usage });
 });
 
 app.post('/api/admin/usage/refresh', async (c) => {

@@ -1,4 +1,5 @@
 import type { Env } from '../env.js';
+import { loadSettings } from '../db.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 
 const DAY = 86_400_000;
@@ -240,11 +241,16 @@ export async function refreshUsage(env: Env): Promise<UsageSnapshot> {
     };
   });
 
+  // When GitHub does not return the visibility (rate limit, permission), fall
+  // back to the mode the operator selected so the guard/UI stay consistent.
+  const settings = await loadSettings(env).catch(() => null);
+  const visibility = github.private ?? (settings ? settings.actionsRepoMode !== 'public' : undefined);
+
   const snapshot: UsageSnapshot = {
     collectedAt: new Date().toISOString(),
     kv: cloudflare?.kv ?? previous?.kv ?? { day: utcDay(), reads: 0, writes: 0, lists: 0, deletes: 0, storageBytes: 0 },
     d1: cloudflare?.d1 ?? previous?.d1 ?? { day: utcDay(), rowsRead: 0, rowsWritten: 0 },
-    github: { month: github.month, minutes: github.minutes, runs: github.runs, private: github.private },
+    github: { month: github.month, minutes: github.minutes, runs: github.runs, private: visibility },
     history,
   };
   await putRuntimeJson(env, KEY, snapshot);

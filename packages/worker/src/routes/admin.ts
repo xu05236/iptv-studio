@@ -933,7 +933,6 @@ adminRoutes.get('/tasks', async (c) => {
         afterProbe: 'true',
         intervalHours: interval,
         lastRunAt: publishState?.lastRunAt ?? '',
-        nextAt: last ? new Date(last + interval * 3_600_000).toISOString() : '',
       },
       progress: { done: 0, total: 0, unit: '' },
       createdAt: scheduledAt,

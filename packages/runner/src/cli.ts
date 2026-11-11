@@ -783,9 +783,10 @@ async function publishPhase(
   const logoPacks = await loadLogoPacks(store, logger);
   await applyLineFavorites(api, lines);
   await reportTaskProgress(api, 0, 5, '准备发布');
+  const storedGuide = await store.getJson<StoredGuide>('state/guide.json');
   const epg = epgMode === 'fetch'
     ? await collectEpg(settings.epgUrls, registry, logger, parseEpgPriority(settings.epgSourcePriority))
-    : { xml: null, programmes: 0, data: epgFromGuide(await store.getJson<StoredGuide>('state/guide.json')) };
+    : { xml: null, programmes: 0, data: epgFromGuide(storedGuide) };
   await reportTaskProgress(api, 1, 5, 'EPG 已准备');
   if ('unmatched' in epg && epg.unmatched.length) {
     await store.put('state/epg-unmatched.json', JSON.stringify({ generatedAt: nowIso(), items: epg.unmatched }), 'application/json; charset=utf-8');
@@ -806,6 +807,23 @@ async function publishPhase(
     logoProxyBase: `${config.publicBaseUrl.replace(/\/+$/, '')}/api/public/logo`,
     logoPacks,
   });
+  // Guide mode must not rebuild the stored guide: buildGuide drops programmes
+  // that already ended, so repeated publishes would erode the schedule and,
+  // worse, rewrite generatedAt and keep looking "fresh" without ever fetching.
+  if (storedGuide?.channels && Object.keys(storedGuide.channels).length) {
+    const before = Object.keys(storedGuide.channels).length;
+    const after = Object.keys(output.guide.channels).length;
+    if (epgMode === 'guide' || after < before / 2) {
+      if (epgMode === 'fetch' && after < before / 2) {
+        logger.warn('EPG 抓取结果明显变小，保留上一版指南', { before, after });
+      }
+      output.guide = {
+        generatedAt: storedGuide.generatedAt ?? output.guide.generatedAt,
+        hours: storedGuide.hours ?? output.guide.hours,
+        channels: storedGuide.channels,
+      };
+    }
+  }
   await reportTaskProgress(api, 2, 5, '频道聚合完成');
   // Publish used to rebuild only the catalogs, leaving state/pool.json and
   // pool-stats at the last fetch/probe timestamp. Refresh both here so every

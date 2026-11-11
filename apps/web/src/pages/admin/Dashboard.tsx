@@ -556,13 +556,19 @@ export function Dashboard() {
                 </div>
                 <div className="task-plan-grid">
                   {scheduledTasks.map((task) => {
-                    const isPolicy = task.payload.afterPublish === 'true';
+                    const isPolicy = task.payload.afterPublish === 'true' || task.payload.afterProbe === 'true';
                     return (
                       <div className="task-plan task-plan--blue" key={task.id}>
                         <div className="grow">
                           <div className="task-plan__title">{task.label ?? TASK_TYPE_LABEL[task.type] ?? task.type}</div>
                           <div className="caption">
-                            {isPolicy ? '发布成功后自动执行' : task.payload.nextAt ? `下次 ${formatSnapshot(task.payload.nextAt)}` : '等待新线路'}
+                            {isPolicy
+                              ? task.payload.afterProbe === 'true'
+                                ? '探测成功后自动执行'
+                                : '发布成功后自动执行'
+                              : task.payload.nextAt
+                                ? `下次 ${formatSnapshot(task.payload.nextAt)}`
+                                : '等待新线路'}
                           </div>
                           {task.payload.result && task.payload.result !== 'queued' ? (
                             <div className="caption" style={{ marginTop: 2, color: task.payload.result.startsWith('skipped') ? 'var(--orange)' : undefined }}>
@@ -576,7 +582,7 @@ export function Dashboard() {
                             {task.type === 'probe-batch' ? '立即探测' : '立即执行'}
                           </Button>
                         ) : (
-                          <Badge tone="green">发布后</Badge>
+                          <Badge tone="green">{task.payload.afterProbe === 'true' ? '探测后' : '发布后'}</Badge>
                         )}
                       </div>
                     );
@@ -762,6 +768,10 @@ export function Dashboard() {
           const snapshot = usageQuery.data?.usage ?? null;
           const yesterday = snapshot?.history?.at(-2);
           const repoMode = settingsQuery.data?.settings.actionsRepoMode === 'public' ? 'public' : 'private';
+          const githubMinutes = Number(snapshot?.github.minutes ?? 0);
+          // Older snapshots were written by the Actions workflow and can be
+          // wildly wrong (1.7M minutes once); never render nonsense as a bar.
+          const githubMinutesSane = githubMinutes > 50_000 ? 0 : githubMinutes;
           return (
             <>
               <Card className="usage-card usage-card--github">
@@ -782,9 +792,11 @@ export function Dashboard() {
                     </>
                   ) : (
                     <>
-                      <UsageBar label="本月已用（估算）" used={snapshot.github.minutes} limit={2000} format={(value) => `${value} 分钟`} />
+                      <UsageBar label="本月已用（估算）" used={githubMinutesSane} limit={2000} format={(value) => `${value} 分钟`} />
                       <div className="caption" style={{ marginTop: 8 }}>
-                        本月 {snapshot.github.runs} 次运行 · 剩余约 {Math.max(0, 2000 - snapshot.github.minutes)} 分钟
+                        {githubMinutes > 50_000
+                          ? `上一条用量快照异常（${formatNumber(githubMinutes)} 分钟），已忽略`
+                          : `本月 ${snapshot.github.runs} 次运行 · 剩余约 ${Math.max(0, 2000 - githubMinutesSane)} 分钟`}
                       </div>
                     </>
                   )

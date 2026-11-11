@@ -47,7 +47,7 @@ export function UsageAlert() {
     { label: 'KV 存储', used: usage.kv.storageBytes, limit: 1024 ** 3, format: bytes },
     { label: 'D1 写入', used: d1Fresh ? usage.d1.rowsWritten : 0, limit: 100000, format: number },
     { label: 'D1 读取', used: d1Fresh ? usage.d1.rowsRead : 0, limit: 5_000_000, format: number },
-    { label: 'Actions', used: usage.github.minutes, limit: usage.github.private === false ? Number.POSITIVE_INFINITY : 2000, format: (value) => `${value} 分钟` },
+    { label: 'Actions', used: usage.github.private === false ? 0 : usage.github.minutes > 50_000 ? 0 : usage.github.minutes, limit: usage.github.private === false ? Number.POSITIVE_INFINITY : 2000, format: (value) => `${value} 分钟` },
   ];
   const flagged = items
     .map((item) => ({ ...item, percent: pct(item.used, item.limit) }))

@@ -58,6 +58,8 @@ export interface BuildInput {
   settings: AppSettings;
   rules: Rule[];
   epg: EpgData;
+  /** Reuse a previously published guide instead of rebuilding from `epg`. */
+  guide?: ReturnType<typeof buildGuide>;
   disabledChannelIds?: Set<string>;
   /** Public Worker logo proxy base, e.g. https://host/api/logo. */
   logoProxyBase?: string;
@@ -212,7 +214,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
     channels: summaries,
   };
 
-  const guide = buildGuide(input.epg, new Set(catalogItems.map((item) => item.channel.id)), 24);
+  const guide = input.guide ?? buildGuide(input.epg, new Set(catalogItems.map((item) => item.channel.id)), 24);
 
   return {
     catalog: { version: 1, runId: input.runId, generatedAt: createdAt, items: catalogItems },
