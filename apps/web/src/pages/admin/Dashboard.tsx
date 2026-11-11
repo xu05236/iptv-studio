@@ -581,9 +581,7 @@ export function Dashboard() {
                           <Button loading={runTask.isPending} onClick={() => runTask.mutate({ command: task.type as 'probe-batch' | 'fetch' | 'publish' | 'epg' })}>
                             {task.type === 'probe-batch' ? '立即探测' : '立即执行'}
                           </Button>
-                        ) : (
-                          <Badge tone="green">{task.payload.afterProbe === 'true' ? '探测后' : '发布后'}</Badge>
-                        )}
+                        ) : null}
                       </div>
                     );
                   })}

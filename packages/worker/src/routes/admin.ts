@@ -704,7 +704,7 @@ adminRoutes.put('/settings', async (c) => {
     'publicProbeBatchSize', 'publicProbeIntervalHours', 'publicMaxDailyDispatches',
     'actionsMonthlyBudgetMinutes', 'actionsReserveMinutes', 'actionsRunCostMinutes',
     'probePhaseOrder', 'probePausedPhases',
-    'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishTimes', 'autoPublishIntervalHours', 'autoPublishAfterProbeEnabled', 'epgRefreshEnabled', 'epgRefreshTimes',
+    'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishStrategy', 'autoPublishTimes', 'autoPublishIntervalHours', 'autoPublishAfterProbeEnabled', 'epgRefreshEnabled', 'epgRefreshTimes',
     'snapshotOnPublishEnabled', 'snapshotScheduleEnabled', 'snapshotScheduleTimes',
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback', 'relayDailyRequests', 'relayDailyBytes',
   ];
@@ -726,6 +726,14 @@ adminRoutes.put('/settings', async (c) => {
     const times = parseCollectTimes(clean.autoPublishTimes);
     if (!times.length) return fail('每日发布时间格式应为 HH:mm（北京时间）');
     clean.autoPublishTimes = times.map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`).join(',');
+  }
+  if (clean.autoPublishStrategy !== undefined) {
+    if (clean.autoPublishStrategy !== 'times' && clean.autoPublishStrategy !== 'afterProbe') {
+      return fail('发布策略只能是 times 或 afterProbe');
+    }
+    // Keep the legacy flags consistent with the single strategy switch.
+    clean.autoPublishEnabled = true;
+    clean.autoPublishAfterProbeEnabled = clean.autoPublishStrategy === 'afterProbe';
   }
   if (clean.epgRefreshTimes !== undefined) {
     const times = parseCollectTimes(clean.epgRefreshTimes);
@@ -917,22 +925,22 @@ adminRoutes.get('/tasks', async (c) => {
     scheduledItems.push({ id: 'scheduled-fetch', type: 'fetch', label: '抓源 · 全部启用源', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: fetchState?.nextRunAt ?? '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
   }
   if (settings.autoPublishEnabled) {
-    scheduledItems.push({ id: 'scheduled-publish', type: 'publish', label: '线路发布 · 定时', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: nextPublish ? new Date(nextPublish).toISOString() : '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
-  }
-  if (settings.autoPublishAfterProbeEnabled) {
+    const strategy = settings.autoPublishStrategy === 'times' ? 'times' : 'afterProbe';
     const interval = Math.max(1, Number(settings.autoPublishIntervalHours) || 6);
-    const last = publishState?.lastRunAt ? Date.parse(publishState.lastRunAt) : null;
     scheduledItems.push({
-      id: 'policy-publish-after-probe',
+      id: 'policy-publish-plan',
       type: 'publish',
-      label: '线路发布 · 探测后自动',
+      label: strategy === 'times' ? '线路发布 · 每天固定' : '线路发布 · 探测后自动',
       source: 'schedule',
       status: 'scheduled',
-      priority: 40,
+      priority: 50,
       payload: {
-        afterProbe: 'true',
+        strategy,
+        afterProbe: strategy === 'afterProbe' ? 'true' : '',
+        times: settings.autoPublishTimes,
         intervalHours: interval,
         lastRunAt: publishState?.lastRunAt ?? '',
+        nextAt: strategy === 'times' && nextPublish ? new Date(nextPublish).toISOString() : '',
       },
       progress: { done: 0, total: 0, unit: '' },
       createdAt: scheduledAt,
