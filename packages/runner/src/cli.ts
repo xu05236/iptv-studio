@@ -1027,6 +1027,32 @@ function phaseMatches(line: LineEntry, phase: 'pending' | 'quarantine', now: num
  * Automatic batched probing: one phase per run, fixed batch size.
  * pending -> quarantine -> rejected (order/pause configurable), then idle.
  */
+const PREFILTER_COOLDOWN_KEY = 'state/prefilter-cooldown.json';
+const PREFILTER_COOLDOWN_MS = 24 * 3_600_000;
+
+/** Signatures blocked by the liveness prefilter recently; probing them again within 24h wastes a slot. */
+async function loadPrefilterCooldown(store: ArtifactStore): Promise<Map<string, number>> {
+  const raw = await store.getJson<Record<string, string>>(PREFILTER_COOLDOWN_KEY).catch(() => null);
+  const map = new Map<string, number>();
+  const now = Date.now();
+  for (const [signature, at] of Object.entries(raw ?? {})) {
+    const until = Date.parse(at);
+    if (Number.isFinite(until) && until > now) map.set(signature, until);
+  }
+  return map;
+}
+
+async function savePrefilterCooldown(store: ArtifactStore, cooldown: Map<string, number>): Promise<void> {
+  const now = Date.now();
+  const entries = [...cooldown.entries()]
+    .filter(([, until]) => until > now)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20_000);
+  const out: Record<string, string> = {};
+  for (const [signature, until] of entries) out[signature] = new Date(until).toISOString();
+  await store.put(PREFILTER_COOLDOWN_KEY, JSON.stringify(out), 'application/json');
+}
+
 async function runBatchProbe(): Promise<void> {
   const config = loadConfig();
   const logger = new RunLogger();
@@ -1051,46 +1077,78 @@ async function runBatchProbe(): Promise<void> {
     const now = Date.now();
     const forcedPhase = (process.env.PROBE_PHASE ?? '').trim() as 'pending' | 'quarantine' | '';
     const paused = new Set(parsePhaseList(settings.probePausedPhases));
-    const order = parsePhaseOrder(settings.probePhaseOrder);
-    const validPhase = (phase: 'pending' | 'quarantine'): boolean =>
-      channelIds.size > 0 && lines.some((line) => channelIds.has(line.channelId) && phaseMatches(line, phase, now, forcedPhase === phase));
-    const phase = forcedPhase && ['pending', 'quarantine'].includes(forcedPhase)
-      ? forcedPhase
-      : order.find((candidate) => !paused.has(candidate) && validPhase(candidate));
-    if (!phase) {
+    const batchSize = Math.max(1, Number(settings.probeBatchSize) || 1200);
+    const perChannel = Math.max(1, Number(settings.probePerChannel) || 24);
+    const cooldown = await loadPrefilterCooldown(store);
+    const favoriteSources = new Set(remote.sources.filter((source) => source.weight >= 2).map((source) => source.id));
+    const favoriteRank = (line: LineEntry): number => (favoriteSources.has(line.sourceId) ? 0 : 1);
+    const selectedSignatures = new Set<string>();
+    const selected: LineEntry[] = [];
+    const chosenByPhase = { pending: 0, quarantine: 0 };
+
+    // One representative line per URL signature: the batch budget is spent on
+    // distinct streams, not on duplicates of the same URL.
+    const pickPhase = (phase: 'pending' | 'quarantine', limit: number): void => {
+      const candidates = lines.filter((line) => channelIds.has(line.channelId) && phaseMatches(line, phase, now, forcedPhase === phase));
+      const byChannel = new Map<string, LineEntry[]>();
+      for (const line of candidates) {
+        const bucket = byChannel.get(line.channelId) ?? [];
+        bucket.push(line);
+        byChannel.set(line.channelId, bucket);
+      }
+      const picked: LineEntry[] = [];
+      for (const bucket of byChannel.values()) {
+        bucket.sort((a, b) => favoriteRank(a) - favoriteRank(b) || (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
+        picked.push(...bucket.slice(0, perChannel));
+      }
+      picked.sort((a, b) => favoriteRank(a) - favoriteRank(b) || (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
+      let taken = 0;
+      for (const line of picked) {
+        if (taken >= limit) break;
+        if (line.official) continue;
+        const signature = lineSignature(line);
+        if (selectedSignatures.has(signature)) continue;
+        if ((cooldown.get(signature) ?? 0) > now) continue;
+        selectedSignatures.add(signature);
+        selected.push(line);
+        taken++;
+        chosenByPhase[phase]++;
+      }
+    };
+
+    // 70% of the batch goes to never-probed lines, the rest to lines that failed
+    // before; a phase that is paused or empty hands its slots to the other one.
+    if (forcedPhase && ['pending', 'quarantine'].includes(forcedPhase)) {
+      pickPhase(forcedPhase, batchSize);
+    } else {
+      if (!paused.has('pending')) pickPhase('pending', Math.floor(batchSize * 0.7));
+      const quarantineTarget = batchSize - selected.length;
+      if (!paused.has('quarantine') && quarantineTarget > 0) pickPhase('quarantine', quarantineTarget);
+    }
+
+    if (!selected.length) {
       logger.info('分批探测空闲：没有待测线路');
       await writePoolStats(store, remote, lines);
-  await syncSourceCounts(api, remote, lines);
+      await syncSourceCounts(api, remote, lines);
       report = { ...report, status: 'success', finishedAt: nowIso(), channels: poolChannels, lines: lines.length, durationMs: Date.now() - startedMs };
       await finishRun(api, report);
       return;
     }
-
-    const batchSize = Math.max(1, Number(settings.probeBatchSize) || 1200);
-    const perChannel = Math.max(1, Number(settings.probePerChannel) || 24);
-    const candidates = lines.filter((line) => channelIds.has(line.channelId) && phaseMatches(line, phase, now, Boolean(forcedPhase)));
-    const favoriteSources = new Set(remote.sources.filter((source) => source.weight >= 2).map((source) => source.id));
-    const favoriteRank = (line: LineEntry): number => (favoriteSources.has(line.sourceId) ? 0 : 1);
-    const byChannel = new Map<string, LineEntry[]>();
-    for (const line of candidates) {
-      const bucket = byChannel.get(line.channelId) ?? [];
-      bucket.push(line);
-      byChannel.set(line.channelId, bucket);
-    }
-    const picked: LineEntry[] = [];
-    for (const bucket of byChannel.values()) {
-      bucket.sort((a, b) => favoriteRank(a) - favoriteRank(b) || (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
-      picked.push(...bucket.slice(0, perChannel));
-    }
-    picked.sort((a, b) => favoriteRank(a) - favoriteRank(b) || (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
-    const selected = picked.slice(0, batchSize);
-    const phaseLabel = phase === 'pending' ? '待测' : '待复测';
-    logger.info('分批探测计划', { phase, candidates: candidates.length, batch: selected.length, batchSize, forced: Boolean(forcedPhase) });
+    const phaseLabel = `待测 ${chosenByPhase.pending} · 疑似 ${chosenByPhase.quarantine}`;
+    logger.info('分批探测计划', { phases: chosenByPhase, batch: selected.length, batchSize, forced: Boolean(forcedPhase) });
 
     const blocked = await prefilterLiveness(selected, settings, config.concurrency || settings.concurrency || 32, logger);
+    if (blocked.size) {
+      const nextCooldown = new Map(cooldown);
+      const until = now + PREFILTER_COOLDOWN_MS;
+      for (const line of selected) {
+        if (blocked.has(line.key)) nextCooldown.set(lineSignature(line), until);
+      }
+      await savePrefilterCooldown(store, nextCooldown);
+    }
     const probeList = selected.filter((line) => !blocked.has(line.key));
     const targets = dedupeProbeTargets(probeList);
-    await reportTaskProgress(api, 0, targets.length, `分批探测 · ${phaseLabel} · 选中 ${selected.length} 条 · 预筛拦截 ${blocked.size} 条 · 探测 ${targets.length} 个 URL`);
+    await reportTaskProgress(api, 0, targets.length, `分批探测 · ${phaseLabel} · 探测 ${targets.length} 个地址 · 预筛拦截 ${blocked.size} 个`);
     const summary = await runProbes(targets, settings, config.concurrency || settings.concurrency, logger, (done) => {
       void reportTaskProgress(api, done, targets.length, `分批探测 · ${phaseLabel} · ${done}/${targets.length}`);
     });
@@ -1112,8 +1170,8 @@ async function runBatchProbe(): Promise<void> {
       .map(([id, item]) => `${sourceNames.get(id) ?? id} 测${item.tested}/可用${item.alive}`)
       .join('、');
     const sourceSuffix = sourceDetail ? ` · 来源：${sourceDetail}` : '';
-    await reportTaskProgress(api, selected.length, selected.length, `分批探测完成 · ${phaseLabel} · 选中 ${selected.length} 条 · 预筛拦截 ${blocked.size} 条 · 探测 ${targets.length} 个 URL · 可用 ${summary.alive} · 同步 ${fannedOut} 条${sourceSuffix}`);
-    logger.info('分批探测完成', { phase, checked: selected.length, probed: summary.probed, alive: summary.alive, dead: summary.dead });
+    await reportTaskProgress(api, selected.length, selected.length, `分批探测完成 · ${phaseLabel} · 探测 ${targets.length} 个地址 · 可用 ${summary.alive} · 同步 ${fannedOut} 条${sourceSuffix}`);
+    logger.info('分批探测完成', { phases: chosenByPhase, checked: selected.length, probed: summary.probed, alive: summary.alive, dead: summary.dead });
 
     const generatedAt = nowIso();
     await saveLinesState(store, lines, generatedAt);
