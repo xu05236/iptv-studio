@@ -1163,7 +1163,13 @@ async function runBatchProbe(): Promise<void> {
       for (const line of selected) {
         if (blocked.has(line.key)) nextCooldown.set(lineSignature(line), until);
       }
-      await savePrefilterCooldown(store, nextCooldown);
+      // 冷却文件只影响下一批要不要重复探测，属于辅助数据；网络抖动时不能
+      // 因此把整批任务判失败（否则会白白触发一次自动重试）。
+      try {
+        await savePrefilterCooldown(store, nextCooldown);
+      } catch (error) {
+        logger.warn('预筛冷却文件上传失败，已跳过', { error: error instanceof Error ? error.message : String(error) });
+      }
     }
     const probeList = selected.filter((line) => !blocked.has(line.key));
     const targets = dedupeProbeTargets(probeList);
