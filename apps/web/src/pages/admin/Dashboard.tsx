@@ -771,7 +771,7 @@ export function Dashboard() {
                     <>
                       <div className="caption" style={{ marginTop: 2 }}>公开仓库：标准运行不计费，无需关注 2,000 分钟上限</div>
                       <div className="caption" style={{ marginTop: 8 }}>
-                        本月约 {formatNumber(snapshot.github.minutes)} 分钟 · {snapshot.github.runs} 次运行
+                        本月 {formatNumber(snapshot.github.runs)} 次运行 · 分钟数不再计量
                       </div>
                     </>
                   ) : (

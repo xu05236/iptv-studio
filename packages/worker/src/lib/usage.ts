@@ -88,6 +88,30 @@ async function collectGithub(env: Env): Promise<{ month: string; minutes: number
   } catch {
     // Keep the private default (2,000 min budget) when visibility is unknown.
   }
+  if (isPrivate === false) {
+    // Public repositories get unmetered standard runners. Counting minutes from
+    // run timestamps is also unreliable there (queue time and log cleanup touch
+    // `updated_at`), so report the month's run count only.
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/${repo}/actions/runs?per_page=1&created=${encodeURIComponent(`>=${month}`)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/vnd.github+json',
+            'User-Agent': 'iptv-studio-worker',
+          },
+        },
+      );
+      if (response.ok) {
+        const data = (await response.json()) as { total_count?: number };
+        return { month, minutes: 0, runs: Number(data.total_count ?? 0), private: false, byDay };
+      }
+    } catch {
+      // Fall through to the empty snapshot; the UI only shows the run count.
+    }
+    return { month, minutes: 0, runs: 0, private: false, byDay };
+  }
   let minutes = 0;
   let runs = 0;
   for (let page = 1; page <= 10; page += 1) {
