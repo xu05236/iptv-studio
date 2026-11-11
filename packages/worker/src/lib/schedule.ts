@@ -213,7 +213,7 @@ export async function runScheduler(env: Env): Promise<void> {
   for (const { config, scheduledAt } of due) {
     try {
       if (writes >= 920) {
-        await record(config, scheduledAt, 'skipped: KV quota');
+        await record(config, scheduledAt, 'skipped: KV 写入接近上限');
         continue;
       }
       if (config.command === 'snapshot') {
@@ -226,20 +226,20 @@ export async function runScheduler(env: Env): Promise<void> {
             payload: { origin: 'schedule' },
           });
         }
-        await record(config, scheduledAt, item ? 'snapshot created' : 'skipped: no artifacts');
+        await record(config, scheduledAt, item ? '已创建快照' : 'skipped: 没有可发布的产物');
         continue;
       }
       if (running) {
-        await record(config, scheduledAt, 'skipped: workflow running');
+        await record(config, scheduledAt, 'skipped: 有任务正在运行');
         continue;
       }
       if (allowance.blocked) {
-        await record(config, scheduledAt, `skipped: Actions budget (${allowance.used}/${allowance.budget} min, ${allowance.autoRunsToday}/${allowance.allowedAutoRuns} today)`);
+        await record(config, scheduledAt, `skipped: 额度不足（已用 ${allowance.used}/${allowance.budget} 分钟，今日 ${allowance.autoRunsToday}/${allowance.allowedAutoRuns} 次）`);
         continue;
       }
       const budget = Math.max(1, Number(settings.probeBudget) || 1200);
       if (config.command === 'publish' && await publishIsCurrent(env)) {
-        await record(config, scheduledAt, 'skipped: already up to date');
+        await record(config, scheduledAt, 'skipped: 已是最新，无需发布');
         continue;
       }
       const task = await createTask(env, {
@@ -537,7 +537,7 @@ async function runFetchWatch(env: Env, settings: AppSettings, now: number): Prom
     return now - Date.parse(item.last_fetch_at) >= hours * 3_600_000;
   });
   if (!hasDue) {
-    await recordInterval(env, 'state/fetch-schedule.json', now, now + 30 * 60_000, 'idle: no source due');
+    await recordInterval(env, 'state/fetch-schedule.json', now, now + 30 * 60_000, 'idle: 没有到期的源');
     return false;
   }
   const guard = await intervalGuard(env, settings);
@@ -587,7 +587,7 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
   const paused = new Set(phaseList(settings.probePausedPhases));
   const hasWork = !stats || PHASES.some((phase) => !paused.has(phase) && Number(stats[phase] ?? 0) > 0);
   if (!hasWork) {
-    await recordInterval(env, 'state/probe-schedule.json', now, now + intervalMs, 'idle: no due lines');
+    await recordInterval(env, 'state/probe-schedule.json', now, now + intervalMs, 'idle: 暂无到期线路');
     return false;
   }
 

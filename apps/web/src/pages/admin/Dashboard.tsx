@@ -91,11 +91,20 @@ const PHASE_MESSAGE_KEY: Record<string, string> = {
 };
 
 function describeScheduleResult(result: string): string {
-  if (result === 'idle: no due lines') return '暂无到期线路，本轮跳过';
-  if (result === 'skipped: running') return '有任务正在运行，本轮跳过';
-  if (result === 'skipped: quota') return 'KV 写入接近上限，本轮跳过';
+  if (result === 'idle: no due lines' || result === 'idle: 暂无到期线路') return '暂无到期线路，本轮跳过';
+  if (result === 'idle: no source due' || result === 'idle: 没有到期的源') return '没有到期的源，本轮跳过';
+  if (result === 'skipped: running' || result === 'skipped: 有任务正在运行') return '有任务正在运行，本轮跳过';
+  if (result === 'skipped: quota' || result === 'skipped: KV quota' || result === 'skipped: KV 写入接近上限') return 'KV 写入接近上限，本轮跳过';
   if (result === 'queued') return '已派发';
   if (result === 'fetch added pending') return '抓源新增待测线路，已提前唤醒';
+  if (result === 'skipped: already up to date' || result === 'skipped: 已是最新，无需发布') return '已是最新，无需重复发布';
+  if (result === 'skipped: no artifacts' || result === 'skipped: 没有可发布的产物') return '没有可发布的产物，本轮跳过';
+  if (result === 'snapshot created' || result === '已创建快照') return '已创建快照';
+  if (result.startsWith('skipped: Actions budget') || result === 'skipped: actions') return '因 Actions 额度不足，本轮跳过';
+  if (result.startsWith('skipped: 额度不足')) return '额度不足，本轮跳过';
+  if (result.startsWith('skipped: ')) return `跳过：${result.slice('skipped: '.length)}`;
+  if (result.startsWith('skipped')) return '本轮跳过';
+  if (result.startsWith('error: ')) return `失败：${result.slice('error: '.length)}`;
   return result;
 }
 
@@ -581,7 +590,9 @@ export function Dashboard() {
                           <Button loading={runTask.isPending} onClick={() => runTask.mutate({ command: task.type as 'probe-batch' | 'fetch' | 'publish' | 'epg' })}>
                             {task.type === 'probe-batch' ? '立即探测' : '立即执行'}
                           </Button>
-                        ) : null}
+                        ) : (
+                          <Badge tone="green">{task.payload.afterProbe === 'true' ? '探测后' : '发布后'}</Badge>
+                        )}
                       </div>
                     );
                   })}
