@@ -54,7 +54,7 @@ IPTV Studio 把这条链路做成了**有状态的数据管道**：
 
 完整的需求对照（含未完成项）见 [docs/FEATURES.md](docs/FEATURES.md)。
 
-日常运维（自定义池、导出预览口径、合并撤销、容量归档与回读、源重叠、监控告警、CI 门禁、e2e 冒烟）见 [docs/OPERATIONS-2026-11-10.md](docs/OPERATIONS-2026-11-10.md)。
+日常运维（自定义池、导出预览口径、合并撤销、容量归档与回读、源重叠、监控告警、CI 门禁、e2e 冒烟）见 [docs/OPERATIONS-2026-11-10.md](docs/OPERATIONS-2026-11-10.md)；管理令牌轮换见 [docs/ADMIN-TOKEN-ROTATION.md](docs/ADMIN-TOKEN-ROTATION.md)（中英文）。
 
 ## 快速开始（本地）
 

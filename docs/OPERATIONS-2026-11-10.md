@@ -1,6 +1,7 @@
 # 运维与功能手册（2026-11-10）
 
 面向日常操作：自定义池、订阅组合导出、预览口径、频道合并撤销、删源清理、线路状态分片与归档、前端冒烟。
+管理令牌（`ADMIN_TOKEN`）轮换步骤见 [ADMIN-TOKEN-ROTATION.md](ADMIN-TOKEN-ROTATION.md)（中英文）。
 架构与部署见 [ARCHITECTURE.md](ARCHITECTURE.md)、[DEPLOY.md](DEPLOY.md)，历史交接见 [HANDOFF.md](HANDOFF.md)。
 
 ## 任务中心
