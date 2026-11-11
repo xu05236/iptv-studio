@@ -554,14 +554,23 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
   const stats = await getJson<Record<string, number>>(env, 'state/pool-stats.json');
   const today = new Date(now).toISOString().slice(0, 10);
   const wake = await getRuntimeJson<{ date?: string; count?: number }>(env, 'state/probe-wake.json');
+  const profile = activeProbeProfile(settings);
+  const intervalMs = Math.max(1, profile.intervalHours) * 3_600_000;
+  // The interval can change (private/public template); the stored next time was
+  // computed with the old one, so shorten it instead of waiting the old window.
+  let nextRunAt = state?.nextRunAt ? Date.parse(state.nextRunAt) : null;
+  if (nextRunAt && state?.lastRunAt) {
+    const span = nextRunAt - Date.parse(state.lastRunAt);
+    if (span > intervalMs + 60_000) nextRunAt = Date.parse(state.lastRunAt) + intervalMs;
+  }
   let earlyWake = false;
-  if (state?.nextRunAt && Date.parse(state.nextRunAt) > now) {
-    // A large source import leaves pending lines idle until the next 8h window.
+  if (nextRunAt && nextRunAt > now) {
+    // A large source import leaves pending lines idle until the next window.
     // Allow at most one extra batch per day, and only 3h after the last probe.
     earlyWake = probeWakeAllowed({
       pending: Number(stats?.pending ?? 0),
-      lastRunAt: state.lastRunAt,
-      nextRunAt: state.nextRunAt,
+      lastRunAt: state?.lastRunAt,
+      nextRunAt: new Date(nextRunAt).toISOString(),
       now,
       today,
       wakeDate: wake?.date,
@@ -569,8 +578,6 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
     });
     if (!earlyWake) return false;
   }
-  const profile = activeProbeProfile(settings);
-  const intervalMs = Math.max(1, profile.intervalHours) * 3_600_000;
   const paused = new Set(phaseList(settings.probePausedPhases));
   const hasWork = !stats || PHASES.some((phase) => !paused.has(phase) && Number(stats[phase] ?? 0) > 0);
   if (!hasWork) {

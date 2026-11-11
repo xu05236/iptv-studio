@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CalendarClock, PieChart, RadioTower, Save, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { Badge, Button, EmptyState, Field, QueryError, Switch, useToast } from '../../components/ui';
+import { Badge, Button, EmptyState, Field, Pagination, QueryError, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { timeAgo } from '../../lib/format';
 
@@ -51,6 +51,7 @@ export function Epg() {
   const queryClient = useQueryClient();
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [keyword, setKeyword] = useState('');
+  const [page, setPage] = useState(1);
   const [epgText, setEpgText] = useState('');
   const [priority, setPriority] = useState('');
   const [epgEnabled, setEpgEnabled] = useState(true);
@@ -127,6 +128,12 @@ export function Epg() {
     if (!query) return base;
     return base.filter((item) => `${item.epgName} ${item.provider}`.toLowerCase().includes(query));
   }, [unmatched.data?.items, keyword]);
+  // 300 rows x every channel in a <select> froze the page; render one page at a time.
+  const PAGE_SIZE = 20;
+  const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const visibleItems = items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  useEffect(() => setPage(1), [keyword]);
 
   const stats = coverage.data;
 
@@ -259,7 +266,7 @@ export function Epg() {
             <EmptyState title="没有未映射的 EPG 名" description="当前节目单里的频道名都能对上，或还没有生成过 EPG。" />
           ) : (
             <div className="list">
-              {items.slice(0, 300).map((item) => (
+              {visibleItems.map((item) => (
                 <div className="list__row" key={`${item.provider}-${item.epgName}`}>
                   <strong style={{ minWidth: 160 }}>{item.epgName}</strong>
                   <span className="caption" style={{ minWidth: 140 }}>{item.provider}</span>
@@ -285,6 +292,7 @@ export function Epg() {
                   </button>
                 </div>
               ))}
+              <Pagination page={safePage} totalPages={pageCount} onChange={setPage} />
             </div>
           )}
         </div>

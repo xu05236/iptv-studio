@@ -30,6 +30,7 @@ import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
 import { loadLines, saveLines } from '../lib/linesState.js';
 import { LINES_SHARD_COUNT, lineShardKey } from '@iptv/core';
 import { getRuntimeJson } from '../lib/runtime-state.js';
+import { putRuntimeJson } from '../lib/runtime-state.js';
 import { clearSnapshots, createSnapshot } from '../lib/snapshots.js';
 import { inferResolution } from '@iptv/core';
 import { dispatchWorkflow, workflowRunStatus } from '../lib/github.js';
@@ -774,6 +775,26 @@ adminRoutes.put('/settings', async (c) => {
   if (clean.relayDailyRequests !== undefined) clean.relayDailyRequests = Math.max(100, Math.min(1_000_000, Math.floor(Number(clean.relayDailyRequests) || 20_000)));
   if (clean.relayDailyBytes !== undefined) clean.relayDailyBytes = Math.max(10 * 1024 * 1024, Math.min(100 * 1024 ** 3, Math.floor(Number(clean.relayDailyBytes) || 2 * 1024 ** 3)));
   const settings = await saveSettings(c.env, clean);
+  // Shortening the probe interval must take effect now, not after the old 8h
+  // window: the scheduler stores the next run time, so rewrite it from the
+  // last run using the newly saved profile.
+  if (
+    clean.actionsRepoMode !== undefined ||
+    clean.privateProbeIntervalHours !== undefined ||
+    clean.publicProbeIntervalHours !== undefined ||
+    clean.privateProbeBatchSize !== undefined ||
+    clean.publicProbeBatchSize !== undefined
+  ) {
+    const state = await getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/probe-schedule.json');
+    if (state?.lastRunAt) {
+      const profile = activeProbeProfile(settings);
+      const due = Date.parse(state.lastRunAt) + profile.intervalHours * 3_600_000;
+      await putRuntimeJson(c.env, 'state/probe-schedule.json', {
+        ...state,
+        nextRunAt: new Date(Math.max(due, Date.now())).toISOString(),
+      });
+    }
+  }
   return ok({ settings });
 });
 
@@ -861,6 +882,15 @@ adminRoutes.get('/tasks', async (c) => {
       .filter(Boolean),
   );
   const batchSize = activeProbeProfile(settings).batchSize;
+  const probeProfile = activeProbeProfile(settings);
+  const probeNextDisplay = (() => {
+    const stored = probeState?.nextRunAt ? Date.parse(probeState.nextRunAt) : null;
+    const last = probeState?.lastRunAt ? Date.parse(probeState.lastRunAt) : null;
+    if (!stored) return '';
+    if (!last) return probeState?.nextRunAt ?? '';
+    const adjusted = last + probeProfile.intervalHours * 3_600_000;
+    return new Date(Math.min(stored, Math.max(adjusted, Date.now()))).toISOString();
+  })();
   const phases = order.map((id) => {
     const count = Math.max(0, Number(stats?.[id] ?? 0));
     return {
@@ -889,8 +919,28 @@ adminRoutes.get('/tasks', async (c) => {
   if (settings.autoPublishEnabled) {
     scheduledItems.push({ id: 'scheduled-publish', type: 'publish', label: '线路发布 · 定时', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: nextPublish ? new Date(nextPublish).toISOString() : '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
   }
+  if (settings.autoPublishAfterProbeEnabled) {
+    const interval = Math.max(1, Number(settings.autoPublishIntervalHours) || 6);
+    const last = publishState?.lastRunAt ? Date.parse(publishState.lastRunAt) : null;
+    scheduledItems.push({
+      id: 'policy-publish-after-probe',
+      type: 'publish',
+      label: '线路发布 · 探测后自动',
+      source: 'schedule',
+      status: 'scheduled',
+      priority: 40,
+      payload: {
+        afterProbe: 'true',
+        intervalHours: interval,
+        lastRunAt: publishState?.lastRunAt ?? '',
+        nextAt: last ? new Date(last + interval * 3_600_000).toISOString() : '',
+      },
+      progress: { done: 0, total: 0, unit: '' },
+      createdAt: scheduledAt,
+    });
+  }
   if (settings.autoProbeEnabled) {
-    scheduledItems.push({ id: 'scheduled-probe', type: 'probe-batch', label: '分批探测 · 自动', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: probeState?.nextRunAt ?? '', lastRunAt: probeState?.lastRunAt ?? '', result: probeState?.result ?? '' }, progress: { done: 0, total: batchSize, unit: 'lines' }, createdAt: scheduledAt });
+    scheduledItems.push({ id: 'scheduled-probe', type: 'probe-batch', label: '分批探测 · 自动', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: probeNextDisplay, lastRunAt: probeState?.lastRunAt ?? '', result: probeState?.result ?? '' }, progress: { done: 0, total: batchSize, unit: 'lines' }, createdAt: scheduledAt });
   }
   if (settings.snapshotOnPublishEnabled) {
     scheduledItems.push({ id: 'policy-snapshot-on-publish', type: 'snapshot', label: '快照 · 发布后自动', source: 'schedule', status: 'scheduled', priority: 50, payload: { afterPublish: 'true' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
