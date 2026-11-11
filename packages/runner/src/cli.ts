@@ -530,13 +530,13 @@ function livenessReady(line: LineEntry, now: number): boolean {
 }
 
 /** Small summary consumed by the Worker scheduler; avoids parsing lines.json. */
-function poolStatsFor(remote: RemoteConfig, lines: LineEntry[]) {
+function poolStatsFor(remote: RemoteConfig, lines: LineEntry[], generatedAt = new Date().toISOString()) {
   const channelIds = new Set(remote.channels.map((channel) => channel.id));
   const valid = lines.filter((line) => channelIds.has(line.channelId) && !UNPROBEABLE_URL.test(line.url));
   const now = Date.now();
   const nowDate = new Date(now);
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     total: valid.length,
     // A liveness-prefilter failure becomes suspect without lastProbeAt; it must
     // not stay in pending forever.
@@ -550,8 +550,8 @@ function poolStatsFor(remote: RemoteConfig, lines: LineEntry[]) {
   };
 }
 
-async function writePoolStats(store: ArtifactStore, remote: RemoteConfig, lines: LineEntry[]): Promise<void> {
-  await store.put('state/pool-stats.json', JSON.stringify(poolStatsFor(remote, lines)), 'application/json');
+async function writePoolStats(store: ArtifactStore, remote: RemoteConfig, lines: LineEntry[], generatedAt?: string): Promise<void> {
+  await store.put('state/pool-stats.json', JSON.stringify(poolStatsFor(remote, lines, generatedAt)), 'application/json');
 }
 
 /** Probe changes alive counts; refresh the source cards without touching reputation. */
@@ -828,9 +828,12 @@ async function publishPhase(
   // Publish used to rebuild only the catalogs, leaving state/pool.json and
   // pool-stats at the last fetch/probe timestamp. Refresh both here so every
   // publish also refreshes the pool overview the public page reads.
-  const poolGeneratedAt = nowIso();
+  // Reuse the catalog timestamp: the dashboard warns when pool-stats is newer
+  // than the index, and writing a fresh `now` here made that warning fire after
+  // every single publish.
+  const poolGeneratedAt = output.catalog.generatedAt;
   await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, poolGeneratedAt)), 'application/json');
-  await writePoolStats(store, remote, lines);
+  await writePoolStats(store, remote, lines, poolGeneratedAt);
   const logKey = await writeLog(store, runId, logger);
   const poolSnapshot = buildPoolSnapshot({
     lines,
