@@ -62,6 +62,9 @@ interface PoolLine {
   resolution?: string;
   height?: number;
   speedKbps?: number;
+  cnReachable?: boolean;
+  cnCheckedAt?: string | null;
+  cnLatencyMs?: number | null;
   protocol: string;
   transport: 'direct' | 'relay';
   pool: keyof PoolCounts;
@@ -105,6 +108,7 @@ export function Pool() {
   const [transport, setTransport] = useState('');
   const [resolution, setResolution] = useState('');
   const [minSpeed, setMinSpeed] = useState('');
+  const [cnOnly, setCnOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -117,7 +121,7 @@ export function Pool() {
   // so a stale selection can never be deleted or tombstoned by accident.
   useEffect(() => {
     setSelected(new Set());
-  }, [page, pageSize, pool, customPool, country, group, channelId, sourceId, transport, resolution, minSpeed, search, sortField, sortOrder, subscriptionId]);
+  }, [page, pageSize, pool, customPool, country, group, channelId, sourceId, transport, resolution, minSpeed, cnOnly, search, sortField, sortOrder, subscriptionId]);
 
   const tree = useQuery({
     queryKey: ['admin', 'pool', 'tree'],
@@ -189,13 +193,14 @@ export function Pool() {
     if (transport) value.set('transport', transport);
     if (resolution) value.set('resolution', resolution);
     if (minSpeedKbps) value.set('minSpeed', minSpeedKbps);
+    if (cnOnly) value.set('cn', '1');
     if (search.trim()) value.set('q', search.trim());
     if (sortField) {
       value.set('sort', sortField);
       value.set('order', sortOrder);
     }
     return value.toString();
-  }, [country, group, channelId, subscriptionId, sourceId, pool, customPool, transport, resolution, minSpeedKbps, search, page, pageSize, sortField, sortOrder]);
+  }, [country, group, channelId, subscriptionId, sourceId, pool, customPool, transport, resolution, minSpeedKbps, cnOnly, search, page, pageSize, sortField, sortOrder]);
 
   const lines = useQuery({
     queryKey: ['admin', 'pool', 'lines', params],
@@ -635,6 +640,13 @@ export function Pool() {
             <input className="input" inputMode="decimal" value={minSpeed} onChange={(event) => { setMinSpeed(event.target.value); resetPage(); }} placeholder="不限（如 2）" />
           </label>
           <label className="stack stack--tight grow">
+            <span className="caption">国内可达</span>
+            <select className="input" value={cnOnly ? '1' : ''} onChange={(event) => { setCnOnly(event.target.value === '1'); resetPage(); }}>
+              <option value="">全部</option>
+              <option value="1">仅国内补测通过</option>
+            </select>
+          </label>
+          <label className="stack stack--tight grow">
             <span className="caption">搜索</span>
             <input className="input" value={search} onChange={(event) => { setSearch(event.target.value); resetPage(); }} placeholder="频道 / 源 / URL" />
           </label>
@@ -776,6 +788,9 @@ export function Pool() {
                       </div>
                       <div className="caption truncate" style={{ maxWidth: 170 }}>{line.name}</div>
                       {line.retained ? <Badge tone="orange">源已移除，保留中</Badge> : null}
+                      {line.cnReachable ? (
+                        <span title={`国内补测通过${line.cnCheckedAt ? ` · ${line.cnCheckedAt.slice(0, 16).replace('T', ' ')}` : ''}${line.cnLatencyMs ? ` · ${line.cnLatencyMs}ms` : ''}`}><Badge tone="green">国内</Badge></span>
+                      ) : null}
                     </td>
                     <td data-label="分辨率">{formatResolution(line.resolution)}</td>
                     <td data-label="速度">{line.speedKbps ? formatSpeed(line.speedKbps) : '—'}</td>

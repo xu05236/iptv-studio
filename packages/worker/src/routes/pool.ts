@@ -306,6 +306,7 @@ poolRoutes.get('/lines', async (c) => {
   const transport = c.req.query('transport') ?? '';
   const resolution = c.req.query('resolution') ?? '';
   const minSpeed = Math.max(0, Number(c.req.query('minSpeed') ?? 0) || 0);
+  const cnOnly = c.req.query('cn') === '1';
   const sortField = (c.req.query('sort') ?? '').trim();
   const sortOrder = c.req.query('order') === 'asc' ? 1 : -1;
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
@@ -346,6 +347,7 @@ poolRoutes.get('/lines', async (c) => {
     if (pool && line.pool !== pool) return false;
     if (transport && line.transport !== transport) return false;
     if (minSpeed && (line.speedKbps ?? 0) < minSpeed) return false;
+    if (cnOnly && line.cnReachable !== true) return false;
     if (minRank >= 0 && qualityRank(qualityOf(line)) < minRank) return false;
     if (q) {
       const haystack = `${line.channelName} ${line.name} ${line.sourceName} ${line.url}`.toLowerCase();
@@ -410,6 +412,9 @@ poolRoutes.get('/lines', async (c) => {
       resolution: line.resolution,
       height: line.height,
       speedKbps: line.speedKbps,
+      cnReachable: line.cnReachable === true,
+      cnCheckedAt: line.cnCheckedAt ?? null,
+      cnLatencyMs: line.cnLatencyMs ?? null,
       protocol: line.protocol,
       transport: line.transport,
       pool: line.pool,

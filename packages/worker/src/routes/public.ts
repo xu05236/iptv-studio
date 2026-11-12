@@ -287,7 +287,7 @@ publicRoutes.get('/channels/:id', async (c) => {
     const logoFromKey = shard.channel.logo
       ? shard.lines.find((line) => line.logo && line.logo === shard.channel.logo)?.key ?? null
       : null;
-    const safeLines = shard.lines.map(({ url, headers: _headers, ...rest }) => ({
+    const safeLines = shard.lines.map(({ url, headers: _headers, cnProxyId: _cnProxyId, ...rest }) => ({
       ...rest,
       speedKbps: Math.min(rest.speedKbps ?? 0, 50_000),
       resolution: rest.resolution ?? inferResolution(`${rest.name} ${url}`),

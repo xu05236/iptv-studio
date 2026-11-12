@@ -316,6 +316,7 @@ export function ChannelDetail() {
                       {line.favorite ? <Badge tone="orange">收藏</Badge> : null}
                       {order === 1 && lineSort === 'default' ? <Badge tone="blue">首选</Badge> : null}
                       {query.data?.logoFromKey === line.key ? <Badge tone="green">台标供体</Badge> : null}
+                      {line.cnReachable ? <span title="国内补测通过"><Badge tone="green">国内可达</Badge></span> : null}
                       {line.pool ? <Badge tone={line.pool === 'premium' ? 'green' : line.pool === 'backup' ? 'blue' : 'default'}>{line.pool === 'premium' ? '精品池' : line.pool === 'backup' ? '备用池' : '候选池'}</Badge> : null}
                       {check ? (
                         <Badge tone={check.ok ? 'green' : 'red'}>
