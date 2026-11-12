@@ -231,7 +231,7 @@ export function Proxies() {
           </Button>
         </div>
         {settingsReady ? (
-          <div className="stack" style={{ gap: 14 }}>
+          <div className="stack card__body" style={{ gap: 18 }}>
             <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
               <div>
                 <strong>自动测活</strong>
