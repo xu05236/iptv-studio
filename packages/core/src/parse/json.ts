@@ -10,6 +10,24 @@ const TVG_KEYS = ['tvgid', 'tvg', 'epgid', 'epg', 'channelid'];
 const CATCHUP_KEYS = ['catchup'];
 const CATCHUP_SOURCE_KEYS = ['catchupsource', 'catchupsrc'];
 const CATCHUP_DAYS_KEYS = ['catchupdays', 'timeshift'];
+const GROUP_FALLBACK_KEYS = ['group', 'grouptitle', 'category', 'class', 'tag', 'typename'];
+// Some portal APIs return per-channel paths such as `/tsfile/live/0001_1.m3u8?key=…`.
+// They are resolved against the source URL after parsing.
+const RELATIVE_PLAYABLE = /^\/(?!\/)[^\s]*\.(?:m3u8|mp4|flv|ts|mkv)(?:\?[^\s]*)?$/i;
+
+function playable(url: string): boolean {
+  return isStreamUrl(url) || RELATIVE_PLAYABLE.test(url);
+}
+
+function groupOf(map: Map<string, unknown>): string | undefined {
+  for (const key of GROUP_FALLBACK_KEYS) {
+    const value = map.get(key);
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  // Numeric `type` values are internal ids, not a category.
+  const type = map.get('type');
+  return typeof type === 'string' && type.trim() && !/^\d+$/.test(type.trim()) ? type.trim() : undefined;
+}
 
 interface WalkContext {
   group?: string;
@@ -73,7 +91,7 @@ function walk(node: unknown, ctx: WalkContext, out: RawEntry[], warnings: string
   }
 
   if (typeof node === 'string') {
-    if (isStreamUrl(node)) out.push({ name: '未命名频道', url: node, group: ctx.group });
+    if (playable(node)) out.push({ name: '未命名频道', url: node, group: ctx.group });
     return;
   }
 
@@ -110,7 +128,7 @@ function walk(node: unknown, ctx: WalkContext, out: RawEntry[], warnings: string
   if (!ctx.group && recordHasUrlArray(record)) {
     for (const [key, value] of Object.entries(record)) {
       if (!Array.isArray(value)) continue;
-      const urls = value.filter((item): item is string => typeof item === 'string' && isStreamUrl(item));
+      const urls = value.filter((item): item is string => typeof item === 'string' && playable(item));
       for (const url of urls) out.push({ name: cleanLabel(key), url, group: ctx.group });
     }
     return;
@@ -155,8 +173,8 @@ function pick(map: Map<string, unknown>, keys: string[]): string | undefined {
 function hasUrlValue(map: Map<string, unknown>): boolean {
   for (const key of URL_KEYS) {
     const value = map.get(key);
-    if (typeof value === 'string' && isStreamUrl(value)) return true;
-    if (Array.isArray(value) && value.some((item) => typeof item === 'string' && isStreamUrl(item))) return true;
+    if (typeof value === 'string' && playable(value)) return true;
+    if (Array.isArray(value) && value.some((item) => typeof item === 'string' && playable(item))) return true;
   }
   return false;
 }
@@ -167,7 +185,7 @@ function looksLikeEntry(map: Map<string, unknown>): boolean {
 
 function recordHasUrlArray(record: Record<string, unknown>): boolean {
   return Object.values(record).some(
-    (value) => Array.isArray(value) && value.some((item) => typeof item === 'string' && isStreamUrl(item)),
+    (value) => Array.isArray(value) && value.some((item) => typeof item === 'string' && playable(item)),
   );
 }
 
@@ -188,7 +206,7 @@ function pushEntry(map: Map<string, unknown>, ctx: WalkContext, out: RawEntry[])
   if (!urls.length) return;
 
   const name = cleanLabel(pick(map, NAME_KEYS) ?? pick(map, TVG_KEYS) ?? '未命名频道');
-  const group = cleanLabel(pick(map, GROUP_KEYS) ?? ctx.group ?? '') || undefined;
+  const group = cleanLabel(groupOf(map) ?? ctx.group ?? '') || undefined;
   const logo = pick(map, LOGO_KEYS);
   const tvgId = pick(map, TVG_KEYS);
   const headers = readHeaders(map);
@@ -199,7 +217,7 @@ function pushEntry(map: Map<string, unknown>, ctx: WalkContext, out: RawEntry[])
   for (const raw of urls) {
     if (typeof raw !== 'string') continue;
     const { url, headers: suffix } = splitUrlHeaders(raw);
-    if (!isStreamUrl(url)) continue;
+    if (!playable(url)) continue;
     out.push({
       name,
       url,

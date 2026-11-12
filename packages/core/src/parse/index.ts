@@ -26,20 +26,48 @@ export function detectSourceKind(text: string, hint?: SourceKind | null): Parsed
 }
 
 /** Parse a playlist body of any supported format. */
-export function parseSource(text: string, hint?: SourceKind | null): ParsedSource {
+export interface ParseOptions {
+  /** Absolute source URL; relative entry URLs are resolved against it. */
+  baseUrl?: string;
+}
+
+function resolveEntryUrl(url: string, baseUrl: string): string {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('//')) return url;
+  try {
+    return new URL(url, baseUrl).toString();
+  } catch {
+    return url;
+  }
+}
+
+/** Resolve relative entry URLs against an absolute source URL. */
+export function resolveParsedUrls(parsed: ParsedSource, baseUrl: string): ParsedSource {
+  return {
+    ...parsed,
+    entries: parsed.entries.map((entry) => ({ ...entry, url: resolveEntryUrl(entry.url, baseUrl) })),
+  };
+}
+
+export function parseSource(text: string, hint?: SourceKind | null, options?: ParseOptions): ParsedSource {
   const kind = detectSourceKind(text, hint);
+  let parsed: ParsedSource;
   switch (kind) {
     case 'm3u':
-      return parseM3U(text);
+      parsed = parseM3U(text);
+      break;
     case 'json':
-      return parseJSONSource(text);
+      parsed = parseJSONSource(text);
+      break;
     case 'hwctc':
-      return parseHWCTC(text);
+      parsed = parseHWCTC(text);
+      break;
     case 'txt':
     case 'tvbox':
     default:
-      return parseTXT(text);
+      parsed = parseTXT(text);
+      break;
   }
+  return options?.baseUrl ? resolveParsedUrls(parsed, options.baseUrl) : parsed;
 }
 
 export { parseM3U, parseTXT, parseJSONSource, parseHWCTC };

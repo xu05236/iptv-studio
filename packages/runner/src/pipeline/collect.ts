@@ -268,7 +268,7 @@ export async function collectSource(source: SourceRecord, store: ArtifactStore, 
     return { ...base, error: '源没有地址和内容' };
   }
 
-  const parsed = parseWithAdapter(text, source.kind);
+  const parsed = parseWithAdapter(text, source.kind, source.url ? { baseUrl: source.url } : undefined);
   if (parsed.warnings.length) {
     logger.warn('解析警告', { source: source.name, warnings: parsed.warnings.slice(0, 3) });
   }

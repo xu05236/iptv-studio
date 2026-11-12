@@ -283,7 +283,7 @@ sourceRoutes.post('/preview', async (c) => {
     if (!fetched.ok || !fetched.text) {
       return ok({ exists: false, reachable: false, error: fetched.error ?? '抓取失败', entries: 0, warnings: ['源站可能限制 Cloudflare/海外 IP，可勾选「跳过预检」交给采集器抓取'] });
     }
-    return summarizePreview(fetched.text, existing);
+    return summarizePreview(fetched.text, existing, body.url);
   }
 
   const text = body.content ?? '';
@@ -291,7 +291,7 @@ sourceRoutes.post('/preview', async (c) => {
   return summarizePreview(text, existing);
 });
 
-async function summarizePreview(text: string, existing: Awaited<ReturnType<typeof listSources>>) {
+async function summarizePreview(text: string, existing: Awaited<ReturnType<typeof listSources>>, baseUrl?: string) {
   const contentHash = await sha256(text);
   const duplicateContent = existing.find((source) => source.content_hash === contentHash);
   if (duplicateContent) {
@@ -300,7 +300,7 @@ async function summarizePreview(text: string, existing: Awaited<ReturnType<typeo
   if (text.length > 512 * 1024) {
     return ok({ exists: false, reachable: true, entries: 0, warnings: ['内容较大，添加后由采集器解析'], groups: [], sample: [] });
   }
-  const parsed = parseSource(text, 'auto');
+  const parsed = parseSource(text, 'auto', baseUrl ? { baseUrl } : undefined);
   const counts = new Map<string, number>();
   for (const entry of parsed.entries) {
     const group = entry.group?.trim() || '未分组';
@@ -799,7 +799,7 @@ sourceRoutes.post('/:id/probe', async (c) => {
   }
 
   if (!text) return fail('没有可解析的内容', 422);
-  const parsed = parseSource(text, source.kind as never);
+  const parsed = parseSource(text, source.kind as never, source.url ? { baseUrl: source.url } : undefined);
 
   await updateSource(c.env, id, {
     entry_count: parsed.entries.length,
@@ -846,7 +846,7 @@ sourceRoutes.post('/:id/probe-lines', async (c) => {
   }
   if (!text) return fail('没有可解析的内容', 422);
 
-  const parsed = parseSource(text, source.kind as never);
+  const parsed = parseSource(text, source.kind as never, source.url ? { baseUrl: source.url } : undefined);
   const candidates = parsed.entries
     .slice(offset, offset + limit)
     .map((entry, index) => ({ key: `${offset + index}`, url: splitUrlHeaders(entry.url).url, headers: entry.headers }));

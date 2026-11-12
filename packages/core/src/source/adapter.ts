@@ -1,5 +1,5 @@
 import type { ParsedSource, SourceKind } from '../types.js';
-import { detectSourceKind, parseHWCTC, parseJSONSource, parseM3U, parseSource, parseTXT } from '../parse/index.js';
+import { detectSourceKind, parseHWCTC, parseJSONSource, parseM3U, parseSource, parseTXT, resolveParsedUrls } from '../parse/index.js';
 
 /**
  * A source adapter describes one playlist dialect: how to recognise it, how to
@@ -59,10 +59,13 @@ registerSourceAdapter({
  * the highest detect confidence (falling back to `auto`). Explicit kinds keep
  * the legacy parseSource behaviour so existing sources parse identically.
  */
-export function parseWithAdapter(text: string, hint?: SourceKind | string | null): ParsedSource {
+export function parseWithAdapter(text: string, hint?: SourceKind | string | null, options?: { baseUrl?: string }): ParsedSource {
   if (hint && hint !== 'auto') {
     const explicit = getSourceAdapter(String(hint));
-    if (explicit && explicit.id !== 'auto') return explicit.parse(text);
+    if (explicit && explicit.id !== 'auto') {
+      const parsed = explicit.parse(text);
+      return options?.baseUrl ? resolveParsedUrls(parsed, options.baseUrl) : parsed;
+    }
   }
   let best: SourceAdapter | null = null;
   let bestScore = 0;
@@ -74,5 +77,6 @@ export function parseWithAdapter(text: string, hint?: SourceKind | string | null
       bestScore = score;
     }
   }
-  return (best ?? registry.get('auto')!).parse(text);
+  const parsed = (best ?? registry.get('auto')!).parse(text);
+  return options?.baseUrl ? resolveParsedUrls(parsed, options.baseUrl) : parsed;
 }
