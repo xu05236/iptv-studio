@@ -9,9 +9,22 @@ import { timeAgo } from '../../lib/format';
 
 interface ProxyList {
   items: ProxyNode[];
+  currentId?: string | null;
 }
 
+type ProxySort = 'default' | 'latency' | 'success' | 'recent' | 'name';
+
 const PROTOCOLS = ['http', 'https', 'socks5', 'socks5h', 'vmess', 'vless', 'trojan', 'hysteria2', 'ss', 'anytls', 'tuic'];
+
+// Frequently seen client UAs; some subscription servers only answer known apps.
+const UA_PRESETS = [
+  { label: 'Clash for Android', value: 'ClashForAndroid/2.5.12' },
+  { label: 'Clash Meta for Android', value: 'ClashMetaForAndroid/2.11.6.Meta' },
+  { label: 'v2rayNG', value: 'v2rayNG/1.9.16' },
+  { label: 'NekoBox', value: 'NekoBox/1.3.2' },
+  { label: 'Surfboard', value: 'Surfboard/2.30.0' },
+  { label: 'Clash Verge Rev（桌面）', value: 'clash-verge/v2.0.3' },
+];
 
 function statusOf(node: ProxyNode): { label: string; tone: 'green' | 'orange' | 'default' | 'blue' } {
   if (node.kernelOnly) return { label: '需内核', tone: 'default' };
@@ -34,11 +47,14 @@ export function Proxies() {
   const [form, setForm] = useState({ name: '', protocol: 'http', host: '', port: '', username: '', password: '', region: '', isp: '' });
   const [importText, setImportText] = useState('');
   const [importUrl, setImportUrl] = useState('');
+  const [importUa, setImportUa] = useState('');
+  const [importHeaders, setImportHeaders] = useState('');
+  const [sort, setSort] = useState<ProxySort>('default');
   const [importResult, setImportResult] = useState<{ added: number; skipped: number; kernelOnly: number; warnings: string[] } | null>(null);
 
   const proxies = useQuery({
-    queryKey: ['admin', 'proxies'],
-    queryFn: () => api.get<ProxyList>('/api/admin/proxies'),
+    queryKey: ['admin', 'proxies', sort],
+    queryFn: () => api.get<ProxyList>(`/api/admin/proxies?sort=${sort}`),
   });
   const settingsQuery = useQuery({
     queryKey: ['admin', 'settings'],
@@ -75,10 +91,22 @@ export function Proxies() {
   });
 
   const importProxies = useMutation({
-    mutationFn: () => api.post<{ added: number; skipped: number; kernelOnly: number; warnings: string[] }>('/api/admin/proxies/import', {
-      text: importText,
-      url: importUrl,
-    }),
+    mutationFn: () => {
+      const headers: Record<string, string> = {};
+      for (const line of importHeaders.split(/\r?\n/)) {
+        const index = line.indexOf(':');
+        if (index <= 0) continue;
+        const key = line.slice(0, index).trim();
+        const value = line.slice(index + 1).trim();
+        if (key && value) headers[key] = value;
+      }
+      return api.post<{ added: number; skipped: number; kernelOnly: number; warnings: string[] }>('/api/admin/proxies/import', {
+        text: importText,
+        url: importUrl,
+        userAgent: importUa.trim(),
+        headers,
+      });
+    },
     onSuccess: (data) => {
       setImportResult(data);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'proxies'] });
@@ -262,6 +290,16 @@ export function Proxies() {
         <QueryError title="代理列表加载失败" error={proxies.error} onRetry={() => void proxies.refetch()} />
       ) : items.length ? (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--sep)' }}>
+            <div className="caption">排序只影响显示；上移/下移仅在「默认顺序」下可用。</div>
+            <select className="select" style={{ width: 170 }} value={sort} onChange={(event) => setSort(event.target.value as ProxySort)}>
+              <option value="default">默认顺序（当前优先）</option>
+              <option value="latency">延迟最低</option>
+              <option value="success">成功率最高</option>
+              <option value="recent">最近测活</option>
+              <option value="name">名称</option>
+            </select>
+          </div>
           <table className="table">
             <thead>
               <tr>
@@ -283,7 +321,7 @@ export function Proxies() {
                   <tr key={node.id} style={node.kernelOnly ? { opacity: 0.55 } : undefined}>
                     <td>
                       <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-                        {node.id === items.find((item) => item.enabled && !item.kernelOnly)?.id ? <Badge tone="blue">当前</Badge> : null}
+                        {node.id === proxies.data?.currentId ? <Badge tone="blue">当前</Badge> : null}
                         <span>{node.name}</span>
                       </div>
                     </td>
@@ -305,8 +343,8 @@ export function Proxies() {
                           onChange={(value) => patchProxy.mutate({ id: node.id, patch: { enabled: value } })}
                         />
                         <Button variant="ghost" size="sm" title="测活" disabled={node.kernelOnly} onClick={() => checkProxies.mutate(node.id)}><RefreshCw size={13} /></Button>
-                        <Button variant="ghost" size="sm" disabled={index === 0} onClick={() => moveProxy.mutate({ id: node.id, direction: 'up' })}><ArrowUp size={13} /></Button>
-                        <Button variant="ghost" size="sm" disabled={index === items.length - 1} onClick={() => moveProxy.mutate({ id: node.id, direction: 'down' })}><ArrowDown size={13} /></Button>
+                        <Button variant="ghost" size="sm" title={sort === 'default' ? '上移' : '仅默认顺序可上移'} disabled={sort !== 'default' || index === 0} onClick={() => moveProxy.mutate({ id: node.id, direction: 'up' })}><ArrowUp size={13} /></Button>
+                        <Button variant="ghost" size="sm" title={sort === 'default' ? '下移' : '仅默认顺序可下移'} disabled={sort !== 'default' || index === items.length - 1} onClick={() => moveProxy.mutate({ id: node.id, direction: 'down' })}><ArrowDown size={13} /></Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -360,6 +398,28 @@ export function Proxies() {
         <div className="stack">
           <Field label="订阅地址（可选）">
             <input className="input" value={importUrl} onChange={(event) => setImportUrl(event.target.value)} placeholder="https://example.com/sub" />
+          </Field>
+          <div className="row" style={{ gap: 10 }}>
+            <Field label="订阅请求 UA（可选）">
+              <div className="row" style={{ gap: 8 }}>
+                <select
+                  className="select"
+                  style={{ width: 210 }}
+                  value={UA_PRESETS.some((preset) => preset.value === importUa) ? importUa : 'custom'}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setImportUa(value === 'custom' ? '' : value);
+                  }}
+                >
+                  <option value="custom">自定义 / 默认</option>
+                  {UA_PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}
+                </select>
+                <input className="input" value={importUa} onChange={(event) => setImportUa(event.target.value)} placeholder="留空用默认 UA" />
+              </div>
+            </Field>
+          </div>
+          <Field label="附加请求头（可选，每行 Key: Value）">
+            <textarea className="input" rows={2} value={importHeaders} onChange={(event) => setImportHeaders(event.target.value)} placeholder="Accept: */*" />
           </Field>
           <Field label="节点内容">
             <textarea className="input" rows={8} value={importText} onChange={(event) => setImportText(event.target.value)} placeholder={'http://user:pass@1.2.3.4:8080#深圳电信\nsocks5://5.6.7.8:1080\n或 Clash YAML / Base64 / JSON'} />

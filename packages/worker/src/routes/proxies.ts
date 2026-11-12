@@ -31,9 +31,37 @@ function validHost(value: unknown): string {
   return /^[a-zA-Z0-9.\-_:[\]]+$/.test(host) ? host : '';
 }
 
+const SORTS = ['default', 'latency', 'success', 'recent', 'name'] as const;
+type ProxySort = (typeof SORTS)[number];
+
+function successRatio(node: ProxyNode): number {
+  const total = node.successCount + node.failCount;
+  return total > 0 ? node.successCount / total : -1;
+}
+
+function sortProxyNodes(items: ProxyNode[], sort: ProxySort, currentId: string | null): ProxyNode[] {
+  if (sort === 'default') return items;
+  const sorted = [...items].sort((a, b) => {
+    if (a.kernelOnly !== b.kernelOnly) return a.kernelOnly ? 1 : -1;
+    if (sort === 'latency') return (a.lastLatencyMs ?? Number.MAX_SAFE_INTEGER) - (b.lastLatencyMs ?? Number.MAX_SAFE_INTEGER);
+    if (sort === 'success') return successRatio(b) - successRatio(a);
+    if (sort === 'recent') return (b.lastCheckedAt ?? '').localeCompare(a.lastCheckedAt ?? '');
+    return a.name.localeCompare(b.name, 'zh-CN');
+  });
+  if (currentId) {
+    const index = sorted.findIndex((node) => node.id === currentId);
+    if (index > 0) sorted.unshift(sorted.splice(index, 1)[0]);
+  }
+  return sorted;
+}
+
 proxyRoutes.get('/', async (c) => {
-  const items = await listProxyNodes(c.env);
-  if (c.req.query('secrets') !== '1') return ok({ items });
+  const loaded = await listProxyNodes(c.env);
+  const currentId = loaded.find((node) => node.enabled && !node.kernelOnly)?.id ?? null;
+  const rawSort = String(c.req.query('sort') ?? 'default');
+  const sort = (SORTS as readonly string[]).includes(rawSort) ? (rawSort as ProxySort) : 'default';
+  const items = sortProxyNodes(loaded, sort, currentId);
+  if (c.req.query('secrets') !== '1') return ok({ items, currentId });
   // Runner-only view: the probe client needs the plaintext password to authenticate.
   const { results } = await c.env.DB.prepare('SELECT id, password_enc FROM proxy_nodes').all<{ id: string; password_enc: string }>();
   const secretById = new Map(results.map((row) => [row.id, row.password_enc]));
@@ -43,7 +71,7 @@ proxyRoutes.get('/', async (c) => {
       password: secretById.get(node.id) ? await decryptProxyPassword(c.env, secretById.get(node.id)!) : '',
     })),
   );
-  return ok({ items: withSecrets });
+  return ok({ items: withSecrets, currentId });
 });
 
 proxyRoutes.post('/', async (c) => {
@@ -70,11 +98,11 @@ proxyRoutes.post('/', async (c) => {
   return ok({ proxy: node });
 });
 
-async function fetchSubscription(url: string): Promise<string> {
+async function fetchSubscription(url: string, userAgent = 'iptv-studio/1.0', extra: Record<string, string> = {}): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12_000);
   try {
-    const response = await fetch(url, { signal: controller.signal, headers: { 'user-agent': 'iptv-studio/1.0' } });
+    const response = await fetch(url, { signal: controller.signal, headers: { ...extra, 'user-agent': userAgent } });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const buffer = await response.arrayBuffer();
     if (buffer.byteLength > 2 * 1024 * 1024) throw new Error('订阅内容超过 2MB');
@@ -85,11 +113,20 @@ async function fetchSubscription(url: string): Promise<string> {
 }
 
 proxyRoutes.post('/import', async (c) => {
-  const body = (await readJson<{ text?: string; url?: string }>(c)) ?? {};
+  const body = (await readJson<{ text?: string; url?: string; userAgent?: string; headers?: Record<string, string> }>(c)) ?? {};
   let text = typeof body.text === 'string' ? body.text : '';
+  const userAgent = cleanText(body.userAgent, 300) || 'iptv-studio/1.0';
+  const extraHeaders: Record<string, string> = {};
+  if (body.headers && typeof body.headers === 'object') {
+    for (const [name, value] of Object.entries(body.headers).slice(0, 20)) {
+      const key = cleanText(name, 80);
+      const headerValue = cleanText(value, 500);
+      if (key && headerValue && /^[a-z0-9-]+$/i.test(key) && !/^(host|content-length|connection)$/i.test(key)) extraHeaders[key] = headerValue;
+    }
+  }
   if (!text.trim() && typeof body.url === 'string' && /^https?:\/\//i.test(body.url.trim())) {
     try {
-      text = await fetchSubscription(body.url.trim());
+      text = await fetchSubscription(body.url.trim(), userAgent, extraHeaders);
     } catch (error) {
       return fail(`拉取订阅失败：${error instanceof Error ? error.message : String(error)}`);
     }
