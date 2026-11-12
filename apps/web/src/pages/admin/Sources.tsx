@@ -58,9 +58,10 @@ interface FilterForm {
   keywords: string;
   excludeKeywords: string;
   maxEntries: string;
+  dropNumericNames: boolean;
 }
 
-const EMPTY_FILTER_FORM: FilterForm = { groups: '', excludeGroups: '', keywords: '', excludeKeywords: '', maxEntries: '' };
+const EMPTY_FILTER_FORM: FilterForm = { groups: '', excludeGroups: '', keywords: '', excludeKeywords: '', maxEntries: '', dropNumericNames: true };
 
 function listOf(value: string): string[] {
   return value.split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean);
@@ -73,6 +74,7 @@ function buildFilters(form: FilterForm): NonNullable<SourceItem['filters']> | un
   if (listOf(form.keywords).length) filters.keywords = listOf(form.keywords);
   if (listOf(form.excludeKeywords).length) filters.excludeKeywords = listOf(form.excludeKeywords);
   if (Number(form.maxEntries) > 0) filters.maxEntries = Number(form.maxEntries);
+  if (form.dropNumericNames === false) filters.dropNumericNames = false;
   return Object.keys(filters).length ? filters : undefined;
 }
 
@@ -83,6 +85,7 @@ function filtersToForm(filters: SourceItem['filters']): FilterForm {
     keywords: (filters?.keywords ?? []).join(', '),
     excludeKeywords: (filters?.excludeKeywords ?? []).join(', '),
     maxEntries: filters?.maxEntries ? String(filters.maxEntries) : '',
+    dropNumericNames: filters?.dropNumericNames !== false,
   };
 }
 
@@ -94,6 +97,10 @@ function FilterFields({ form, onChange }: { form: FilterForm; onChange: (next: F
         <Field label="排除分组"><input className="input" value={form.excludeGroups} onChange={(event) => onChange({ ...form, excludeGroups: event.target.value })} placeholder="购物, 测试" /></Field>
         <Field label="只保留频道名包含"><input className="input" value={form.keywords} onChange={(event) => onChange({ ...form, keywords: event.target.value })} placeholder="CCTV, 湖南" /></Field>
         <Field label="排除频道名包含"><input className="input" value={form.excludeKeywords} onChange={(event) => onChange({ ...form, excludeKeywords: event.target.value })} placeholder="支付, 广告" /></Field>
+      </div>
+      <div className="list__row">
+        <span className="grow">过滤纯数字频道名（如 1、106）</span>
+        <Switch checked={form.dropNumericNames} onChange={(value) => onChange({ ...form, dropNumericNames: value })} />
       </div>
       <Field label="最多保留条数" hint="过滤后硬上限，留空不限制">
         <input className="input" type="number" min={0} value={form.maxEntries} onChange={(event) => onChange({ ...form, maxEntries: event.target.value })} placeholder="例如 300" />
@@ -138,7 +145,7 @@ export function Sources() {
   const [refreshHours, setRefreshHours] = useState('');
   const [filterSource, setFilterSource] = useState<SourceItem | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
-  const [filterForm, setFilterForm] = useState({ groups: '', excludeGroups: '', keywords: '', excludeKeywords: '', maxEntries: '' });
+  const [filterForm, setFilterForm] = useState<FilterForm>(EMPTY_FILTER_FORM);
   const [region, setRegion] = useState('');
   const [operator, setOperator] = useState('');
   const [probeResult, setProbeResult] = useState<ProbeSummary | null>(null);

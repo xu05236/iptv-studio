@@ -207,7 +207,7 @@ export interface SourceRecord {
   fetch_concurrency?: number | null;
   fetch_delay_ms?: number | null;
   created_at?: string | null;
-  filters?: string | { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number } | null;
+  filters?: string | { groups?: string[]; excludeGroups?: string[]; keywords?: string[]; excludeKeywords?: string[]; maxEntries?: number; dropNumericNames?: boolean } | null;
 }
 
 export interface ChannelRecord {
