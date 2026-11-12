@@ -708,6 +708,8 @@ adminRoutes.put('/settings', async (c) => {
     'autoFetchEnabled', 'fetchIntervalDays', 'autoPublishEnabled', 'autoPublishTimes', 'autoPublishIntervalHours', 'autoPublishAfterProbeEnabled', 'epgRefreshEnabled', 'epgRefreshTimes',
     'snapshotOnPublishEnabled', 'snapshotScheduleEnabled', 'snapshotScheduleTimes',
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback', 'relayDailyRequests', 'relayDailyBytes',
+    'proxyTestEnabled', 'proxyTestMode', 'proxyTestIntervalHours', 'proxyTestTimes',
+    'cnProbeEnabled', 'cnProbeBatchSize', 'cnProbeConcurrency',
   ];
   const clean: Partial<AppSettings> = {};
   for (const key of allowed) {
@@ -779,6 +781,30 @@ adminRoutes.put('/settings', async (c) => {
   if (clean.fetchIntervalDays !== undefined) clean.fetchIntervalDays = Math.min(7, Math.max(1, Math.floor(Number(clean.fetchIntervalDays) || 1)));
   if (clean.relayDailyRequests !== undefined) clean.relayDailyRequests = Math.max(100, Math.min(1_000_000, Math.floor(Number(clean.relayDailyRequests) || 20_000)));
   if (clean.relayDailyBytes !== undefined) clean.relayDailyBytes = Math.max(10 * 1024 * 1024, Math.min(100 * 1024 ** 3, Math.floor(Number(clean.relayDailyBytes) || 2 * 1024 ** 3)));
+  if (clean.proxyTestEnabled !== undefined) clean.proxyTestEnabled = Boolean(clean.proxyTestEnabled);
+  if (clean.proxyTestMode !== undefined) clean.proxyTestMode = clean.proxyTestMode === 'times' ? 'times' : 'interval';
+  if (clean.proxyTestIntervalHours !== undefined) {
+    clean.proxyTestIntervalHours = Math.max(1, Math.min(168, Number(clean.proxyTestIntervalHours) || 6));
+  }
+  if (clean.proxyTestTimes !== undefined) {
+    const raw = String(clean.proxyTestTimes ?? '').trim();
+    if (raw) {
+      const times = parseCollectTimes(raw);
+      if (!times.length) return fail('自动测活时间格式应为 HH:mm，多个用逗号分隔（北京时间）');
+      clean.proxyTestTimes = times
+        .map((time) => `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`)
+        .join(',');
+    } else {
+      clean.proxyTestTimes = '';
+    }
+  }
+  if (clean.cnProbeEnabled !== undefined) clean.cnProbeEnabled = Boolean(clean.cnProbeEnabled);
+  if (clean.cnProbeBatchSize !== undefined) {
+    clean.cnProbeBatchSize = Math.max(1, Math.min(1000, Math.floor(Number(clean.cnProbeBatchSize) || 200)));
+  }
+  if (clean.cnProbeConcurrency !== undefined) {
+    clean.cnProbeConcurrency = Math.max(1, Math.min(10, Math.floor(Number(clean.cnProbeConcurrency) || 5)));
+  }
   const settings = await saveSettings(c.env, clean);
   // Shortening the probe interval must take effect now, not after the old 8h
   // window: the scheduler stores the next run time, so rewrite it from the
@@ -849,6 +875,8 @@ function describeTask(task: Task, sourceNames: Map<string, string>): string {
   if (task.type === 'epg') return 'EPG 节目单刷新';
   if (task.type === 'collect') return '完整采集 · 全部源';
   if (task.type === 'liveness') return '存活检测';
+  if (task.type === 'proxy-test') return task.source === 'schedule' ? '代理测活 · 定时' : '代理测活 · 手动';
+  if (task.type === 'cn-probe') return '国内补测';
   if (task.type === 'cleanup-orphans') return '孤儿线路清理';
   if (task.type === 'snapshot') {
     return task.payload?.origin === 'publish'
@@ -864,12 +892,13 @@ function describeTask(task: Task, sourceNames: Map<string, string>): string {
 adminRoutes.get('/tasks', async (c) => {
   const settings = await loadSettings(c.env);
   const taskItems = await loadTasks(c.env);
-  const [stats, probeState, fetchState, publishState, epgState, sourceRows, recentRuns] = await Promise.all([
+  const [stats, probeState, fetchState, publishState, epgState, proxyTestState, sourceRows, recentRuns] = await Promise.all([
     getJson<{ generatedAt?: string; pending?: number; quarantine?: number; rejected?: number }>(c.env, 'state/pool-stats.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/probe-schedule.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/fetch-schedule.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/publish-schedule.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/epg-schedule.json'),
+    getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/proxy-test-schedule.json'),
     listSources(c.env),
     listRuns(c.env, 100),
   ]);
@@ -947,6 +976,10 @@ adminRoutes.get('/tasks', async (c) => {
   }
   if (settings.autoProbeEnabled) {
     scheduledItems.push({ id: 'scheduled-probe', type: 'probe-batch', label: '分批探测 · 自动', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: probeNextDisplay, lastRunAt: probeState?.lastRunAt ?? '', result: probeState?.result ?? '' }, progress: { done: 0, total: batchSize, unit: 'lines' }, createdAt: scheduledAt });
+  }
+  if (settings.proxyTestEnabled) {
+    const nextProxy = proxyTestState?.nextRunAt ? Date.parse(proxyTestState.nextRunAt) : null;
+    scheduledItems.push({ id: 'scheduled-proxy-test', type: 'proxy-test', label: '代理测活 · 定时', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: nextProxy ? new Date(nextProxy).toISOString() : '', mode: settings.proxyTestMode ?? 'interval', lastRunAt: proxyTestState?.lastRunAt ?? '', result: proxyTestState?.result ?? '' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });
   }
   if (settings.snapshotOnPublishEnabled) {
     scheduledItems.push({ id: 'policy-snapshot-on-publish', type: 'snapshot', label: '快照 · 发布后自动', source: 'schedule', status: 'scheduled', priority: 50, payload: { afterPublish: 'true' }, progress: { done: 0, total: 0, unit: '' }, createdAt: scheduledAt });

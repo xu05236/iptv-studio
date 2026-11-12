@@ -178,6 +178,7 @@ export interface SubscriptionItem {
   mergedMode?: string;
   merged_max_lines?: number;
   mergedMaxLines?: number;
+  includeCnReachable?: boolean;
   proxy_mode?: string;
   matchedChannels?: number | null;
   usage7d?: { requests: number; bytes: number } | null;

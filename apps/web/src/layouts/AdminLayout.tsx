@@ -5,6 +5,7 @@ import {
   CalendarClock,
   ClipboardList,
   Gauge,
+  Globe2,
   Layers3,
   ListFilter,
   ListVideo,
@@ -39,6 +40,7 @@ const GROUPS = [
     label: '运营发布',
     links: [
       { to: '/admin/probe', label: '检测中心', icon: SlidersHorizontal, end: false },
+      { to: '/admin/proxies', label: '国内代理', icon: Globe2, end: false },
       { to: '/admin/subscriptions', label: '订阅与导出', icon: Share2, end: false },
       { to: '/admin/events', label: '运营事件', icon: Activity, end: false },
     ],
@@ -62,6 +64,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/channels': '频道',
   '/admin/epg': 'EPG 节目单',
   '/admin/probe': '检测中心',
+  '/admin/proxies': '国内代理',
   '/admin/subscriptions': '订阅与导出',
   '/admin/events': '运营事件',
   '/admin/runs': '运行与日志',

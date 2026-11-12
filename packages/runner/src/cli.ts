@@ -44,6 +44,8 @@ import { buildArtifacts, publish, type ExportCatalog } from './pipeline/publish.
 import { buildGuide, collectEpg, guideIsFresh, mergeGuideFallback, type StoredGuide } from './pipeline/epg.js';
 import { loadLogoPacks } from './pipeline/logoFiles.js';
 import { loadLinesState, saveLinesState } from './lib/linesState.js';
+import { probeProxy } from './lib/proxyFetch.js';
+import { buildProxyAgent, probeCnUrl } from './pipeline/cnProbe.js';
 import { prefilterLiveness } from './pipeline/liveness.js';
 import { publishSubscriptions } from './pipeline/subscriptions.js';
 import { captureScreenshots } from './pipeline/screenshots.js';
@@ -1089,6 +1091,151 @@ async function savePrefilterCooldown(store: ArtifactStore, cooldown: Map<string,
   await store.put(PREFILTER_COOLDOWN_KEY, JSON.stringify(out), 'application/json');
 }
 
+async function runProxyTest(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  try {
+    const remote = await loadRemoteConfig(api);
+    const { items } = await api.get<{
+      items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean }>;
+    }>('/api/admin/proxies?secrets=1');
+    const only = (process.env.PROXY_ID ?? '').trim();
+    const nodes = items.filter((node) => node.enabled && !node.kernelOnly && (!only || node.id === only));
+    if (!nodes.length) throw new Error('没有可测活的代理（需启用且非内核协议）');
+    const concurrency = Math.max(1, Math.min(10, Number(remote.settings.cnProbeConcurrency) || 5));
+    const total = nodes.length;
+    const queue = [...nodes];
+    let done = 0;
+    let ok = 0;
+    logger.info('开始代理测活', { total, concurrency });
+    await reportTaskProgress(api, 0, total, `代理测活 0/${total}`, true);
+    const workers = Array.from({ length: Math.min(concurrency, total) }, async () => {
+      for (;;) {
+        const node = queue.shift();
+        if (!node) return;
+        const result = await probeProxy(node);
+        if (result.ok) ok += 1;
+        await api.post(`/api/admin/proxies/${node.id}/check`, result).catch((error) => {
+          logger.warn('写入测活结果失败', { proxy: node.name, error: error instanceof Error ? error.message : String(error) });
+        });
+        done += 1;
+        await reportTaskProgress(api, done, total, `代理测活 ${done}/${total} · 成功 ${ok}`, true);
+      }
+    });
+    await Promise.all(workers);
+    await finishRun(api, {
+      id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
+      sources: 0, channels: 0, lines: 0, alive: ok, dead: total - ok, probed: total, bytes: 0,
+      durationMs: Date.now() - startedMs, warnings: [],
+    });
+    logger.info('代理测活完成', { total, ok });
+  } catch (error) {
+    await finishRun(api, {
+      id: runId, trigger: 'manual', status: 'failed', startedAt, finishedAt: nowIso(),
+      sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0,
+      durationMs: Date.now() - startedMs, warnings: [], error: error instanceof Error ? error.message : String(error),
+    }).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function runCnProbe(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const store = new ArtifactStore(api);
+  try {
+    const remote = await loadRemoteConfig(api);
+    const settings = remote.settings;
+    const { items } = await api.get<{
+      items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean }>;
+    }>('/api/admin/proxies?secrets=1');
+    const usable = items.filter((node) => node.enabled && !node.kernelOnly);
+    if (!usable.length) throw new Error('没有启用的国内代理，无法补测');
+    // Prefer the current proxy (list is already ordered); fall back to trying all.
+    let chosen: (typeof usable)[number] | null = null;
+    for (const node of usable) {
+      const result = await probeProxy(node);
+      await api.post(`/api/admin/proxies/${node.id}/check`, result).catch(() => undefined);
+      if (result.ok) {
+        chosen = node;
+        break;
+      }
+    }
+    if (!chosen) throw new Error('所有国内代理都不可用，补测中止');
+    logger.info('补测代理已选定', { proxy: chosen.name });
+    const agent = buildProxyAgent(chosen);
+    const previous = await loadLinesState(store);
+    const lines = previous?.lines ?? [];
+    const now = Date.now();
+    const candidates = lines.filter(
+      (line) =>
+        (line.status === 'dead' || line.status === 'suspect') &&
+        line.cnReachable !== true &&
+        (!line.cnCheckedAt || now - Date.parse(line.cnCheckedAt) > 24 * 3_600_000),
+    );
+    const limit = Math.max(1, Math.min(1000, Number(settings.cnProbeBatchSize) || 200));
+    const selected = candidates.slice(0, limit);
+    if (!selected.length) {
+      await finishRun(api, {
+        id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
+        sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0,
+        durationMs: Date.now() - startedMs, warnings: [],
+      });
+      return;
+    }
+    const concurrency = Math.max(1, Math.min(10, Number(settings.cnProbeConcurrency) || 5));
+    const queue = [...selected];
+    let done = 0;
+    let ok = 0;
+    await reportTaskProgress(api, 0, selected.length, `国内补测 0/${selected.length}`, true);
+    const workers = Array.from({ length: Math.min(concurrency, selected.length) }, async () => {
+      for (;;) {
+        const line = queue.shift();
+        if (!line) return;
+        const result = await probeCnUrl(line.url, agent);
+        line.cnCheckedAt = nowIso();
+        if (result.ok) {
+          ok += 1;
+          line.status = 'alive';
+          line.cnReachable = true;
+          line.cnProxyId = chosen!.id;
+          line.cnLatencyMs = result.latencyMs;
+          line.speedKbps = result.speedKbps;
+          line.failCount = 0;
+          line.lastProbeAt = line.cnCheckedAt;
+        } else {
+          line.cnReachable = false;
+        }
+        done += 1;
+        await reportTaskProgress(api, done, selected.length, `国内补测 ${done}/${selected.length} · 成功 ${ok}`, true);
+      }
+    });
+    await Promise.all(workers);
+    await saveLinesState(store, lines, nowIso());
+    await finishRun(api, {
+      id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
+      sources: 0, channels: 0, lines: lines.length, alive: ok, dead: 0, probed: selected.length, bytes: 0,
+      durationMs: Date.now() - startedMs, warnings: [],
+    });
+    logger.info('国内补测完成', { tested: selected.length, ok, proxy: chosen.name });
+  } catch (error) {
+    await finishRun(api, {
+      id: runId, trigger: 'manual', status: 'failed', startedAt, finishedAt: nowIso(),
+      sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0,
+      durationMs: Date.now() - startedMs, warnings: [], error: error instanceof Error ? error.message : String(error),
+    }).catch(() => undefined);
+    throw error;
+  }
+}
+
 async function runBatchProbe(): Promise<void> {
   const config = loadConfig();
   const logger = new RunLogger();
@@ -1960,6 +2107,14 @@ async function main(): Promise<void> {
   }
   if (command === 'probe-lines') {
     await runSelectedProbes();
+    return;
+  }
+  if (command === 'proxy-test') {
+    await runProxyTest();
+    return;
+  }
+  if (command === 'cn-probe') {
+    await runCnProbe();
     return;
   }
   if (command === 'collect') {

@@ -24,6 +24,7 @@ interface FormState {
   filterMode: string;
   mergedMode: string;
   mergedMaxLines: string;
+  includeCnReachable: boolean;
   proxyMode: string;
   minResolution: string;
   minSpeedKbps: string;
@@ -43,6 +44,7 @@ const EMPTY_FORM: FormState = {
   filterMode: 'inherit',
   mergedMode: 'inherit',
   mergedMaxLines: '0',
+  includeCnReachable: true,
   proxyMode: 'direct',
   minResolution: 'any',
   minSpeedKbps: '0',
@@ -184,6 +186,7 @@ export function SubscriptionsAdmin() {
         filterMode: form.filterMode,
         mergedMode: form.mergedMode,
         mergedMaxLines: Math.max(0, Number(form.mergedMaxLines) || 0),
+        includeCnReachable: form.includeCnReachable,
         proxyMode: form.proxyMode,
         minResolution: form.minResolution,
         minSpeedKbps: Number(form.minSpeedKbps || 0),
@@ -284,7 +287,7 @@ export function SubscriptionsAdmin() {
         });
     }, 600);
     return () => clearTimeout(timer);
-  }, [open, form.poolMode, form.poolIds, form.filterMode, form.mergedMode, form.mergedMaxLines, form.groups, form.excludeGroups, form.minResolution, form.minSpeedKbps, form.maxLines, form.showRegionSuffix, form.format, channelIds]);
+  }, [open, form.poolMode, form.poolIds, form.filterMode, form.mergedMode, form.mergedMaxLines, form.includeCnReachable, form.groups, form.excludeGroups, form.minResolution, form.minSpeedKbps, form.maxLines, form.showRegionSuffix, form.format, channelIds]);
 
   async function loadPreview(item: SubscriptionItem): Promise<void> {
     const seq = ++previewSeq.current;
@@ -320,6 +323,7 @@ export function SubscriptionsAdmin() {
             filterMode: item.filter_mode ?? 'inherit',
             mergedMode: item.merged_mode ?? 'inherit',
             mergedMaxLines: String(item.merged_max_lines ?? 0),
+            includeCnReachable: item.includeCnReachable !== false,
             proxyMode: item.proxy_mode ?? 'direct',
             minResolution: item.min_resolution,
             minSpeedKbps: String(item.min_speed_kbps),
@@ -553,6 +557,12 @@ export function SubscriptionsAdmin() {
                 style={{ width: 130 }}
               />
               <span className="caption">每个合并频道最多条数（0 = 不限）</span>
+            </div>
+          </Field>
+          <Field label="国内可达线路" hint="开启时包含通过国内代理补测确认可用的线路（默认开）；关闭后只导出机房可直接验证的线路">
+            <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+              <Switch checked={form.includeCnReachable} onChange={(checked) => setForm({ ...form, includeCnReachable: checked })} />
+              <span className="caption">{form.includeCnReachable ? '包含（默认）' : '不包含'}</span>
             </div>
           </Field>
           <Field label="代理模式" hint="直连不经过服务器；仅清单只代理播放列表；全部中继会消耗 Worker 流量与请求额度">

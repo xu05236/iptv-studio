@@ -43,6 +43,8 @@ const WATCHDOG_MS: Record<string, number> = {
   export: 10 * 60_000,
   liveness: 15 * 60_000,
   'cleanup-orphans': 10 * 60_000,
+  'proxy-test': 10 * 60_000,
+  'cn-probe': 20 * 60_000,
 };
 const LOCK_ID = 'queue';
 const LOCK_TTL_MS = 60_000;
@@ -607,6 +609,7 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
     source_id: next.payload.source_id ?? '',
     line_keys: next.payload.line_keys ?? '',
     phase: next.payload.phase ?? '',
+    proxy_id: next.payload.proxy_id ?? '',
     auto_publish: next.payload.auto ? 'true' : '',
     trigger: next.source,
   });

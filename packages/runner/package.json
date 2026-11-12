@@ -15,6 +15,8 @@
     "liveness": "tsx src/cli.ts liveness",
     "export": "tsx src/cli.ts export",
     "probe-lines": "tsx src/cli.ts probe-lines",
+    "proxy-test": "tsx src/cli.ts proxy-test",
+    "cn-probe": "tsx src/cli.ts cn-probe",
     "epg": "tsx src/cli.ts epg",
     "rules-preview": "tsx src/cli.ts rules-preview",
     "shots": "tsx src/cli.ts shots",
@@ -22,7 +24,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@iptv/core": "*"
+    "@iptv/core": "*",
+    "https-proxy-agent": "^9.1.0",
+    "socks-proxy-agent": "^10.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

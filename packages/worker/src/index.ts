@@ -11,6 +11,7 @@ import { subscriptionRoutes } from './routes/subscriptions.js';
 import { adminRoutes } from './routes/admin.js';
 import { artifactRoutes } from './routes/artifacts.js';
 import { poolRoutes } from './routes/pool.js';
+import { proxyRoutes } from './routes/proxies.js';
 import { relayRoutes } from './routes/relay.js';
 import { runCron } from './cron.js';
 import { refreshUsage } from './lib/usage.js';
@@ -89,6 +90,7 @@ app.route('/api/admin/sources', sourceRoutes);
 app.route('/api/admin/channels', channelRoutes);
 app.route('/api/admin/subscriptions', subscriptionRoutes);
 app.route('/api/admin/pool', poolRoutes);
+app.route('/api/admin/proxies', proxyRoutes);
 app.route('/api/admin', adminRoutes);
 app.route('/relay', relayRoutes);
 

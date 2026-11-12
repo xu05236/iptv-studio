@@ -35,6 +35,8 @@ export interface SubscriptionConfig extends SubscriptionSpec {
   mergedMode?: string;
   /** Per-channel line cap for merged channels; 0 = unlimited. */
   mergedMaxLines?: number;
+  /** Include lines only reachable from a domestic proxy; defaults to true. */
+  includeCnReachable?: boolean;
   proxyMode?: 'direct' | 'playlist' | 'full';
 }
 
@@ -53,6 +55,7 @@ export function subscriptionFromRow(row: SubscriptionRow): SubscriptionConfig {
     filterMode: row.filter_mode ?? 'inherit',
     mergedMode: row.merged_mode ?? 'inherit',
     mergedMaxLines: row.merged_max_lines ?? 0,
+    includeCnReachable: row.include_cn_reachable !== 0,
     proxyMode: row.proxy_mode === 'playlist' || row.proxy_mode === 'full' ? row.proxy_mode : 'direct',
     minResolution: row.min_resolution as Quality | 'any',
     minSpeedKbps: row.min_speed_kbps,
@@ -90,6 +93,12 @@ export function capMergedLines(channelId: string, lines: LineEntry[], config: Su
   return max > 0 && isMergedChannelId(channelId) ? lines.slice(0, max) : lines;
 }
 
+function cnFilter(line: LineEntry, config: SubscriptionConfig): boolean {
+  // "包含国内可达线路" defaults on; turning it off exports only machine-reachable
+  // lines (cnProbe marks domestic-only lines with cnReachable = true).
+  return config.includeCnReachable !== false || line.cnReachable !== true;
+}
+
 export function buildFromCatalog(
   catalog: ExportCatalog,
   config: SubscriptionConfig,
@@ -103,7 +112,7 @@ export function buildFromCatalog(
     if (!mergedChannelAllowed(item.channel.id, config)) continue;
     const candidates = allowedKeys.size ? item.lines.filter((line) => allowedKeys.has(line.key)) : item.lines;
     if (!candidates.length) continue;
-    const selected = selectLines(candidates, {
+    const selected = selectLines(candidates.filter((line) => cnFilter(line, config)), {
       maxLines: config.maxLinesPerChannel,
       maxPerSource: 3,
       minQuality: config.minResolution,
@@ -135,7 +144,7 @@ export function buildFromCatalog(
 /** Strong ETag derived from catalog version + subscription configuration. */
 export function playlistEtag(catalog: ExportCatalog, config: SubscriptionConfig): string {
   const fingerprint = hashId(
-    JSON.stringify([catalog.runId, config.updatedAt, config.groups, config.excludeGroups, config.channelIds, config.lineKeys, config.minResolution, config.minSpeedKbps, config.protocols, config.maxLinesPerChannel, config.mergedMode, config.mergedMaxLines, config.showRegionSuffix, config.format, config.proxyMode]),
+    JSON.stringify([catalog.runId, config.updatedAt, config.groups, config.excludeGroups, config.channelIds, config.lineKeys, config.minResolution, config.minSpeedKbps, config.protocols, config.maxLinesPerChannel, config.mergedMode, config.mergedMaxLines, config.includeCnReachable !== false, config.showRegionSuffix, config.format, config.proxyMode]),
     16,
   );
   return `W/"${catalog.runId}-${fingerprint}"`;
@@ -187,9 +196,11 @@ export function buildFromPool(
       ? [...premium, ...backup, ...candidate]
       : config.poolMode === 'premium_backup' ? [...premium, ...backup] : premium;
     if (!candidates.length) continue;
-    candidates.sort(compareLines);
+    const filtered = candidates.filter((line) => cnFilter(line, config));
+    if (!filtered.length) continue;
+    filtered.sort(compareLines);
     const unlimited = config.maxLinesPerChannel <= 0;
-    const lines = selectLines(candidates, {
+    const lines = selectLines(filtered, {
       maxLines: config.maxLinesPerChannel,
       maxPerSource: unlimited ? 0 : 3,
       minQuality: config.minResolution,
@@ -269,7 +280,9 @@ export function buildFromPools(
       }
     }
     if (!collected.length) continue;
-    const unique = [...new Map(collected.map((line) => [line.key, line])).values()].sort(compareLines);
+    const unique = [...new Map(collected.map((line) => [line.key, line])).values()]
+      .filter((line) => cnFilter(line, config))
+      .sort(compareLines);
     const lines = applyFilters
       ? selectLines(unique, {
           maxLines: config.maxLinesPerChannel,
@@ -310,7 +323,7 @@ export function poolEtag(
   const overrideVersion = overrides.reduce((max, row) => (row.updated_at > max ? row.updated_at : max), '');
   const tombstoneVersion = tombstones.reduce((max, row) => (row.created_at > max ? row.created_at : max), '');
   const fingerprint = hashId(
-    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}:${(config.poolIds ?? []).join(',')}:${customVersion}:${config.proxyMode ?? 'direct'}:${config.format}:${config.filterMode ?? 'inherit'}:${config.groups.join(',')}:${config.excludeGroups.join(',')}:${(config.channelIds ?? []).join(',')}:${config.minResolution}:${config.minSpeedKbps}:${(config.protocols ?? []).join(',')}:${config.maxLinesPerChannel}:${config.mergedMode ?? 'inherit'}:${config.mergedMaxLines ?? 0}:${config.showRegionSuffix ? 1 : 0}:${config.includeEpg ? 1 : 0}`,
+    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}:${(config.poolIds ?? []).join(',')}:${customVersion}:${config.proxyMode ?? 'direct'}:${config.format}:${config.filterMode ?? 'inherit'}:${config.groups.join(',')}:${config.excludeGroups.join(',')}:${(config.channelIds ?? []).join(',')}:${config.minResolution}:${config.minSpeedKbps}:${(config.protocols ?? []).join(',')}:${config.maxLinesPerChannel}:${config.mergedMode ?? 'inherit'}:${config.mergedMaxLines ?? 0}:${config.includeCnReachable !== false ? 1 : 0}:${config.showRegionSuffix ? 1 : 0}:${config.includeEpg ? 1 : 0}`,
     16,
   );
   return `W/"pool-${fingerprint}"`;
@@ -363,6 +376,7 @@ export async function renderSubscription(
     const grouped = new Map<string, LineEntry[]>();
     for (const line of state?.lines ?? []) {
       if (!keys.has(line.key)) continue;
+      if (!cnFilter(line, config)) continue;
       const list = grouped.get(line.channelId) ?? [];
       list.push(line);
       grouped.set(line.channelId, list);

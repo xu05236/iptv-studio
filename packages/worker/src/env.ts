@@ -22,6 +22,9 @@ export interface Env {
   CLOUDFLARE_ACCOUNT_ID?: string;
   D1_ID?: string;
 
+  /** AES-GCM key (base64, 32 bytes) used to encrypt domestic proxy passwords. */
+  PROXY_KEY?: string;
+
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
 }

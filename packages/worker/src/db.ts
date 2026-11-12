@@ -75,6 +75,7 @@ export interface SubscriptionRow {
   filter_mode: string;
   merged_mode: string;
   merged_max_lines: number;
+  include_cn_reachable: number;
   proxy_mode: string;
   min_resolution: string;
   min_speed_kbps: number;
@@ -662,8 +663,8 @@ export async function getSubscriptionByToken(env: Env, token: string): Promise<S
 
 export async function createSubscription(env: Env, row: SubscriptionRow): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO subscriptions (id, name, token, enabled, groups, exclude_groups, channel_ids, line_keys, pool_ids, pool_mode, filter_mode, proxy_mode, min_resolution, min_speed_kbps, protocols, max_lines_per_channel, show_region_suffix, include_epg, format, merged_mode, merged_max_lines)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO subscriptions (id, name, token, enabled, groups, exclude_groups, channel_ids, line_keys, pool_ids, pool_mode, filter_mode, proxy_mode, min_resolution, min_speed_kbps, protocols, max_lines_per_channel, show_region_suffix, include_epg, format, merged_mode, merged_max_lines, include_cn_reachable)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       row.id,
@@ -687,6 +688,7 @@ export async function createSubscription(env: Env, row: SubscriptionRow): Promis
       row.format,
       row.merged_mode,
       row.merged_max_lines,
+      row.include_cn_reachable,
     )
     .run();
   await env.DB.prepare('INSERT OR IGNORE INTO subscription_tokens (token, subscription_id, label, enabled) VALUES (?, ?, ?, 1)')
@@ -792,6 +794,8 @@ const SUB_COLUMNS: Record<string, string> = {
   filterMode: 'filter_mode',
   merged_mode: 'merged_mode',
   mergedMode: 'merged_mode',
+  include_cn_reachable: 'include_cn_reachable',
+  includeCnReachable: 'include_cn_reachable',
   merged_max_lines: 'merged_max_lines',
   mergedMaxLines: 'merged_max_lines',
   poolMode: 'pool_mode',

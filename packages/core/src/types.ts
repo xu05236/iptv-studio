@@ -145,6 +145,14 @@ export interface LineEntry {
   catchup?: string;
   catchupSource?: string;
   catchupDays?: number;
+  /** 国内代理补测结果：仅当机房探测失败、经国内出口复测可播放时为 true。 */
+  cnReachable?: boolean;
+  /** 国内复测时间（ISO）。 */
+  cnCheckedAt?: string;
+  /** 复测时使用的代理 id。 */
+  cnProxyId?: string;
+  /** 国内复测延迟（毫秒）。 */
+  cnLatencyMs?: number;
   error?: string;
 }
 
@@ -373,6 +381,57 @@ export interface AppSettings {
   publicProbeBatchSize: number;
   publicProbeIntervalHours: number;
   publicMaxDailyDispatches: number;
+  /** 国内代理自动测活开关（关闭时任务中心不显示定时测活）。 */
+  proxyTestEnabled: boolean;
+  /** 自动测活模式：固定间隔 / 每天自定义时段。 */
+  proxyTestMode: 'interval' | 'times';
+  /** 固定间隔模式：每多少小时测活一次（默认 6）。 */
+  proxyTestIntervalHours: number;
+  /** 自定义时段模式：北京时间 HH:mm 逗号分隔，可多条。 */
+  proxyTestTimes: string;
+  /** 机房失败线路用国内代理补测。 */
+  cnProbeEnabled: boolean;
+  /** 每批补测条数（默认 200）。 */
+  cnProbeBatchSize: number;
+  /** 补测并发（默认 5）。 */
+  cnProbeConcurrency: number;
+}
+
+export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h';
+export type ProxyKernelProtocol = 'vmess' | 'vless' | 'trojan' | 'hysteria2' | 'ss' | 'anytls' | 'tuic';
+
+export interface ProxyNode {
+  id: string;
+  name: string;
+  protocol: ProxyProtocol | ProxyKernelProtocol;
+  host: string;
+  port: number;
+  username: string;
+  /** 只暴露是否有密码，密文不出接口。 */
+  hasPassword: boolean;
+  region: string;
+  isp: string;
+  enabled: boolean;
+  kernelOnly: boolean;
+  sortScore: number;
+  lastOkAt: string | null;
+  lastCheckedAt: string | null;
+  lastLatencyMs: number | null;
+  lastError: string | null;
+  lastEgressIp: string | null;
+  lastCountry: string | null;
+  lastAsn: string | null;
+  successCount: number;
+  failCount: number;
+}
+
+export interface ProxyCheckResult {
+  ok: boolean;
+  latencyMs: number | null;
+  error: string | null;
+  egressIp: string | null;
+  country: string | null;
+  asn: string | null;
 }
 
 export interface ProbeProfile {
@@ -452,6 +511,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   publicProbeBatchSize: 2000,
   publicProbeIntervalHours: 2,
   publicMaxDailyDispatches: 30,
+  proxyTestEnabled: false,
+  proxyTestMode: 'interval',
+  proxyTestIntervalHours: 6,
+  proxyTestTimes: '',
+  cnProbeEnabled: true,
+  cnProbeBatchSize: 200,
+  cnProbeConcurrency: 5,
   probePhaseOrder: 'pending,quarantine',
   probePausedPhases: '',
   autoFetchEnabled: true,

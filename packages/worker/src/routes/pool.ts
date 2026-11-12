@@ -682,6 +682,23 @@ poolRoutes.post('/revive', async (c) => {
   return ok({ revived: selected.length, taskId: task.id, dispatched: Boolean(dispatched.task) });
 });
 
+/** Queue a domestic-proxy re-probe of machine-unreachable lines. */
+poolRoutes.post('/cn-probe', async (c) => {
+  const body = (await readJson<{ limit?: number }>(c)) ?? {};
+  const limit = Math.max(1, Math.min(1000, Number(body.limit) || 200));
+  const task = await createTask(c.env, {
+    type: 'cn-probe',
+    source: 'manual',
+    priority: 60,
+    payload: { limit: String(limit), force: 'true' },
+    total: limit,
+    unit: 'lines',
+  });
+  const dispatched = await dispatchNext(c.env);
+  await audit(c.env, c.get('actor'), 'pool.cn_probe', task.id, { limit });
+  return ok({ taskId: task.id, dispatched: Boolean(dispatched.task) });
+});
+
 function escapeM3u(value: string): string {
   return value.replace(/"/g, '&quot;').replace(/[\r\n]+/g, ' ');
 }
@@ -799,6 +816,7 @@ poolRoutes.post('/subscription', async (c) => {
     filter_mode: 'inherit',
     merged_mode: 'inherit',
     merged_max_lines: 0,
+    include_cn_reachable: 1,
     proxy_mode: 'direct',
     min_resolution: 'any',
     min_speed_kbps: 0,

@@ -186,6 +186,7 @@ export async function runScheduler(env: Env): Promise<void> {
     let enqueued = false;
     if (await runFetchWatch(env, settings, at)) enqueued = true;
     if (await runProbeWatch(env, settings, at)) enqueued = true;
+    if (await runProxyWatch(env, settings, at)) enqueued = true;
     if (await runSourceRecoveryWatch(env, settings, at)) enqueued = true;
     if (await runMonthlyReviveWatch(env, settings, at)) enqueued = true;
     await runAutoPublishAfterProbe(env, settings, at);
@@ -270,6 +271,7 @@ export async function runScheduler(env: Env): Promise<void> {
   const at = Date.now();
   if (await runFetchWatch(env, settings, at)) enqueued = true;
   if (await runProbeWatch(env, settings, at)) enqueued = true;
+  if (await runProxyWatch(env, settings, at)) enqueued = true;
   if (await runSourceRecoveryWatch(env, settings, at)) enqueued = true;
   if (await runMonthlyReviveWatch(env, settings, at)) enqueued = true;
   await runAutoPublishAfterProbe(env, settings, at);
@@ -641,6 +643,39 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
     await putRuntimeJson(env, 'state/probe-wake.json', { date: today, count: Number(wake?.count ?? 0) + 1 });
   }
   await audit(env, 'scheduler', 'schedule.probe-batch', task.id);
+  return true;
+}
+
+async function runProxyWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
+  if (!settings.proxyTestEnabled) return false;
+  const mode = settings.proxyTestMode === 'times' ? 'times' : 'interval';
+  const intervalMs = Math.max(1, Number(settings.proxyTestIntervalHours) || 6) * 3_600_000;
+  const times = mode === 'times' ? parseCollectTimes(settings.proxyTestTimes) : [];
+  let nextRunAt: number | null = null;
+  if (mode === 'times' && times.length) {
+    const next = nextScheduledAt(times, now);
+    nextRunAt = next;
+  } else {
+    const state = await getRuntimeJson<IntervalState>(env, 'state/proxy-test-schedule.json');
+    nextRunAt = state?.nextRunAt ? Date.parse(state.nextRunAt) : null;
+    if (nextRunAt && state?.lastRunAt) {
+      const span = nextRunAt - Date.parse(state.lastRunAt);
+      if (span > intervalMs + 60_000) nextRunAt = Date.parse(state.lastRunAt) + intervalMs;
+    }
+  }
+  if (nextRunAt && nextRunAt > now) return false;
+  const tasks = await loadTasks(env);
+  if (tasks.some((task) => task.type === 'proxy-test' && (task.status === 'queued' || task.status === 'running'))) return false;
+  const guard = await intervalGuard(env, settings);
+  if (guard) {
+    const delay = guard === 'actions' ? 6 * 3_600_000 : 15 * 60_000;
+    await recordInterval(env, 'state/proxy-test-schedule.json', now, now + delay, `skipped: ${guard}`);
+    return false;
+  }
+  const next = mode === 'times' && times.length ? (nextScheduledAt(times, now + 60_000) ?? now + intervalMs) : now + intervalMs;
+  const task = await createTask(env, { type: 'proxy-test', source: 'schedule', priority: 50, payload: {} });
+  await recordInterval(env, 'state/proxy-test-schedule.json', now, next, 'queued');
+  await audit(env, 'scheduler', 'schedule.proxy-test', task.id);
   return true;
 }
 

@@ -14,6 +14,7 @@ const Sources = lazy(() => import('./pages/admin/Sources').then((module) => ({ d
 const Epg = lazy(() => import('./pages/admin/Epg').then((module) => ({ default: module.Epg })));
 const SourceDetail = lazy(() => import('./pages/admin/SourceDetail').then((module) => ({ default: module.SourceDetail })));
 const Pool = lazy(() => import('./pages/admin/Pool').then((module) => ({ default: module.Pool })));
+const Proxies = lazy(() => import('./pages/admin/Proxies').then((module) => ({ default: module.Proxies })));
 const ChannelsAdmin = lazy(() => import('./pages/admin/ChannelsAdmin').then((module) => ({ default: module.ChannelsAdmin })));
 const Probe = lazy(() => import('./pages/admin/Probe').then((module) => ({ default: module.Probe })));
 const SubscriptionsAdmin = lazy(() => import('./pages/admin/SubscriptionsAdmin').then((module) => ({ default: module.SubscriptionsAdmin })));
@@ -47,6 +48,7 @@ export function App() {
           <Route path="epg" element={<Epg />} />
           <Route path="sources/:id" element={<SourceDetail />} />
           <Route path="pool" element={<Pool />} />
+          <Route path="proxies" element={<Proxies />} />
           <Route path="channels" element={<ChannelsAdmin />} />
           <Route path="probe" element={<Probe />} />
           <Route path="subscriptions" element={<SubscriptionsAdmin />} />
