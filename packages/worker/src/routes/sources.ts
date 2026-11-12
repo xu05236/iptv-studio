@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { isDueForProbe, mapPool, normalizeMirrorUrls, normalizeUrlForDedupe, PARSE_DROP_THRESHOLD, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters, type SourceOverlapReport, type SourceParseReport } from '@iptv/core';
+import { isDueForProbe, mapPool, mergedChannelId, normalizeMirrorUrls, normalizeUrlForDedupe, PARSE_DROP_THRESHOLD, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters, type SourceOverlapReport, type SourceParseReport } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   deleteSource,
@@ -8,6 +8,7 @@ import {
   listChannels,
   listSources,
   updateSource,
+  upsertChannelSeeds,
   audit,
 } from '../db.js';
 import { fail, isoNow, ok, parseJsonField, randomId, readJson } from '../lib/http.js';
@@ -19,6 +20,11 @@ import { createTask, dispatchNext } from '../lib/tasks.js';
 import { deltaOf, listSourceProgress, parseDelta, saveSourceProgress, type SourceCounts } from '../lib/sourceProgress.js';
 
 export const sourceRoutes = new Hono<AppEnv>();
+
+/** The merge channel must exist in D1 before a publish, otherwise its lines are hidden from the pool and never probed. */
+async function ensureMergedChannel(env: AppEnv['Bindings'], sourceId: string, name: string, group: string | null): Promise<void> {
+  await upsertChannelSeeds(env, [{ id: mergedChannelId(sourceId), name, group: group || '影视' }]);
+}
 
 /** refresh_hours: -1 = follow tiers, 0 = never, N = custom hours (24 = daily). */
 function refreshHoursOf(value: unknown): number {
@@ -745,6 +751,10 @@ sourceRoutes.patch('/:id', async (c) => {
   }
   const updated = await updateSource(c.env, id, patch);
   if (!updated) return fail('没有可更新的字段');
+  const row = await getSource(c.env, id);
+  if (row?.merge_channel_name) {
+    await ensureMergedChannel(c.env, id, row.merge_channel_name, row.merge_channel_group);
+  }
   await audit(c.env, c.get('actor'), 'source.update', id, patch);
   return ok({ source: await getSource(c.env, id) });
 });
