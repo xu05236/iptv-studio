@@ -1,0 +1,16 @@
+name: tmp-proxy-auth
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Through proxy
+        env:
+          PROXY_URL: ${{ secrets.PROBE_TEST_URL }}
+        run: |
+          curl -sS -m 25 -x "$PROXY_URL" https://ipinfo.io/json -o /tmp/ip.json -w "http=%{http_code}\n" || echo curl_fail
+          python3 -c "import json;d=json.load(open('/tmp/ip.json'));print('egress',d.get('ip'),d.get('country'),d.get('org'))" || true
