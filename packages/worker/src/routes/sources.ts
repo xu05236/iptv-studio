@@ -331,6 +331,9 @@ sourceRoutes.post('/:id/fetch', async (c) => {
   const source = await getSource(c.env, c.req.param('id'));
   if (!source) return fail('直播源不存在', 404);
   if (source.status === 'paused') return fail('源已暂停，先恢复再代拉', 409);
+  if (source.allow_insecure_tls === 1) {
+    return fail('该源开启了「允许证书错误」，Worker 无法忽略证书，请把抓取方式改为「直连」或关闭该选项', 409, 'worker_tls_unsupported');
+  }
   const headers = parseJsonField<Record<string, string>>(source.request_headers, {});
   const mirrors = normalizeMirrorUrls(source.mirror_urls);
   if (mirrors.error) return fail(mirrors.error);

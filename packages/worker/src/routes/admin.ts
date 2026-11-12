@@ -452,8 +452,14 @@ adminRoutes.post('/runs', async (c) => {
   await upsertRun(c.env, report as never);
   if (typeof report['taskId'] === 'string') {
     const failed = report['status'] === 'failed';
+    const rawWarnings = report['warnings'];
+    const firstWarning = Array.isArray(rawWarnings)
+      ? (typeof rawWarnings[0] === 'string' ? rawWarnings[0] : undefined)
+      : (typeof rawWarnings === 'string' && rawWarnings !== '[]'
+        ? (() => { try { const parsed = JSON.parse(rawWarnings); return Array.isArray(parsed) && typeof parsed[0] === 'string' ? parsed[0] : undefined; } catch { return undefined; } })()
+        : undefined);
     const message = failed
-      ? (typeof report['error'] === 'string' ? report['error'] : undefined)
+      ? (typeof report['error'] === 'string' && report['error'] ? report['error'] : firstWarning)
       : (typeof report['message'] === 'string' ? report['message'] : undefined);
     await finishTask(c.env, report['taskId'], failed ? 'failed' : 'done', message);
     // Start the next queued/retried task immediately instead of waiting up to
