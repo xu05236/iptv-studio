@@ -10,9 +10,14 @@ import { createTask, dispatchNext, loadTasks, mutateTask, recordFinishedTask, se
 // Event-driven follow-up: when a probe batch finishes, do not wait for the next
 // 5-minute tick to reconsider "publish after probe".
 setProbeFinishedHook(async (env, task) => {
-  if (task.type !== 'probe-batch') return;
+  if (task.type !== 'probe-batch' && task.type !== 'cn-probe') return;
   const settings = await loadSettings(env);
-  if (await runAutoPublishAfterProbe(env, settings, Date.now())) {
+  const now = Date.now();
+  const createdCnProbe = task.type === 'probe-batch' ? await runAutoCnProbe(env, settings, now) : false;
+  // A cn-probe only updates line state; the pool snapshot still needs a publish
+  // even though pool-stats did not change, so bypass that one gate here.
+  const createdPublish = await runAutoPublishAfterProbe(env, settings, now, { ignorePoolFresh: task.type === 'cn-probe' });
+  if (createdCnProbe || createdPublish) {
     await dispatchNext(env);
   }
 });
@@ -302,7 +307,7 @@ export interface AfterProbeGate {
  * task list shows the reason so a stale pool, an interval guard, or a queued
  * publish is visible without digging through runtime state.
  */
-export async function describeAfterProbeGate(env: Env, settings: AppSettings): Promise<AfterProbeGate> {
+export async function describeAfterProbeGate(env: Env, settings: AppSettings, options: { ignorePoolFresh?: boolean } = {}): Promise<AfterProbeGate> {
   if (!settings.autoPublishAfterProbeEnabled) return { ok: false, reason: '未开启「探测后自动发布」' };
   if ((await loadActionsAllowance(env, settings)).blocked) return { ok: false, reason: 'Actions 额度不足，自动任务已暂停' };
   const [index, pool, last, tasks] = await Promise.all([
@@ -312,7 +317,7 @@ export async function describeAfterProbeGate(env: Env, settings: AppSettings): P
     loadTasks(env),
   ]);
   if (!index?.generatedAt || !pool?.generatedAt) return { ok: false, reason: '缺少发布索引或池快照' };
-  if (Date.parse(pool.generatedAt) <= Date.parse(index.generatedAt)) {
+  if (!options.ignorePoolFresh && Date.parse(pool.generatedAt) <= Date.parse(index.generatedAt)) {
     return { ok: false, reason: '池快照没有比已发布内容更新，无需发布' };
   }
   const rawInterval = Number(settings.autoPublishIntervalHours);
@@ -328,8 +333,32 @@ export async function describeAfterProbeGate(env: Env, settings: AppSettings): P
   return { ok: true, reason: '条件满足，等待触发' };
 }
 
-async function runAutoPublishAfterProbe(env: Env, settings: AppSettings, now: number): Promise<boolean> {
-  const gate = await describeAfterProbeGate(env, settings);
+/**
+ * After a main probe, retry the lines it marked dead/suspect through the
+ * domestic proxy pool. The worker does not try to predict whether any line is
+ * eligible: pool-stats only refreshes on publish, so a fresh probe failure is
+ * not in it yet. The runner exits quickly when there is nothing to retry.
+ */
+async function runAutoCnProbe(env: Env, settings: AppSettings, now: number): Promise<boolean> {
+  if (!settings.cnProbeEnabled) return false;
+  if ((await loadActionsAllowance(env, settings)).blocked) return false;
+  const tasks = await loadTasks(env);
+  if (tasks.some((task: Task) => task.type === 'cn-probe' && (task.status === 'queued' || task.status === 'running'))) {
+    return false;
+  }
+  const task = await createTask(env, { type: 'cn-probe', source: 'schedule', priority: 45, payload: { auto: 'after-probe' } });
+  await putRuntimeJson(env, 'state/auto-cn-probe.json', { at: new Date(now).toISOString(), taskId: task.id });
+  await audit(env, 'scheduler', 'schedule.auto-cn-probe', task.id);
+  return true;
+}
+
+async function runAutoPublishAfterProbe(
+  env: Env,
+  settings: AppSettings,
+  now: number,
+  options: { ignorePoolFresh?: boolean } = {},
+): Promise<boolean> {
+  const gate = await describeAfterProbeGate(env, settings, options);
   if (!gate.ok) return false;
   const task = await createTask(env, { type: 'publish', source: 'schedule', priority: 40, payload: { auto: 'after-probe' } });
   await putRuntimeJson(env, 'state/auto-publish-after-probe.json', { at: new Date(now).toISOString(), taskId: task.id });

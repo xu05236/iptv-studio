@@ -1232,6 +1232,7 @@ async function runCnProbe(): Promise<void> {
   try {
     const remote = await loadRemoteConfig(api);
     const settings = remote.settings;
+    const sourceNames = new Map(remote.sources.map((source) => [source.id, source.name]));
     const { items } = await api.get<{
       items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean }>;
     }>('/api/admin/proxies?secrets=1');
@@ -1253,15 +1254,32 @@ async function runCnProbe(): Promise<void> {
     const previous = await loadLinesState(store);
     const lines = previous?.lines ?? [];
     const now = Date.now();
-    const candidates = lines.filter(
-      (line) =>
-        (line.status === 'dead' || line.status === 'suspect') &&
-        line.cnReachable !== true &&
-        (!line.cnCheckedAt || now - Date.parse(line.cnCheckedAt) > 24 * 3_600_000),
-    );
+    const seen = new Set<string>();
+    const candidates = lines
+      .filter(
+        (line) =>
+          (line.status === 'dead' || line.status === 'suspect') &&
+          line.cnReachable !== true &&
+          (!line.cnCheckedAt || now - Date.parse(line.cnCheckedAt) > 24 * 3_600_000),
+      )
+      // Fresh breakage first: a dead line that just failed is likelier to be a
+      // domestic-only stream than one that has been stale for weeks.
+      .sort((left, right) => {
+        if (left.status !== right.status) return left.status === 'dead' ? -1 : 1;
+        return (Date.parse(right.lastProbeAt ?? '2020-01-01') || 0) - (Date.parse(left.lastProbeAt ?? '2020-01-01') || 0);
+      })
+      // The same URL + headers is one playback target; retrying every source copy
+      // only burns the domestic proxy without extra information.
+      .filter((line) => {
+        const signature = lineSignature(line);
+        if (seen.has(signature)) return false;
+        seen.add(signature);
+        return true;
+      });
     const limit = Math.max(1, Math.min(1000, Number(settings.cnProbeBatchSize) || 200));
     const selected = candidates.slice(0, limit);
     if (!selected.length) {
+      await reportTaskProgress(api, 0, 0, '国内补测完成 · 没有需要补测的线路', true);
       await finishRun(api, {
         id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
         sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0,
@@ -1270,6 +1288,7 @@ async function runCnProbe(): Promise<void> {
       return;
     }
     const concurrency = Math.max(1, Math.min(10, Number(settings.cnProbeConcurrency) || 5));
+    const bySource = new Map<string, { tested: number; ok: number }>();
     const queue = [...selected];
     let done = 0;
     let ok = 0;
@@ -1278,10 +1297,14 @@ async function runCnProbe(): Promise<void> {
       for (;;) {
         const line = queue.shift();
         if (!line) return;
+        const stat = bySource.get(line.sourceId) ?? { tested: 0, ok: 0 };
+        stat.tested += 1;
+        bySource.set(line.sourceId, stat);
         const result = await probeCnUrl(line.url, agent);
         line.cnCheckedAt = nowIso();
         if (result.ok) {
           ok += 1;
+          stat.ok += 1;
           line.status = 'alive';
           line.cnReachable = true;
           line.cnProxyId = chosen!.id;
@@ -1297,10 +1320,22 @@ async function runCnProbe(): Promise<void> {
       }
     });
     await Promise.all(workers);
+    const sourceSummary = [...bySource.entries()]
+      .sort((left, right) => right[1].tested - left[1].tested)
+      .slice(0, 5)
+      .map(([id, stat]) => `${sourceNames.get(id) ?? id} 测${stat.tested}/成功${stat.ok}`)
+      .join('、');
+    await reportTaskProgress(
+      api,
+      selected.length,
+      selected.length,
+      `国内补测完成 · ${selected.length} 条 · 成功 ${ok}${sourceSummary ? ` · 来源：${sourceSummary}` : ''}`,
+      true,
+    );
     await saveLinesState(store, lines, nowIso());
     await finishRun(api, {
       id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
-      sources: 0, channels: 0, lines: lines.length, alive: ok, dead: 0, probed: selected.length, bytes: 0,
+      sources: bySource.size, channels: 0, lines: selected.length, alive: ok, dead: 0, probed: selected.length, bytes: 0,
       durationMs: Date.now() - startedMs, warnings: [],
     });
     logger.info('国内补测完成', { tested: selected.length, ok, proxy: chosen.name });

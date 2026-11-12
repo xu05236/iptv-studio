@@ -975,6 +975,19 @@ adminRoutes.get('/tasks', async (c) => {
       createdAt: scheduledAt,
     });
   }
+  if (settings.cnProbeEnabled) {
+    scheduledItems.push({
+      id: 'policy-cn-probe',
+      type: 'cn-probe',
+      label: '国内补测 · 探测后自动',
+      source: 'schedule',
+      status: 'scheduled',
+      priority: 45,
+      payload: { afterProbe: 'true', batchSize: settings.cnProbeBatchSize ?? 200 },
+      progress: { done: 0, total: 0, unit: '' },
+      createdAt: scheduledAt,
+    });
+  }
   if (settings.autoProbeEnabled) {
     scheduledItems.push({ id: 'scheduled-probe', type: 'probe-batch', label: '分批探测 · 自动', source: 'schedule', status: 'scheduled', priority: 50, payload: { nextAt: probeNextDisplay, lastRunAt: probeState?.lastRunAt ?? '', result: probeState?.result ?? '' }, progress: { done: 0, total: batchSize, unit: 'lines' }, createdAt: scheduledAt });
   }
