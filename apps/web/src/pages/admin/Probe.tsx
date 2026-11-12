@@ -8,6 +8,7 @@ import type { RunItem } from '../../lib/types';
 import { formatDuration, formatLatency, formatResolution, formatSpeed, statusLabel, statusTone, timeAgo } from '../../lib/format';
 import { Badge, Button, Card, Field, Pagination, Segmented, Sheet, Skeleton, useToast } from '../../components/ui';
 import { ReputationBadge } from '../../components/ReputationBadge';
+import { taskTypeLabel } from '@iptv/core';
 
 interface ProbeLine {
   key: string;
@@ -347,7 +348,7 @@ export function Probe() {
                 <div className="run-row__status"><Badge tone={tone}>{statusText}</Badge></div>
                 <div className="grow">
                   <div className="row row--wrap" style={{ gap: 6 }}>
-                    <span className="run-row__title">{run.task_label ?? run.task_type ?? '运行记录'}</span>
+                    <span className="run-row__title">{run.task_label ?? taskTypeLabel(run.task_type) ?? '运行记录'}</span>
                     <Badge>{run.trigger}</Badge>
                   </div>
                   {(run.message ?? run.task_message) ? <div className="caption run-row__message">{run.message ?? run.task_message}</div> : null}

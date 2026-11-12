@@ -6,19 +6,7 @@ import type { RunItem } from '../../lib/types';
 import { formatBytes, formatDateTime, formatDuration, timeAgo } from '../../lib/format';
 import { Badge, Button, Card, Field, Sheet, Skeleton, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
-
-const TASK_LABEL: Record<string, string> = {
-  collect: '完整采集',
-  fetch: '抓源',
-  publish: '发布',
-  probe: '测速',
-  'probe-batch': '分批探测',
-  'probe-lines': '指定探测',
-  liveness: '测活',
-  epg: '节目单',
-  export: '导出',
-  'cleanup-orphans': '孤儿清理',
-};
+import { TASK_TYPE_LABEL } from '@iptv/core';
 
 export function Runs() {
   const { show } = useToast();
@@ -226,7 +214,7 @@ export function Runs() {
                 <div className="run-row__status"><Badge tone={tone}>{statusText}</Badge></div>
                 <div className="grow">
                   <div className="row row--wrap" style={{ gap: 6 }}>
-                    <span className="run-row__title">{run.task_label ?? (run.task_type ? TASK_LABEL[run.task_type] ?? run.task_type : '运行记录')}</span>
+                    <span className="run-row__title">{run.task_label ?? (run.task_type ? TASK_TYPE_LABEL[run.task_type] ?? run.task_type : '运行记录')}</span>
                     <Badge>{run.trigger}</Badge>
                   </div>
                   {(run.message ?? run.task_message) ? <div className="caption run-row__message">{run.message ?? run.task_message}</div> : null}

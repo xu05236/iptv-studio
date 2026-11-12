@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, Globe2, Plus, RefreshCw, Save, Trash2, Upload } from 'lucide-react';
+import { ArrowDown, ArrowUp, Globe2, Plus, RefreshCw, Save, Star, Trash2, Upload } from 'lucide-react';
 import type { AppSettings, ProxyNode } from '@iptv/core';
 import { api } from '../../lib/api';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
@@ -172,6 +172,15 @@ export function Proxies() {
     onError: (error) => show(error instanceof Error ? error.message : '派发失败', 'error'),
   });
 
+  const setCurrentProxy = useMutation({
+    mutationFn: (id: string) => api.post<{ currentId: string }>(`/api/admin/proxies/${id}/current`, {}),
+    onSuccess: () => {
+      show('已设为当前补测节点');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'proxies'] });
+    },
+    onError: (error) => show(error instanceof Error ? error.message : '设置失败', 'error'),
+  });
+
   const moveProxy = useMutation({
     mutationFn: ({ id, direction }: { id: string; direction: 'up' | 'down' }) =>
       api.post<{ moved: boolean }>(`/api/admin/proxies/${id}/move`, { direction }),
@@ -217,6 +226,9 @@ export function Proxies() {
             <div className="title-3">自动测活与补测</div>
             <div className="caption">自动测活只更新代理状态，不触发补测；补测前的预检始终执行，二者互不影响。</div>
           </div>
+          <Button variant="ghost" loading={saveSettings.isPending} disabled={!settingsReady} onClick={() => saveSettings.mutate({})}>
+            <Save size={14} /> 保存
+          </Button>
         </div>
         {settingsReady ? (
           <div className="stack" style={{ gap: 14 }}>
@@ -233,8 +245,7 @@ export function Proxies() {
                 }}
               />
             </div>
-            {settings?.proxyTestEnabled ? (
-              <div className="row" style={{ gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div className="row" style={{ gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <Field label="测活模式">
                   <select
                     className="select"
@@ -273,8 +284,7 @@ export function Proxies() {
                   </Field>
                 )}
               </div>
-            ) : null}
-            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, paddingTop: 12, borderTop: '1px solid var(--sep)' }}>
               <div>
                 <strong>国内补测</strong>
                 <div className="caption">主探测完成后，用国内代理复测失败线路；结果只用于标记「国内可达」。</div>
@@ -310,9 +320,6 @@ export function Proxies() {
                   onBlur={() => saveSettings.mutate({ cnProbeConcurrency: settings?.cnProbeConcurrency ?? 5 })}
                 />
               </Field>
-              <Button variant="ghost" loading={saveSettings.isPending} onClick={() => saveSettings.mutate({})}>
-                <Save size={14} /> 保存
-              </Button>
             </div>
           </div>
         ) : settingsQuery.isError ? (
@@ -381,6 +388,15 @@ export function Proxies() {
                           onChange={(value) => patchProxy.mutate({ id: node.id, patch: { enabled: value } })}
                         />
                         <Button variant="ghost" size="sm" title="测活" disabled={node.kernelOnly} onClick={() => checkProxies.mutate(node.id)}><RefreshCw size={13} /></Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title={proxies.data?.currentId === node.id ? '当前补测节点' : '设为当前补测节点'}
+                          disabled={proxies.data?.currentId === node.id || node.kernelOnly || !node.enabled}
+                          onClick={() => setCurrentProxy.mutate(node.id)}
+                        >
+                          <Star size={13} />
+                        </Button>
                         <Button variant="ghost" size="sm" title={sort === 'default' ? '上移' : '仅默认顺序可上移'} disabled={sort !== 'default' || index === 0} onClick={() => moveProxy.mutate({ id: node.id, direction: 'up' })}><ArrowUp size={13} /></Button>
                         <Button variant="ghost" size="sm" title={sort === 'default' ? '下移' : '仅默认顺序可下移'} disabled={sort !== 'default' || index === items.length - 1} onClick={() => moveProxy.mutate({ id: node.id, direction: 'down' })}><ArrowDown size={13} /></Button>
                         <Button

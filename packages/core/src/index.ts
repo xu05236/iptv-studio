@@ -31,4 +31,5 @@ export * from './linePool.js';
 export * from './state/lines.js';
 export * from './state/lineSignature.js';
 export * from './state/overlap.js';
+export * from './taskLabels.js';
 export * from './proxy/import.js';

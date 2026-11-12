@@ -265,6 +265,19 @@ proxyRoutes.delete('/:id', async (c) => {
   return ok({ deleted: id });
 });
 
+proxyRoutes.post('/:id/current', async (c) => {
+  const id = c.req.param('id');
+  const node = await getProxyNode(c.env, id);
+  if (!node) return fail('代理不存在', 404);
+  if (!node.enabled) return fail('该代理已停用，请先启用');
+  if (node.kernelOnly) return fail('该协议需要内核，不能作为当前补测节点');
+  const items = await listProxyNodes(c.env);
+  const maxScore = items.reduce((max, item) => Math.max(max, item.sortScore ?? 0), 0);
+  await updateProxyNode(c.env, id, { sortScore: maxScore + 10 });
+  await audit(c.env, c.get('actor'), 'proxy.set_current', id, { name: node.name });
+  return ok({ currentId: id });
+});
+
 proxyRoutes.post('/:id/move', async (c) => {
   const id = c.req.param('id');
   const body = (await readJson<{ direction?: string }>(c)) ?? {};

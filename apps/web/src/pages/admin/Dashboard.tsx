@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import type { AdminStats, UsageSnapshot } from '../../lib/types';
 import { formatDuration, timeAgo } from '../../lib/format';
 import { Badge, Button, Card, EmptyState, Skeleton, useToast } from '../../components/ui';
+import { TASK_TYPE_LABEL } from '@iptv/core';
 
 function formatNumber(value: number): string {
   return value.toLocaleString('zh-CN');
@@ -67,17 +68,6 @@ const TASK_SOURCE_LABEL: Record<TaskItem['source'], string> = {
   detection: '检测中心',
   source: '新增源',
   cli: 'CLI',
-};
-
-const TASK_TYPE_LABEL: Record<string, string> = {
-  collect: '全量采集',
-  fetch: '抓源',
-  'probe-batch': '分批探测',
-  'probe-lines': '指定线路探测',
-  publish: '发布',
-  epg: 'EPG 刷新',
-  liveness: '池内测活',
-  export: '重建导出',
 };
 
 const PHASE_DETAIL: Record<string, string> = {

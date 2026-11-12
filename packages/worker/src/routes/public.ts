@@ -7,7 +7,7 @@ import { getJson } from '../lib/store.js';
 import { countOpenFeedback, getChannel, insertFeedback, listRuns, listSources, listSubscriptions, loadSettings } from '../db.js';
 import { loadTasks } from '../lib/tasks.js';
 import { sourceMetaMap } from '../lib/source.js';
-import { inferResolution, isPrivateHost, type LineEntry } from '@iptv/core';
+import { inferResolution, isPrivateHost, TASK_TYPE_LABEL, type LineEntry } from '@iptv/core';
 
 export const publicRoutes = new Hono<AppEnv>();
 
@@ -99,17 +99,6 @@ publicRoutes.get('/overview', async (c) => {
     getJson<Record<string, number>>(c.env, 'state/pool-stats.json'),
   ]);
 
-  const taskLabels: Record<string, string> = {
-    collect: '全量采集',
-    fetch: '抓源',
-    'probe-batch': '分批探测',
-    'probe-lines': '指定线路探测',
-    publish: '发布',
-    epg: 'EPG 刷新',
-    liveness: '池内测活',
-    export: '重建导出',
-    snapshot: '快照',
-  };
   const latest = runs[0] ?? null;
   const taskById = new Map(tasks.map((task) => [task.id, task]));
   const mappedRuns = runs.map((run) => {
@@ -117,7 +106,7 @@ publicRoutes.get('/overview', async (c) => {
     return {
       ...run,
       task_type: task?.type ?? null,
-      task_label: task ? taskLabels[task.type] ?? task.type : null,
+      task_label: task ? TASK_TYPE_LABEL[task.type] ?? task.type : null,
       task_message: task?.message ?? null,
     };
   });
