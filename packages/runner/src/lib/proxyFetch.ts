@@ -98,9 +98,8 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024;
 function openTunnel(proxy: ProxyProbeInput, host: string, port: number, timeoutMs: number): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
     const socket = net.connect({ host: proxy.host, port: proxy.port, timeout: timeoutMs });
-    let buffer = '';
+    let buffer = Buffer.alloc(0);
     let settled = false;
-    socket.setEncoding('latin1');
     const fail = (error: Error) => {
       if (settled) return;
       settled = true;
@@ -113,17 +112,22 @@ function openTunnel(proxy: ProxyProbeInput, host: string, port: number, timeoutM
         : '';
       socket.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n${auth}\r\n`);
     });
-    socket.on('data', (chunk: string) => {
-      buffer += chunk;
-      if (!buffer.includes('\r\n\r\n')) return;
-      const status = Number(buffer.split(' ')[1] ?? 0);
+    socket.on('data', (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      const headerEnd = buffer.indexOf('\r\n\r\n');
+      if (headerEnd < 0) return;
+      const head = buffer.subarray(0, headerEnd).toString('latin1');
+      const status = Number(head.split(' ')[1] ?? 0);
       if (status !== 200) {
         fail(new Error(`代理 CONNECT 失败 HTTP ${status}`));
         return;
       }
       settled = true;
       socket.removeAllListeners('data');
-      socket.setEncoding('utf8');
+      // Bytes that arrived together with the CONNECT response header already
+      // belong to the tunnel payload; put them back for the caller to read.
+      const rest = buffer.subarray(headerEnd + 4);
+      if (rest.length) socket.unshift(rest);
       socket.setTimeout(0);
       resolve(socket);
     });

@@ -51,6 +51,7 @@ export function Proxies() {
   const [importHeaders, setImportHeaders] = useState('');
   const [sort, setSort] = useState<ProxySort>('default');
   const [importResult, setImportResult] = useState<{ added: number; skipped: number; kernelOnly: number; warnings: string[] } | null>(null);
+  const [pullTaskId, setPullTaskId] = useState<string | null>(null);
 
   const proxies = useQuery({
     queryKey: ['admin', 'proxies', sort],
@@ -125,9 +126,39 @@ export function Proxies() {
   const pullSubscription = useMutation({
     mutationFn: (mode: 'proxy' | 'actions') =>
       api.post<{ taskId: string }>('/api/admin/proxies/pull-subscription', { url: importUrl.trim(), userAgent: importUa.trim(), mode }),
-    onSuccess: (_data, mode) => show(mode === 'actions' ? '已派发 Actions 直连拉取' : '已派发代理拉取任务'),
+    onSuccess: (data, mode) => {
+      setImportOpen(false);
+      setImportResult(null);
+      setPullTaskId(data.taskId);
+      show(mode === 'actions' ? '已派发 Actions 直连拉取，完成后会自动刷新列表' : '已派发代理拉取，完成后会自动刷新列表');
+    },
     onError: (error) => show(error instanceof Error ? error.message : '派发失败', 'error'),
   });
+
+  const pullTask = useQuery({
+    queryKey: ['admin', 'proxy-pull-task', pullTaskId],
+    queryFn: () => api.get<{ items: Array<{ id: string; status: string; message: string }> }>('/api/admin/tasks'),
+    enabled: Boolean(pullTaskId),
+    refetchInterval: (query) => {
+      const item = query.state.data?.items.find((entry) => entry.id === pullTaskId);
+      if (!item) return 3000;
+      return item.status === 'done' || item.status === 'failed' || item.status === 'cancelled' ? false : 3000;
+    },
+  });
+
+  useEffect(() => {
+    if (!pullTaskId) return;
+    const item = pullTask.data?.items.find((entry) => entry.id === pullTaskId);
+    if (!item) return;
+    if (item.status === 'done') {
+      show(`订阅拉取完成：${item.message}`);
+      setPullTaskId(null);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'proxies'] });
+    } else if (item.status === 'failed' || item.status === 'cancelled') {
+      show(item.message || '订阅拉取失败', 'error');
+      setPullTaskId(null);
+    }
+  }, [pullTask.data, pullTaskId]);
 
   const checkProxies = useMutation({
     mutationFn: (id?: string) => api.post<{ taskId: string }>('/api/admin/proxies/check-all', id ? { id } : {}),
