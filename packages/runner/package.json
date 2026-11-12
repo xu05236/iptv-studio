@@ -16,6 +16,7 @@
     "export": "tsx src/cli.ts export",
     "probe-lines": "tsx src/cli.ts probe-lines",
     "proxy-test": "tsx src/cli.ts proxy-test",
+    "proxy-fetch-sub": "tsx src/cli.ts proxy-fetch-sub",
     "cn-probe": "tsx src/cli.ts cn-probe",
     "epg": "tsx src/cli.ts epg",
     "rules-preview": "tsx src/cli.ts rules-preview",

@@ -44,7 +44,7 @@ import { buildArtifacts, publish, type ExportCatalog } from './pipeline/publish.
 import { buildGuide, collectEpg, guideIsFresh, mergeGuideFallback, type StoredGuide } from './pipeline/epg.js';
 import { loadLogoPacks } from './pipeline/logoFiles.js';
 import { loadLinesState, saveLinesState } from './lib/linesState.js';
-import { probeProxy } from './lib/proxyFetch.js';
+import { fetchViaProxy, probeProxy } from './lib/proxyFetch.js';
 import { buildProxyAgent, probeCnUrl } from './pipeline/cnProbe.js';
 import { prefilterLiveness } from './pipeline/liveness.js';
 import { publishSubscriptions } from './pipeline/subscriptions.js';
@@ -1143,6 +1143,84 @@ async function runProxyTest(): Promise<void> {
   }
 }
 
+async function runProxyFetchSub(): Promise<void> {
+  const config = loadConfig();
+  const logger = new RunLogger();
+  const api = new ApiClient(config.apiBaseUrl, config.adminToken);
+  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const url = (process.env.SUB_URL ?? '').trim();
+  const userAgent = (process.env.USER_AGENT ?? '').trim();
+  const proxyId = (process.env.PROXY_ID ?? '').trim();
+  const mode = (process.env.FETCH_MODE ?? 'proxy').trim() === 'actions' ? 'actions' : 'proxy';
+  try {
+    if (!/^https?:\/\//i.test(url)) throw new Error('缺少订阅地址');
+    let text = '';
+    let used = '';
+    if (mode === 'actions') {
+      await reportTaskProgress(api, 0, 1, 'Actions 直连拉取订阅', true);
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          headers: { 'user-agent': userAgent || 'clash-verge/v1.0', accept: '*/*' },
+          signal: AbortSignal.timeout(20_000),
+        });
+      } catch (error) {
+        throw new Error(`请求失败：${error instanceof Error ? error.message : String(error)}`);
+      }
+      if (!response.ok) throw new Error(`订阅返回 HTTP ${response.status}`);
+      text = await response.text();
+      if (!text.trim()) throw new Error('订阅内容为空');
+      used = 'Actions 出口';
+    } else {
+      const { items } = await api.get<{
+        items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean; lastOkAt: string | null }>;
+      }>('/api/admin/proxies?secrets=1');
+      const candidates = items
+        .filter((node) => node.enabled && !node.kernelOnly && (!proxyId || node.id === proxyId))
+        .sort((a, b) => (b.lastOkAt ?? '').localeCompare(a.lastOkAt ?? ''));
+      if (!candidates.length) throw new Error('没有可用代理，请先测活至少一个');
+      await reportTaskProgress(api, 0, 1, `代理拉取订阅 · 预检 ${candidates[0].name}`, true);
+      let lastError = '';
+      for (const node of candidates.slice(0, 3)) {
+        const probe = await probeProxy(node);
+        await api.post(`/api/admin/proxies/${node.id}/check`, probe).catch(() => undefined);
+        if (!probe.ok) {
+          lastError = `${node.name}: ${probe.error}`;
+          continue;
+        }
+        try {
+          const response = await fetchViaProxy(url, node, { userAgent, timeoutMs: 20_000 });
+          text = response.body;
+          used = `${node.name}（出口 ${probe.egressIp || '未知'}）`;
+          break;
+        } catch (error) {
+          lastError = `${node.name}: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+      if (!text.trim()) throw new Error(`没有代理能拉取订阅：${lastError}`);
+    }
+    await reportTaskProgress(api, 0, 1, `${used} · 已获取内容，正在导入`, true);
+    const result = await api.post<{ added: number; skipped: number; kernelOnly: number }>('/api/admin/proxies/import', { text, userAgent });
+    logger.info('订阅拉取完成', { used, added: result.added, skipped: result.skipped });
+    await reportTaskProgress(api, 1, 1, `订阅拉取完成 · ${used} · 新增 ${result.added} · 跳过 ${result.skipped}`, true);
+    await finishRun(api, {
+      id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
+      sources: 0, channels: 0, lines: 0, alive: result.added, dead: result.skipped, probed: result.added + result.skipped, bytes: text.length,
+      durationMs: Date.now() - startedMs, warnings: [],
+    });
+  } catch (error) {
+    logger.error('代理拉取订阅失败', { error: error instanceof Error ? error.message : String(error) });
+    await finishRun(api, {
+      id: runId, trigger: 'manual', status: 'failed', startedAt, finishedAt: nowIso(),
+      sources: 0, channels: 0, lines: 0, alive: 0, dead: 0, probed: 0, bytes: 0,
+      durationMs: Date.now() - startedMs, warnings: [error instanceof Error ? error.message : String(error)],
+    }).catch(() => undefined);
+    throw error;
+  }
+}
+
 async function runCnProbe(): Promise<void> {
   const config = loadConfig();
   const logger = new RunLogger();
@@ -2111,6 +2189,10 @@ async function main(): Promise<void> {
   }
   if (command === 'proxy-test') {
     await runProxyTest();
+    return;
+  }
+  if (command === 'proxy-fetch-sub') {
+    await runProxyFetchSub();
     return;
   }
   if (command === 'cn-probe') {

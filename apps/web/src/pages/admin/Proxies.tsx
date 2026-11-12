@@ -122,6 +122,13 @@ export function Proxies() {
     onError: (error) => show(error instanceof Error ? error.message : '更新失败', 'error'),
   });
 
+  const pullSubscription = useMutation({
+    mutationFn: (mode: 'proxy' | 'actions') =>
+      api.post<{ taskId: string }>('/api/admin/proxies/pull-subscription', { url: importUrl.trim(), userAgent: importUa.trim(), mode }),
+    onSuccess: (_data, mode) => show(mode === 'actions' ? '已派发 Actions 直连拉取' : '已派发代理拉取任务'),
+    onError: (error) => show(error instanceof Error ? error.message : '派发失败', 'error'),
+  });
+
   const checkProxies = useMutation({
     mutationFn: (id?: string) => api.post<{ taskId: string }>('/api/admin/proxies/check-all', id ? { id } : {}),
     onSuccess: () => show('已派发测活任务'),
@@ -399,6 +406,17 @@ export function Proxies() {
           <Field label="订阅地址（可选）">
             <input className="input" value={importUrl} onChange={(event) => setImportUrl(event.target.value)} placeholder="https://example.com/sub" />
           </Field>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div className="caption">直连被 403 时：可让已有代理去拉，或让 Actions 用它的出口去拉。</div>
+            <div className="row" style={{ gap: 8 }}>
+              <Button variant="ghost" loading={pullSubscription.isPending} disabled={!importUrl.trim()} onClick={() => pullSubscription.mutate('proxy')}>
+                <Globe2 size={14} /> 通过代理拉取
+              </Button>
+              <Button variant="ghost" loading={pullSubscription.isPending} disabled={!importUrl.trim()} onClick={() => pullSubscription.mutate('actions')}>
+                <RefreshCw size={14} /> Actions 直连拉取
+              </Button>
+            </div>
+          </div>
           <div className="row" style={{ gap: 10 }}>
             <Field label="订阅请求 UA（可选）">
               <div className="row" style={{ gap: 8 }}>

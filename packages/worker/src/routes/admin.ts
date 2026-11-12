@@ -876,6 +876,7 @@ function describeTask(task: Task, sourceNames: Map<string, string>): string {
   if (task.type === 'collect') return '完整采集 · 全部源';
   if (task.type === 'liveness') return '存活检测';
   if (task.type === 'proxy-test') return task.source === 'schedule' ? '代理测活 · 定时' : '代理测活 · 手动';
+  if (task.type === 'proxy-fetch-sub') return '代理拉取订阅';
   if (task.type === 'cn-probe') return '国内补测';
   if (task.type === 'cleanup-orphans') return '孤儿线路清理';
   if (task.type === 'snapshot') {

@@ -9,7 +9,7 @@ on:
       command:
         description: 'collect=全流程，fetch=只抓源，probe=只测速，probe-batch=分批探测，publish=只发布，export=重建导出，epg=只更新节目单，liveness=池内测活，probe-lines=指定线路探测'
         type: choice
-        options: [collect, fetch, probe, probe-batch, publish, export, epg, liveness, probe-lines, proxy-test, cn-probe, cleanup-orphans, cleanup-rejected, revive-batch, rules-preview]
+        options: [collect, fetch, probe, probe-batch, publish, export, epg, liveness, probe-lines, proxy-test, proxy-fetch-sub, cn-probe, cleanup-orphans, cleanup-rejected, revive-batch, rules-preview]
         default: collect
       budget:
         description: '本次测速条数（首轮建议 1200，稳定后再调大）'
@@ -36,6 +36,15 @@ on:
       proxy_id:
         description: '代理测活只测指定代理 id（留空=全部启用）'
         default: ''
+      sub_url:
+        description: '代理拉取订阅的地址（内部使用）'
+        default: ''
+      user_agent:
+        description: '代理拉取订阅时的 UA（内部使用）'
+        default: ''
+      fetch_mode:
+        description: '订阅拉取方式：proxy / actions（内部使用）'
+        default: 'proxy'
       task_id:
         description: '全局任务队列 id（内部使用，手动触发留空）'
         default: ''
@@ -113,6 +122,9 @@ jobs:
           LINE_KEYS: ${{ github.event.inputs.line_keys || '' }}
           PROBE_PHASE: ${{ github.event.inputs.phase || '' }}
           PROXY_ID: ${{ github.event.inputs.proxy_id || '' }}
+          SUB_URL: ${{ github.event.inputs.sub_url || '' }}
+          USER_AGENT: ${{ github.event.inputs.user_agent || '' }}
+          FETCH_MODE: ${{ github.event.inputs.fetch_mode || 'proxy' }}
           TASK_ID: ${{ github.event.inputs.task_id || '' }}
           AUTO_PUBLISH: ${{ github.event.inputs.auto_publish || '' }}
           TRIGGER: ${{ github.event.inputs.trigger || 'manual' }}
@@ -135,6 +147,8 @@ jobs:
             npm run probe-lines -w @iptv/runner
           elif [ "${{ github.event.inputs.command || 'collect' }}" = "proxy-test" ]; then
             npm run proxy-test -w @iptv/runner
+          elif [ "${{ github.event.inputs.command || 'collect' }}" = "proxy-fetch-sub" ]; then
+            npm run proxy-fetch-sub -w @iptv/runner
           elif [ "${{ github.event.inputs.command || 'collect' }}" = "cn-probe" ]; then
             npm run cn-probe -w @iptv/runner
           elif [ "${{ github.event.inputs.command || 'collect' }}" = "cleanup-orphans" ]; then

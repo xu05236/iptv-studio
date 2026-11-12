@@ -44,6 +44,7 @@ const WATCHDOG_MS: Record<string, number> = {
   liveness: 15 * 60_000,
   'cleanup-orphans': 10 * 60_000,
   'proxy-test': 10 * 60_000,
+  'proxy-fetch-sub': 5 * 60_000,
   'cn-probe': 20 * 60_000,
 };
 const LOCK_ID = 'queue';
@@ -610,6 +611,9 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
     line_keys: next.payload.line_keys ?? '',
     phase: next.payload.phase ?? '',
     proxy_id: next.payload.proxy_id ?? '',
+    sub_url: next.payload.sub_url ?? '',
+    user_agent: next.payload.user_agent ?? '',
+    fetch_mode: next.payload.fetch_mode ?? '',
     auto_publish: next.payload.auto ? 'true' : '',
     trigger: next.source,
   });

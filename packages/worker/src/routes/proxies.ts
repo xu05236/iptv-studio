@@ -167,6 +167,28 @@ proxyRoutes.post('/import', async (c) => {
   return ok({ added, skipped, kernelOnly, warnings: parsed.warnings.slice(0, 10) });
 });
 
+proxyRoutes.post('/pull-subscription', async (c) => {
+  const body = (await readJson<{ url?: string; userAgent?: string; mode?: string }>(c)) ?? {};
+  const url = cleanText(body.url, 500);
+  if (!/^https?:\/\//i.test(url)) return fail('请填写 http(s) 订阅地址');
+  const mode = body.mode === 'actions' ? 'actions' : 'proxy';
+  if (mode === 'proxy') {
+    const nodes = await listProxyNodes(c.env);
+    if (!nodes.some((node) => node.enabled && !node.kernelOnly)) return fail('没有可用代理，请先测活至少一个', 409);
+  }
+  const userAgent = cleanText(body.userAgent, 300) || 'clash-verge/v1.0';
+  const task = await createTask(c.env, {
+    type: 'proxy-fetch-sub',
+    source: 'manual',
+    priority: 80,
+    payload: { sub_url: url, user_agent: userAgent, fetch_mode: mode },
+    message: mode === 'actions' ? 'Actions 直连拉取订阅' : '代理拉取订阅',
+  });
+  await dispatchNext(c.env);
+  await audit(c.env, c.get('actor'), 'proxy.pull_subscription', task.id, { url: url.slice(0, 120), mode });
+  return ok({ taskId: task.id });
+});
+
 proxyRoutes.post('/check-all', async (c) => {
   const body = (await readJson<{ id?: string }>(c)) ?? {};
   const id = typeof body.id === 'string' ? body.id.trim() : '';
