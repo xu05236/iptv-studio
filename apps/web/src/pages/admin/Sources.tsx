@@ -151,6 +151,8 @@ export function Sources() {
   const [fetchTimeoutMs, setFetchTimeoutMs] = useState('45');
   const [fetchConcurrency, setFetchConcurrency] = useState('1');
   const [fetchDelayMs, setFetchDelayMs] = useState('0');
+  const [mergeChannelName, setMergeChannelName] = useState('');
+  const [mergeChannelGroup, setMergeChannelGroup] = useState('');
   const [healthSort, setHealthSort] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const reputationParam = searchParams.get('reputation');
@@ -247,6 +249,8 @@ export function Sources() {
         fetchTimeoutMs: Number(fetchTimeoutMs) * 1000 || 45_000,
         fetchConcurrency: Number(fetchConcurrency) || 1,
         fetchDelayMs: Number(fetchDelayMs) || 0,
+        mergeChannelName: mergeChannelName.trim() || null,
+        mergeChannelGroup: mergeChannelGroup.trim() || null,
       });
     },
     onSuccess: () => {
@@ -686,7 +690,7 @@ export function Sources() {
                 <Button size="sm" title="检查解析" loading={probe.isPending} onClick={() => probe.mutate(source.id)}>检查</Button>
                 <Button size="sm" title="抽样测速" loading={probeLines.isPending} onClick={() => probeLines.mutate(source.id)}>测速</Button>
                 <Button size="sm" title="复活本源的已淘汰线路" loading={revive.isPending} onClick={() => revive.mutate(source.id)}>复活</Button>
-                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(source.refresh_hours == null ? '' : String(source.refresh_hours)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); setAllowInsecureTls(Boolean(source.allowInsecureTls)); setFetchTimeoutMs(String(Math.round((source.fetchTimeoutMs ?? 45_000) / 1000))); setFetchConcurrency(String(source.fetchConcurrency ?? 1)); setFetchDelayMs(String(source.fetchDelayMs ?? 0)); }}>过滤</Button>
+                <Button size="sm" onClick={() => { setFilterSource(source); setFilterForm(filtersToForm(source.filters)); setRefreshHours(source.refresh_hours == null ? '' : String(source.refresh_hours)); setRequestHeaders(source.requestHeaders && Object.keys(source.requestHeaders).length ? JSON.stringify(source.requestHeaders, null, 2) : ''); setMirrorUrls((source.mirrorUrls ?? []).join('\n')); setFetchMode(source.fetchMode ?? 'direct'); setAllowInsecureTls(Boolean(source.allowInsecureTls)); setFetchTimeoutMs(String(Math.round((source.fetchTimeoutMs ?? 45_000) / 1000))); setFetchConcurrency(String(source.fetchConcurrency ?? 1)); setFetchDelayMs(String(source.fetchDelayMs ?? 0)); setMergeChannelName(source.mergeChannelName ?? ''); setMergeChannelGroup(source.mergeChannelGroup ?? ''); }}>过滤</Button>
                 <Button size="sm" title="删除本源" loading={remove.isPending} onClick={() => { if (confirm(`删除「${source.name}」？该源的线路会一起移除。`)) remove.mutate(source.id); }}>删除</Button>
               </div>
             </Card>
@@ -813,6 +817,13 @@ export function Sources() {
           <div className="sheet-section">更新策略</div>
           <Field label="更新间隔（小时）" hint="留空 = 跟随分档（7 天内新源 24h、重点源 12h、其它 72h）；0 = 不自动重抓；24 = 每天；48 = 每 2 天；72 = 每 3 天；96 = 每 4 天；其它数字 = 自定义小时">
             <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="留空（跟随分档）" />
+          </Field>
+          <div className="sheet-section">合并频道（直播平台）</div>
+          <Field label="合并到频道" hint="填了以后，这个源的所有线路都挂到同一个频道；留空保持一个频道一条线路。">
+            <input className="input" value={mergeChannelName} onChange={(event) => setMergeChannelName(event.target.value)} placeholder="例如 虎牙直播" />
+          </Field>
+          <Field label="频道分类" hint="合并频道的分类；留空用「影视」。">
+            <input className="input" value={mergeChannelGroup} onChange={(event) => setMergeChannelGroup(event.target.value)} placeholder="影视" />
           </Field>
           <div className="sheet-section">请求设置</div>
           <details className="stack">

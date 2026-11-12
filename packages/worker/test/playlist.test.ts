@@ -199,3 +199,70 @@ describe('custom pool rendering', () => {
     expect(result.body).toContain('http://b/1.m3u8');
   });
 });
+
+describe('merged channel export rules', () => {
+  const normal = line('http://normal/1.m3u8', 90);
+  const mergedLines = [
+    { ...line('http://huya/1.m3u8', 80), channelId: 'x-mc-src-huya' },
+    { ...line('http://huya/2.m3u8', 70), channelId: 'x-mc-src-huya' },
+    { ...line('http://huya/3.m3u8', 60), channelId: 'x-mc-src-huya' },
+  ];
+  const snapshot: PoolSnapshot = {
+    generatedAt: '2026-11-12T00:00:00Z',
+    channels: {
+      cctv1: {
+        channel: { id: 'cctv1', name: 'CCTV-1 综合', group: '央视', tvgId: 'CCTV1' },
+        premium: [normal],
+        backup: [],
+        candidate: [],
+      },
+      'x-mc-src-huya': {
+        channel: { id: 'x-mc-src-huya', name: '虎牙直播', group: '影视频道' },
+        premium: mergedLines,
+        backup: [],
+        candidate: [],
+      },
+    },
+  };
+  const base: SubscriptionConfig = {
+    id: 'sub-merged',
+    name: 'merged',
+    token: 'token',
+    enabled: true,
+    groups: [],
+    excludeGroups: [],
+    channelIds: [],
+    minResolution: 'any',
+    minSpeedKbps: 0,
+    protocols: [],
+    maxLinesPerChannel: 0,
+    showRegionSuffix: false,
+    includeEpg: false,
+    format: 'm3u',
+    poolMode: 'pools',
+    poolIds: ['premium'],
+    filterMode: 'none',
+  };
+
+  it('excludes merged channels when mergedMode is exclude', () => {
+    const result = buildFromPools(snapshot, [], { ...base, mergedMode: 'exclude' }, new Map());
+    expect(result.channels).toBe(1);
+    expect(result.body).toContain('CCTV-1');
+    expect(result.body).not.toContain('虎牙直播');
+  });
+
+  it('exports only merged channels when mergedMode is only', () => {
+    const result = buildFromPools(snapshot, [], { ...base, mergedMode: 'only' }, new Map());
+    expect(result.channels).toBe(1);
+    expect(result.lines).toBe(3);
+    expect(result.body).toContain('虎牙直播');
+    expect(result.body).not.toContain('CCTV-1');
+  });
+
+  it('caps merged lines independently of maxLinesPerChannel', () => {
+    const result = buildFromPools(snapshot, [], { ...base, mergedMaxLines: 2 }, new Map());
+    expect(result.lines).toBe(3);
+    expect(result.body).toContain('http://huya/2.m3u8');
+    expect(result.body).not.toContain('http://huya/3.m3u8');
+  });
+});

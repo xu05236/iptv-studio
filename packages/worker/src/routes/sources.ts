@@ -168,6 +168,8 @@ sourceRoutes.get('/', async (c) => {
       fetchConcurrency: source.fetch_concurrency ?? 1,
       fetchDelayMs: source.fetch_delay_ms ?? 0,
       lastErrorKind: source.last_error_kind ?? null,
+      mergeChannelName: source.merge_channel_name ?? null,
+      mergeChannelGroup: source.merge_channel_group ?? null,
       ...parseReportOf(source),
       enabled: source.enabled === 1,
       progress: { ...(progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0 }), channels: channelSets.get(source.id)?.size ?? 0 },
@@ -732,6 +734,14 @@ sourceRoutes.patch('/:id', async (c) => {
   }
   if (patch['refresh_hours'] !== undefined) {
     patch['refresh_hours'] = refreshHoursOf(patch['refresh_hours']);
+  }
+  // Optional channel folding for live-platform sources: every line of the
+  // source is attached to one channel (e.g. 虎牙直播) in the given group.
+  for (const key of ['mergeChannelName', 'mergeChannelGroup'] as const) {
+    if (patch[key] !== undefined) {
+      const value = String(patch[key] ?? '').trim();
+      patch[key] = value || null;
+    }
   }
   const updated = await updateSource(c.env, id, patch);
   if (!updated) return fail('没有可更新的字段');

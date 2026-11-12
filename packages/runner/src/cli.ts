@@ -24,12 +24,14 @@ import {
   isPurgeable,
   lineSignature,
   pickDuplicateOwner,
+  mergedChannelId,
   activeProbeProfile,
   type AppSettings,
   type ChannelConfig,
   type EpgData,
   type LineEntry,
   type RawEntry,
+  type ResolvedChannel,
   type RunReport,
 } from '@iptv/core';
 import { loadConfig } from './config.js';
@@ -238,7 +240,19 @@ function normalize(
       }
 
       const source = sources.get(item.source.id);
-      const resolved = registry.resolve(raw.name, { tvgId: raw.tvgId, group: raw.group });
+      // Live-platform sources (虎牙/斗鱼) can be folded into one channel so the
+      // hundreds of stream rooms stay one "channel" with many lines. The id is
+      // deterministic so exports can recognise merged channels.
+      const mergeName = (source?.mergeChannelName ?? source?.merge_channel_name ?? '').trim();
+      let resolved: ResolvedChannel;
+      if (mergeName) {
+        const id = mergedChannelId(item.source.id);
+        const group = (source?.mergeChannelGroup ?? source?.merge_channel_group ?? '').trim() || '影视';
+        if (!registry.get(id)) registry.addChannel({ id, name: mergeName, group });
+        resolved = { id, name: mergeName, group, confidence: 1, created: false };
+      } else {
+        resolved = registry.resolve(raw.name, { tvgId: raw.tvgId, group: raw.group });
+      }
       const key = entryKey(item.source.id, urlKey);
       const old = previousByKey.get(`${item.source.id}|${urlKey}`);
       // 已淘汰是终态：重抓不再把它拉回池子。

@@ -22,6 +22,8 @@ interface FormState {
   poolMode: string;
   poolIds: string[];
   filterMode: string;
+  mergedMode: string;
+  mergedMaxLines: string;
   proxyMode: string;
   minResolution: string;
   minSpeedKbps: string;
@@ -39,6 +41,8 @@ const EMPTY_FORM: FormState = {
   poolMode: 'premium',
   poolIds: [],
   filterMode: 'inherit',
+  mergedMode: 'inherit',
+  mergedMaxLines: '0',
   proxyMode: 'direct',
   minResolution: 'any',
   minSpeedKbps: '0',
@@ -178,6 +182,8 @@ export function SubscriptionsAdmin() {
         poolMode: form.poolMode,
         poolIds: form.poolIds,
         filterMode: form.filterMode,
+        mergedMode: form.mergedMode,
+        mergedMaxLines: Math.max(0, Number(form.mergedMaxLines) || 0),
         proxyMode: form.proxyMode,
         minResolution: form.minResolution,
         minSpeedKbps: Number(form.minSpeedKbps || 0),
@@ -258,6 +264,8 @@ export function SubscriptionsAdmin() {
             poolMode: form.poolMode,
             poolIds: form.poolIds,
             filterMode: form.filterMode,
+            mergedMode: form.mergedMode,
+            mergedMaxLines: Math.max(0, Number(form.mergedMaxLines) || 0),
             groups: split(form.groups),
             excludeGroups: split(form.excludeGroups),
             channelIds,
@@ -276,7 +284,7 @@ export function SubscriptionsAdmin() {
         });
     }, 600);
     return () => clearTimeout(timer);
-  }, [open, form.poolMode, form.poolIds, form.filterMode, form.groups, form.excludeGroups, form.minResolution, form.minSpeedKbps, form.maxLines, form.showRegionSuffix, form.format, channelIds]);
+  }, [open, form.poolMode, form.poolIds, form.filterMode, form.mergedMode, form.mergedMaxLines, form.groups, form.excludeGroups, form.minResolution, form.minSpeedKbps, form.maxLines, form.showRegionSuffix, form.format, channelIds]);
 
   async function loadPreview(item: SubscriptionItem): Promise<void> {
     const seq = ++previewSeq.current;
@@ -310,6 +318,8 @@ export function SubscriptionsAdmin() {
             poolMode: item.pool_mode ?? 'premium',
             poolIds: item.poolIds ?? (item.pool_ids ? JSON.parse(item.pool_ids) as string[] : []),
             filterMode: item.filter_mode ?? 'inherit',
+            mergedMode: item.merged_mode ?? 'inherit',
+            mergedMaxLines: String(item.merged_max_lines ?? 0),
             proxyMode: item.proxy_mode ?? 'direct',
             minResolution: item.min_resolution,
             minSpeedKbps: String(item.min_speed_kbps),
@@ -526,6 +536,25 @@ export function SubscriptionsAdmin() {
               </Field>
             </>
           ) : null}
+          <Field label="合并频道导出" hint="直播平台合并频道（虎牙直播/斗鱼直播等）单独控制，与上面的频道/分组/画质条件互不影响">
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select className="select" value={form.mergedMode} onChange={(event) => setForm({ ...form, mergedMode: event.target.value })}>
+                <option value="inherit">跟随普通频道</option>
+                <option value="exclude">不导出合并频道</option>
+                <option value="only">只导出合并频道</option>
+              </select>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                value={form.mergedMaxLines}
+                onChange={(event) => setForm({ ...form, mergedMaxLines: event.target.value })}
+                disabled={form.mergedMode === 'exclude'}
+                style={{ width: 130 }}
+              />
+              <span className="caption">每个合并频道最多条数（0 = 不限）</span>
+            </div>
+          </Field>
           <Field label="代理模式" hint="直连不经过服务器；仅清单只代理播放列表；全部中继会消耗 Worker 流量与请求额度">
             <select className="select" value={form.proxyMode} onChange={(event) => setForm({ ...form, proxyMode: event.target.value })}>
               <option value="direct">直连（默认）</option>

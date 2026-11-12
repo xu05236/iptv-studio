@@ -39,6 +39,8 @@ export interface SourceRow {
   request_headers: string | null;
   fetch_mode: string | null;
   allow_insecure_tls: number;
+  merge_channel_name: string | null;
+  merge_channel_group: string | null;
   parse_report: string | null;
   content_hash: string | null;
   created_at: string;
@@ -71,6 +73,8 @@ export interface SubscriptionRow {
   pool_ids: string;
   pool_mode: string;
   filter_mode: string;
+  merged_mode: string;
+  merged_max_lines: number;
   proxy_mode: string;
   min_resolution: string;
   min_speed_kbps: number;
@@ -167,6 +171,8 @@ export interface NewSource {
   mirrorUrls?: string[] | null;
   fetchMode?: string | null;
   allowInsecureTls?: boolean | number | null;
+  mergeChannelName?: string | null;
+  mergeChannelGroup?: string | null;
   fetchTimeoutMs?: number | null;
   fetchConcurrency?: number | null;
   fetchDelayMs?: number | null;
@@ -176,8 +182,8 @@ export interface NewSource {
 
 export async function insertSource(env: Env, input: NewSource): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO sources (id, name, kind, url, mirror_urls, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, request_headers, fetch_mode, fetch_timeout_ms, fetch_concurrency, fetch_delay_ms, allow_insecure_tls, content_hash, refresh_hours, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+    `INSERT INTO sources (id, name, kind, url, mirror_urls, origin, enabled, priority, region, operator, tags, r2_key, notes, filters, request_headers, fetch_mode, fetch_timeout_ms, fetch_concurrency, fetch_delay_ms, allow_insecure_tls, merge_channel_name, merge_channel_group, content_hash, refresh_hours, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
   )
     .bind(
       input.id,
@@ -200,6 +206,8 @@ export async function insertSource(env: Env, input: NewSource): Promise<void> {
       input.fetchConcurrency ?? null,
       input.fetchDelayMs ?? null,
       input.allowInsecureTls ? 1 : 0,
+      input.mergeChannelName ?? null,
+      input.mergeChannelGroup ?? null,
       input.contentHash ?? null,
       input.refreshHours ?? -1,
     )
@@ -236,6 +244,10 @@ const SOURCE_COLUMNS: Record<string, string> = {
   fetch_concurrency: 'fetch_concurrency',
   fetch_delay_ms: 'fetch_delay_ms',
   allow_insecure_tls: 'allow_insecure_tls',
+  mergeChannelName: 'merge_channel_name',
+  mergeChannelGroup: 'merge_channel_group',
+  merge_channel_name: 'merge_channel_name',
+  merge_channel_group: 'merge_channel_group',
   content_hash: 'content_hash',
   refresh_hours: 'refresh_hours',
 };
@@ -650,8 +662,8 @@ export async function getSubscriptionByToken(env: Env, token: string): Promise<S
 
 export async function createSubscription(env: Env, row: SubscriptionRow): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO subscriptions (id, name, token, enabled, groups, exclude_groups, channel_ids, line_keys, pool_ids, pool_mode, filter_mode, proxy_mode, min_resolution, min_speed_kbps, protocols, max_lines_per_channel, show_region_suffix, include_epg, format)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO subscriptions (id, name, token, enabled, groups, exclude_groups, channel_ids, line_keys, pool_ids, pool_mode, filter_mode, proxy_mode, min_resolution, min_speed_kbps, protocols, max_lines_per_channel, show_region_suffix, include_epg, format, merged_mode, merged_max_lines)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       row.id,
@@ -673,6 +685,8 @@ export async function createSubscription(env: Env, row: SubscriptionRow): Promis
       row.show_region_suffix,
       row.include_epg,
       row.format,
+      row.merged_mode,
+      row.merged_max_lines,
     )
     .run();
   await env.DB.prepare('INSERT OR IGNORE INTO subscription_tokens (token, subscription_id, label, enabled) VALUES (?, ?, ?, 1)')
@@ -776,6 +790,10 @@ const SUB_COLUMNS: Record<string, string> = {
   pool_mode: 'pool_mode',
   filter_mode: 'filter_mode',
   filterMode: 'filter_mode',
+  merged_mode: 'merged_mode',
+  mergedMode: 'merged_mode',
+  merged_max_lines: 'merged_max_lines',
+  mergedMaxLines: 'merged_max_lines',
   poolMode: 'pool_mode',
   proxy_mode: 'proxy_mode',
   proxyMode: 'proxy_mode',

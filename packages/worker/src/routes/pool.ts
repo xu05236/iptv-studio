@@ -797,6 +797,8 @@ poolRoutes.post('/subscription', async (c) => {
     pool_mode: 'custom',
     pool_ids: '[]',
     filter_mode: 'inherit',
+    merged_mode: 'inherit',
+    merged_max_lines: 0,
     proxy_mode: 'direct',
     min_resolution: 'any',
     min_speed_kbps: 0,

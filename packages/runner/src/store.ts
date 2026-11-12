@@ -195,6 +195,11 @@ export interface SourceRecord {
   refresh_hours?: number;
   request_headers?: string | Record<string, string> | null;
   allow_insecure_tls?: number | string | null;
+  /** Optional channel folding: every line is attached to one channel. */
+  merge_channel_name?: string | null;
+  merge_channel_group?: string | null;
+  mergeChannelName?: string | null;
+  mergeChannelGroup?: string | null;
   mirror_urls?: string | null;
   fetch_mode?: string | null;
   /** F5: per-source fetch parameters. */

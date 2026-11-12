@@ -30,5 +30,7 @@ export const MIGRATION_FILES: string[] = [
   "0029_backfill_0014.sql",
   "0030_custom_pools.sql",
   "0031_channel_merges.sql",
-  "0032_source_progress.sql"
+  "0032_source_progress.sql",
+  "0033_sources_merge_channel.sql",
+  "0034_subscription_merged.sql"
 ];

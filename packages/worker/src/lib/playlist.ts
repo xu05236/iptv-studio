@@ -3,6 +3,7 @@ import {
   canonicalPoolUrl,
   compareLines,
   hashId,
+  isMergedChannelId,
   selectLines,
   toExportChannels,
   type ChannelConfig,
@@ -30,6 +31,10 @@ export interface SubscriptionConfig extends SubscriptionSpec {
   poolMode?: string;
   /** Pools mode only: inherit = saved filters, none = full export, custom = saved filters too. */
   filterMode?: string;
+  /** Merged live-platform channels: inherit / exclude / only. */
+  mergedMode?: string;
+  /** Per-channel line cap for merged channels; 0 = unlimited. */
+  mergedMaxLines?: number;
   proxyMode?: 'direct' | 'playlist' | 'full';
 }
 
@@ -46,6 +51,8 @@ export function subscriptionFromRow(row: SubscriptionRow): SubscriptionConfig {
     poolIds: parseJsonField<string[]>(row.pool_ids ?? '[]', []),
     poolMode: row.pool_mode ?? 'premium',
     filterMode: row.filter_mode ?? 'inherit',
+    mergedMode: row.merged_mode ?? 'inherit',
+    mergedMaxLines: row.merged_max_lines ?? 0,
     proxyMode: row.proxy_mode === 'playlist' || row.proxy_mode === 'full' ? row.proxy_mode : 'direct',
     minResolution: row.min_resolution as Quality | 'any',
     minSpeedKbps: row.min_speed_kbps,
@@ -65,6 +72,24 @@ export function channelMatches(channel: ChannelConfig, config: SubscriptionConfi
   return true;
 }
 
+export function mergedModeOf(config: SubscriptionConfig): 'inherit' | 'exclude' | 'only' {
+  return config.mergedMode === 'exclude' || config.mergedMode === 'only' ? config.mergedMode : 'inherit';
+}
+
+export function mergedChannelAllowed(channelId: string, config: SubscriptionConfig): boolean {
+  const mode = mergedModeOf(config);
+  const merged = isMergedChannelId(channelId);
+  if (mode === 'exclude' && merged) return false;
+  if (mode === 'only' && !merged) return false;
+  return true;
+}
+
+/** Merged channels can have their own line cap, independent of maxLinesPerChannel. */
+export function capMergedLines(channelId: string, lines: LineEntry[], config: SubscriptionConfig): LineEntry[] {
+  const max = config.mergedMaxLines ?? 0;
+  return max > 0 && isMergedChannelId(channelId) ? lines.slice(0, max) : lines;
+}
+
 export function buildFromCatalog(
   catalog: ExportCatalog,
   config: SubscriptionConfig,
@@ -75,9 +100,10 @@ export function buildFromCatalog(
   for (const item of catalog.items) {
     if (item.channel.enabled === false) continue;
     if (!channelMatches(item.channel, config)) continue;
+    if (!mergedChannelAllowed(item.channel.id, config)) continue;
     const candidates = allowedKeys.size ? item.lines.filter((line) => allowedKeys.has(line.key)) : item.lines;
     if (!candidates.length) continue;
-    const lines = selectLines(candidates, {
+    const selected = selectLines(candidates, {
       maxLines: config.maxLinesPerChannel,
       maxPerSource: 3,
       minQuality: config.minResolution,
@@ -86,6 +112,7 @@ export function buildFromCatalog(
       compensate: true,
       keepSuspect: true,
     });
+    const lines = capMergedLines(item.channel.id, selected, config);
     if (!lines.length) continue;
     rows.push({ channel: item.channel, lines });
   }
@@ -108,7 +135,7 @@ export function buildFromCatalog(
 /** Strong ETag derived from catalog version + subscription configuration. */
 export function playlistEtag(catalog: ExportCatalog, config: SubscriptionConfig): string {
   const fingerprint = hashId(
-    JSON.stringify([catalog.runId, config.updatedAt, config.groups, config.excludeGroups, config.channelIds, config.lineKeys, config.minResolution, config.minSpeedKbps, config.protocols, config.maxLinesPerChannel, config.showRegionSuffix, config.format, config.proxyMode]),
+    JSON.stringify([catalog.runId, config.updatedAt, config.groups, config.excludeGroups, config.channelIds, config.lineKeys, config.minResolution, config.minSpeedKbps, config.protocols, config.maxLinesPerChannel, config.mergedMode, config.mergedMaxLines, config.showRegionSuffix, config.format, config.proxyMode]),
     16,
   );
   return `W/"${catalog.runId}-${fingerprint}"`;
@@ -140,6 +167,7 @@ export function buildFromPool(
       aliases: [],
     };
     if (!channelMatches(channel, config)) continue;
+    if (!mergedChannelAllowed(channel.id, config)) continue;
 
     const premium: LineEntry[] = [];
     const backup: LineEntry[] = [];
@@ -171,8 +199,9 @@ export function buildFromPool(
       keepSuspect: false,
       relativeFloor: !unlimited,
     });
-    if (!lines.length) continue;
-    rows.push({ channel, lines });
+    const limited = capMergedLines(channel.id, lines, config);
+    if (!limited.length) continue;
+    rows.push({ channel, lines: limited });
   }
 
   const exportChannels = toExportChannels(rows, {
@@ -224,6 +253,7 @@ export function buildFromPools(
       aliases: [],
     };
     if (applyFilters && !channelMatches(channel, config)) continue;
+    if (!mergedChannelAllowed(channel.id, config)) continue;
 
     const collected: LineEntry[] = [];
     const buckets: Array<['premium' | 'backup' | 'candidate', LineEntry[]]> = [
@@ -251,8 +281,9 @@ export function buildFromPools(
           keepSuspect: false,
         })
       : unique;
-    if (!lines.length) continue;
-    rows.push({ channel, lines });
+    const limited = capMergedLines(channel.id, lines, config);
+    if (!limited.length) continue;
+    rows.push({ channel, lines: limited });
   }
 
   const exportChannels = toExportChannels(rows, {
@@ -279,7 +310,7 @@ export function poolEtag(
   const overrideVersion = overrides.reduce((max, row) => (row.updated_at > max ? row.updated_at : max), '');
   const tombstoneVersion = tombstones.reduce((max, row) => (row.created_at > max ? row.created_at : max), '');
   const fingerprint = hashId(
-    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}:${(config.poolIds ?? []).join(',')}:${customVersion}:${config.proxyMode ?? 'direct'}:${config.format}:${config.filterMode ?? 'inherit'}:${config.groups.join(',')}:${config.excludeGroups.join(',')}:${(config.channelIds ?? []).join(',')}:${config.minResolution}:${config.minSpeedKbps}:${(config.protocols ?? []).join(',')}:${config.maxLinesPerChannel}:${config.showRegionSuffix ? 1 : 0}:${config.includeEpg ? 1 : 0}`,
+    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}:${(config.poolIds ?? []).join(',')}:${customVersion}:${config.proxyMode ?? 'direct'}:${config.format}:${config.filterMode ?? 'inherit'}:${config.groups.join(',')}:${config.excludeGroups.join(',')}:${(config.channelIds ?? []).join(',')}:${config.minResolution}:${config.minSpeedKbps}:${(config.protocols ?? []).join(',')}:${config.maxLinesPerChannel}:${config.mergedMode ?? 'inherit'}:${config.mergedMaxLines ?? 0}:${config.showRegionSuffix ? 1 : 0}:${config.includeEpg ? 1 : 0}`,
     16,
   );
   return `W/"pool-${fingerprint}"`;
@@ -338,6 +369,7 @@ export async function renderSubscription(
     }
     const rows: Array<{ channel: ChannelConfig; lines: LineEntry[] }> = [];
     for (const [channelId, lines] of grouped) {
+      if (!mergedChannelAllowed(channelId, config)) continue;
       const channel = channelMap.get(channelId);
       rows.push({
         channel: {
@@ -347,7 +379,7 @@ export async function renderSubscription(
           tvgId: channel?.tvg_id ?? undefined,
           logo: channel?.logo ?? undefined,
         },
-        lines,
+        lines: capMergedLines(channelId, lines, config),
       });
     }
     if (!rows.length) return null;

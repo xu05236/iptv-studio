@@ -275,6 +275,15 @@ export interface ResolvedChannel {
   created: boolean;
 }
 
+/** Stable id for a live-platform channel merged from one source (虎牙/斗鱼…). */
+export function mergedChannelId(sourceId: string): string {
+  return `x-mc-${sourceId}`;
+}
+
+export function isMergedChannelId(channelId: string): boolean {
+  return channelId.startsWith('x-mc-');
+}
+
 /**
  * Alias-first channel identity resolver.
  *

@@ -77,6 +77,8 @@ export interface SourceItem {
   feedbackOpen?: number;
   fetchMode?: string;
   allowInsecureTls?: boolean;
+  mergeChannelName?: string | null;
+  mergeChannelGroup?: string | null;
   fetchTimeoutMs?: number;
   fetchConcurrency?: number;
   fetchDelayMs?: number;
@@ -172,6 +174,10 @@ export interface SubscriptionItem {
   pool_ids?: string;
   poolIds?: string[];
   filter_mode?: string;
+  merged_mode?: string;
+  mergedMode?: string;
+  merged_max_lines?: number;
+  mergedMaxLines?: number;
   proxy_mode?: string;
   matchedChannels?: number | null;
   usage7d?: { requests: number; bytes: number } | null;
