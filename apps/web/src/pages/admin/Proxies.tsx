@@ -552,7 +552,7 @@ export function Proxies() {
                     <td data-label="名称">
                       <div className="row" style={{ gap: 8, alignItems: 'center' }}>
                         {node.id === proxies.data?.currentId ? <Badge tone="blue">当前</Badge> : null}
-                        <span>{node.name}</span>
+                        <span className="truncate" style={{ maxWidth: 190 }} title={node.name}>{node.name}</span>
                       </div>
                       <div className="caption truncate" style={{ maxWidth: 220 }}>
                         {node.subscriptionId ? (subscriptionNames.get(node.subscriptionId) ?? '订阅已删除') : '手动'}

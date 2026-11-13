@@ -1442,6 +1442,18 @@ button {
   vertical-align: middle;
 }
 
+.proxies-table tbody td {
+  overflow: hidden;
+}
+
+.proxies-table tbody td[data-label="操作"] {
+  overflow: visible;
+}
+
+.proxies-table tbody td[data-label="名称"] .row {
+  overflow: hidden;
+}
+
 .proxies-table tbody td[data-label="地址"] {
   white-space: normal;
 }
