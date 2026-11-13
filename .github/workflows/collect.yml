@@ -36,6 +36,9 @@ on:
       proxy_id:
         description: '代理测活只测指定代理 id（留空=全部启用）'
         default: ''
+      proxy_sub_id:
+        description: '代理测活只测指定订阅的节点（内部使用）'
+        default: ''
       sub_url:
         description: '代理拉取订阅的地址（内部使用）'
         default: ''
@@ -132,6 +135,7 @@ jobs:
           LINE_KEYS: ${{ github.event.inputs.line_keys || '' }}
           PROBE_PHASE: ${{ github.event.inputs.phase || '' }}
           PROXY_ID: ${{ github.event.inputs.proxy_id || '' }}
+          PROXY_SUB_ID: ${{ github.event.inputs.proxy_sub_id || '' }}
           SUB_URL: ${{ github.event.inputs.sub_url || '' }}
           SUB_ID: ${{ github.event.inputs.sub_id || '' }}
           USER_AGENT: ${{ github.event.inputs.user_agent || '' }}

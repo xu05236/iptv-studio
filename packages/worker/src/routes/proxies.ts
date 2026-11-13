@@ -305,6 +305,24 @@ proxyRoutes.post('/subscriptions/:id/refresh', async (c) => {
   return ok({ taskId: task.id });
 });
 
+proxyRoutes.post('/subscriptions/:id/check', async (c) => {
+  const id = c.req.param('id');
+  const sub = await getProxySubscription(c.env, id);
+  if (!sub) return fail('订阅源不存在', 404);
+  const nodes = await listProxyNodes(c.env);
+  if (!nodes.some((node) => node.enabled && node.subscriptionId === id)) return fail('该订阅没有可用节点', 409);
+  const task = await createTask(c.env, {
+    type: 'proxy-test',
+    source: 'manual',
+    priority: 80,
+    payload: { proxy_sub_id: id, proxy_sub_name: sub.name },
+    message: `代理测活 · ${sub.name}`,
+  });
+  await dispatchNext(c.env);
+  await audit(c.env, c.get('actor'), 'proxy_subscription.check', id, { taskId: task.id });
+  return ok({ taskId: task.id });
+});
+
 proxyRoutes.post('/pull-subscription', async (c) => {
   const body = (await readJson<{ url?: string; name?: string; userAgent?: string; mode?: string }>(c)) ?? {};
   const url = cleanText(body.url, 500);

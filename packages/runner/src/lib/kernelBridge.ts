@@ -257,23 +257,38 @@ function waitForPort(port: number, timeoutMs: number): Promise<void> {
   });
 }
 
+const binaryPromises = new Map<string, Promise<string>>();
+
 export async function ensureMihomoBinary(dir: string, options: { url?: string; sha256?: string } = {}): Promise<string> {
   const binary = path.join(dir, 'mihomo');
   mkdirSync(dir, { recursive: true });
   if (existsSync(binary)) return binary;
   const url = options.url ?? MIHOMO_DOWNLOAD_URL;
-  const response = await fetch(url, { headers: { 'user-agent': 'iptv-studio-kernel/1.0' } });
-  if (!response.ok) throw new Error(`下载 mihomo 失败：HTTP ${response.status}`);
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const data = buffer[0] === 0x1f && buffer[1] === 0x8b ? gunzipSync(buffer) : buffer;
-  const expected = options.sha256 ?? process.env.MIHOMO_SHA256 ?? '';
-  if (expected) {
-    const actual = createHash('sha256').update(data).digest('hex');
-    if (actual !== expected.toLowerCase()) throw new Error(`mihomo 校验失败：${actual}`);
+  // Several kernel nodes are probed concurrently; share one download so they
+  // cannot overwrite each other's half-written binary.
+  const key = `${binary}|${url}`;
+  const inflight = binaryPromises.get(key);
+  if (inflight) return inflight;
+  const task = (async () => {
+    const response = await fetch(url, { headers: { 'user-agent': 'iptv-studio-kernel/1.0' } });
+    if (!response.ok) throw new Error(`下载 mihomo 失败：HTTP ${response.status}`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const data = buffer[0] === 0x1f && buffer[1] === 0x8b ? gunzipSync(buffer) : buffer;
+    const expected = options.sha256 ?? process.env.MIHOMO_SHA256 ?? '';
+    if (expected) {
+      const actual = createHash('sha256').update(data).digest('hex');
+      if (actual !== expected.toLowerCase()) throw new Error(`mihomo 校验失败：${actual}`);
+    }
+    writeFileSync(binary, data);
+    chmodSync(binary, 0o755);
+    return binary;
+  })();
+  binaryPromises.set(key, task);
+  try {
+    return await task;
+  } finally {
+    binaryPromises.delete(key);
   }
-  writeFileSync(binary, data);
-  chmodSync(binary, 0o755);
-  return binary;
 }
 
 export interface KernelHandle {
@@ -282,24 +297,57 @@ export interface KernelHandle {
   stop: () => Promise<void>;
 }
 
+/** Let the OS pick a free port; each kernel process needs its own mixed port. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      server.close(() => (port ? resolve(port) : reject(new Error('没有可用端口'))));
+    });
+  });
+}
+
 /** Start mihomo for one node and wait until its mixed port accepts connections. */
 export async function startKernel(
   node: KernelNode,
   options: { dir?: string; mixedPort?: number; binary?: string; sha256?: string; startupTimeoutMs?: number } = {},
 ): Promise<KernelHandle> {
   const dir = options.dir ?? DEFAULT_KERNEL_DIR;
-  const port = options.mixedPort ?? 7890;
+  const port = options.mixedPort ?? (await freePort());
   const built = buildKernelConfig([node], port);
   if (!built.usable.length) throw new Error(built.warnings[0] ?? '节点配置不可用');
   const binary = options.binary ?? (await ensureMihomoBinary(dir, { sha256: options.sha256 }));
-  const configPath = path.join(dir, 'config.yaml');
+  // Per-port config/log files: concurrent probes in the same directory must not
+  // overwrite each other's config before mihomo reads it.
+  const configPath = path.join(dir, `config-${port}.yaml`);
   writeFileSync(configPath, built.yaml);
-  const logPath = path.join(dir, 'mihomo.log');
+  const logPath = path.join(dir, `mihomo-${port}.log`);
   const log = createWriteStream(logPath, { flags: 'a' });
+  let logClosed = false;
+  const writeLog = (chunk: Buffer) => {
+    if (logClosed) return;
+    try {
+      log.write(chunk);
+    } catch {
+      // A closed stream must never crash the whole probe run.
+    }
+  };
+  log.on('error', () => {
+    logClosed = true;
+  });
   const child = spawn(binary, ['-f', configPath], { stdio: ['ignore', 'pipe', 'pipe'] });
-  child.stdout?.on('data', (chunk: Buffer) => log.write(chunk));
-  child.stderr?.on('data', (chunk: Buffer) => log.write(chunk));
+  child.stdout?.on('data', writeLog);
+  child.stderr?.on('data', writeLog);
+  let stopped = false;
   const stop = async () => {
+    if (stopped) return;
+    stopped = true;
+    child.stdout?.removeListener('data', writeLog);
+    child.stderr?.removeListener('data', writeLog);
+    logClosed = true;
     log.end();
     if (child.exitCode !== null) return;
     child.kill('SIGTERM');
@@ -317,8 +365,9 @@ export async function startKernel(
   try {
     await waitForPort(port, options.startupTimeoutMs ?? 15_000);
   } catch (error) {
-    await stop();
+    // Read the log before closing the stream so the startup error survives.
     const logText = existsSync(logPath) ? readFileSync(logPath, 'utf8').slice(-800) : '';
+    await stop();
     throw new Error(`${error instanceof Error ? error.message : String(error)}${logText ? `：${logText}` : ''}`);
   }
   return { port, logPath, stop };

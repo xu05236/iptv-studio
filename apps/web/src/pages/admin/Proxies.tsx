@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, Globe2, Plus, RefreshCw, Save, Star, Trash2, Upload } from 'lucide-react';
+import { Activity, ArrowDown, ArrowUp, Globe2, Plus, RefreshCw, Save, Star, Trash2, Upload } from 'lucide-react';
 import type { AppSettings, ProxyNode } from '@iptv/core';
 import { api } from '../../lib/api';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
@@ -202,6 +202,19 @@ export function Proxies() {
     onError: (error) => show(error instanceof Error ? error.message : '删除失败', 'error'),
   });
 
+  const checkSubscription = useMutation({
+    mutationFn: (id: string) => api.post<{ taskId: string }>(`/api/admin/proxies/subscriptions/${id}/check`, {}),
+    onSuccess: () => {
+      show('已派发该订阅的代理测活');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'tasks'] });
+      window.setTimeout(() => {
+        void queryClient.invalidateQueries({ queryKey: ['admin', 'proxy-subs'] });
+        void queryClient.invalidateQueries({ queryKey: ['admin', 'proxies'] });
+      }, 8000);
+    },
+    onError: (error) => show(error instanceof Error ? error.message : '派发失败', 'error'),
+  });
+
   const patchProxy = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Record<string, unknown> }) =>
       api.patch<{ proxy: ProxyNode }>(`/api/admin/proxies/${id}`, patch),
@@ -365,6 +378,13 @@ export function Proxies() {
                   </div>
                 </div>
                 <div className="row" style={{ gap: 8 }}>
+                  <Button
+                    variant="ghost"
+                    loading={checkSubscription.isPending && checkSubscription.variables === sub.id}
+                    onClick={() => checkSubscription.mutate(sub.id)}
+                  >
+                    <Activity size={14} /> 测活
+                  </Button>
                   {sub.kind === 'file' ? null : (
                     <Button variant="ghost" loading={refreshSubscription.isPending} onClick={() => refreshSubscription.mutate(sub.id)}>
                       <RefreshCw size={14} /> 刷新

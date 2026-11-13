@@ -626,6 +626,7 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
     line_keys: next.payload.line_keys ?? '',
     phase: next.payload.phase ?? '',
     proxy_id: next.payload.proxy_id ?? '',
+    proxy_sub_id: next.payload.proxy_sub_id ?? '',
     sub_id: next.payload.sub_id ?? '',
     sub_url: next.payload.sub_url ?? '',
     user_agent: next.payload.user_agent ?? '',

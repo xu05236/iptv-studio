@@ -1119,11 +1119,14 @@ async function runProxyTest(): Promise<void> {
   try {
     const remote = await loadRemoteConfig(api);
     const { items } = await api.get<{
-      items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean; config?: string; engine?: string }>;
+      items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean; config?: string; engine?: string; subscriptionId?: string }>;
     }>('/api/admin/proxies?secrets=1');
     const only = (process.env.PROXY_ID ?? '').trim();
-    const nodes = items.filter((node) => node.enabled && (!only || node.id === only));
-    if (!nodes.length) throw new Error('没有可测活的代理（需启用）');
+    const onlySubscription = (process.env.PROXY_SUB_ID ?? '').trim();
+    const nodes = items.filter((node) => node.enabled
+      && (!only || node.id === only)
+      && (!onlySubscription || node.subscriptionId === onlySubscription));
+    if (!nodes.length) throw new Error(onlySubscription ? '该订阅没有可测活的节点（需启用）' : '没有可测活的代理（需启用）');
     const concurrency = Math.max(1, Math.min(10, Number(remote.settings.cnProbeConcurrency) || 5));
     const total = nodes.length;
     const queue = [...nodes];

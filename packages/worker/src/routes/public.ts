@@ -106,7 +106,11 @@ publicRoutes.get('/overview', async (c) => {
     return {
       ...run,
       task_type: task?.type ?? null,
-      task_label: task ? TASK_TYPE_LABEL[task.type] ?? task.type : null,
+      task_label: task
+        ? (task.type === 'proxy-test' && String(task.payload?.proxy_sub_name ?? '').trim()
+          ? `代理测活 · ${String(task.payload?.proxy_sub_name).trim()}`
+          : TASK_TYPE_LABEL[task.type] ?? task.type)
+        : null,
       task_message: task?.message ?? null,
     };
   });
