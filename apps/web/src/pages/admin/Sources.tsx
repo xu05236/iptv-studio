@@ -830,11 +830,11 @@ export function Sources() {
             <input className="input" type="number" min={0} value={refreshHours} onChange={(event) => setRefreshHours(event.target.value)} placeholder="留空（跟随分档）" />
           </Field>
           <div className="sheet-section">合并频道（直播平台）</div>
-          <Field label="合并到频道" hint="填了以后，这个源的所有线路都挂到同一个频道；留空保持一个频道一条线路。">
-            <input className="input" value={mergeChannelName} onChange={(event) => setMergeChannelName(event.target.value)} placeholder="例如 虎牙直播" />
+          <Field label="合并到频道" hint="填了以后，这个源的所有线路都挂到同一个频道；留空则每条线路名一个频道（同名多条线路归到该频道）。">
+            <input className="input" value={mergeChannelName} onChange={(event) => setMergeChannelName(event.target.value)} placeholder="留空 = 名称即频道（如 周星星）" />
           </Field>
-          <Field label="频道分类" hint="合并频道的分类；留空用「影视」。">
-            <input className="input" value={mergeChannelGroup} onChange={(event) => setMergeChannelGroup(event.target.value)} placeholder="影视" />
+          <Field label="频道分类" hint="合并频道或按线路名建频道时统一使用的分组，例如 虎牙频道；留空用源自带分组/影视。">
+            <input className="input" value={mergeChannelGroup} onChange={(event) => setMergeChannelGroup(event.target.value)} placeholder="例如 虎牙频道" />
           </Field>
           <div className="sheet-section">请求设置</div>
           <details className="stack">

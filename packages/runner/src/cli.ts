@@ -256,7 +256,10 @@ function normalize(
         if (!registry.get(id)) registry.addChannel({ id, name: mergeName, group });
         resolved = { id, name: mergeName, group, confidence: 1, created: false };
       } else {
-        resolved = registry.resolve(raw.name, { tvgId: raw.tvgId, group: raw.group });
+        // No merge name: keep the source's own line names as channels, but let
+        // the source force a shared group (e.g. 虎牙频道) for those channels.
+        const groupOverride = (source?.mergeChannelGroup ?? source?.merge_channel_group ?? '').trim();
+        resolved = registry.resolve(raw.name, { tvgId: raw.tvgId, group: groupOverride || raw.group });
       }
       const key = entryKey(item.source.id, urlKey);
       const old = previousByKey.get(`${item.source.id}|${urlKey}`);
