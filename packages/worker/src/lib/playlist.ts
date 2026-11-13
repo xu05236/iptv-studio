@@ -93,6 +93,32 @@ export function capMergedLines(channelId: string, lines: LineEntry[], config: Su
   return max > 0 && isMergedChannelId(channelId) ? lines.slice(0, max) : lines;
 }
 
+type MergedGroups = Map<string, string>;
+
+/**
+ * The pool snapshot is built from the channel table at publish time, but the
+ * merged channel's configured group can be overwritten by the source's line
+ * groups. Always prefer the channel table value for `x-mc-` channels.
+ */
+function mergedGroupOf(channelId: string, fallback: string, mergedGroups?: MergedGroups): string {
+  return isMergedChannelId(channelId) ? (mergedGroups?.get(channelId) ?? fallback) : fallback;
+}
+
+async function listMergedChannelGroups(env: Env): Promise<MergedGroups> {
+  const map: MergedGroups = new Map();
+  try {
+    const { results } = await env.DB.prepare("SELECT id, group_title FROM channels WHERE id LIKE 'x-mc-%'").all<{ id: string; group_title: string | null }>();
+    for (const row of results) if (row.group_title) map.set(row.id, row.group_title);
+  } catch {
+    // Channel table is D1-backed; ignore transient failures and fall back to snapshot groups.
+  }
+  return map;
+}
+
+function mergedGroupsVersion(mergedGroups: MergedGroups): string {
+  return [...mergedGroups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([id, group]) => `${id}:${group}`).join('|');
+}
+
 function cnFilter(line: LineEntry, config: SubscriptionConfig): boolean {
   // "包含国内可达线路" defaults on; turning it off exports only machine-reachable
   // lines (cnProbe marks domestic-only lines with cnReachable = true).
@@ -102,7 +128,7 @@ function cnFilter(line: LineEntry, config: SubscriptionConfig): boolean {
 export function buildFromCatalog(
   catalog: ExportCatalog,
   config: SubscriptionConfig,
-  options: { logoBaseUrl?: string | null; logoProxyBase?: string | null; epgUrl?: string | null },
+  options: { logoBaseUrl?: string | null; logoProxyBase?: string | null; epgUrl?: string | null; mergedGroups?: MergedGroups },
 ): { body: string; channels: number; lines: number } {
   const rows: Array<{ channel: ChannelConfig; lines: LineEntry[] }> = [];
   const allowedKeys = new Set(config.lineKeys ?? []);
@@ -123,7 +149,7 @@ export function buildFromCatalog(
     });
     const lines = capMergedLines(item.channel.id, selected, config);
     if (!lines.length) continue;
-    rows.push({ channel: item.channel, lines });
+    rows.push({ channel: { ...item.channel, group: mergedGroupOf(item.channel.id, item.channel.group, options.mergedGroups) }, lines });
   }
 
   const exportChannels = toExportChannels(rows, {
@@ -142,9 +168,9 @@ export function buildFromCatalog(
 }
 
 /** Strong ETag derived from catalog version + subscription configuration. */
-export function playlistEtag(catalog: ExportCatalog, config: SubscriptionConfig): string {
+export function playlistEtag(catalog: ExportCatalog, config: SubscriptionConfig, mergedVersion = ''): string {
   const fingerprint = hashId(
-    JSON.stringify([catalog.runId, config.updatedAt, config.groups, config.excludeGroups, config.channelIds, config.lineKeys, config.minResolution, config.minSpeedKbps, config.protocols, config.maxLinesPerChannel, config.mergedMode, config.mergedMaxLines, config.includeCnReachable !== false, config.showRegionSuffix, config.format, config.proxyMode]),
+    JSON.stringify([catalog.runId, config.updatedAt, config.groups, config.excludeGroups, config.channelIds, config.lineKeys, config.minResolution, config.minSpeedKbps, config.protocols, config.maxLinesPerChannel, config.mergedMode, config.mergedMaxLines, config.includeCnReachable !== false, config.showRegionSuffix, config.format, config.proxyMode, mergedVersion]),
     16,
   );
   return `W/"${catalog.runId}-${fingerprint}"`;
@@ -160,7 +186,7 @@ export function buildFromPool(
   snapshot: PoolSnapshot,
   overrides: LineOverrideRow[],
   config: SubscriptionConfig,
-  options: { logoBaseUrl?: string | null; logoProxyBase?: string | null; epgUrl?: string | null } = {},
+  options: { logoBaseUrl?: string | null; logoProxyBase?: string | null; epgUrl?: string | null; mergedGroups?: MergedGroups } = {},
   tombstoned: Set<string> = new Set(),
 ): { body: string; channels: number; lines: number } {
   const overrideMap = new Map(overrides.map((row) => [row.line_key, row.pool]));
@@ -170,7 +196,7 @@ export function buildFromPool(
     const channel: ChannelConfig = {
       id: entry.channel.id,
       name: entry.channel.name,
-      group: entry.channel.group,
+      group: mergedGroupOf(entry.channel.id, entry.channel.group, options.mergedGroups),
       tvgId: entry.channel.tvgId ?? undefined,
       logo: entry.channel.logo ?? undefined,
       aliases: [],
@@ -240,7 +266,7 @@ export function buildFromPools(
   overrides: LineOverrideRow[],
   config: SubscriptionConfig,
   customMembers: Map<string, Set<string>>,
-  options: { logoBaseUrl?: string | null; logoProxyBase?: string | null; epgUrl?: string | null } = {},
+  options: { logoBaseUrl?: string | null; logoProxyBase?: string | null; epgUrl?: string | null; mergedGroups?: MergedGroups } = {},
   tombstoned: Set<string> = new Set(),
 ): { body: string; channels: number; lines: number } {
   const selected = new Set(config.poolIds ?? []);
@@ -258,7 +284,7 @@ export function buildFromPools(
     const channel: ChannelConfig = {
       id: entry.channel.id,
       name: entry.channel.name,
-      group: entry.channel.group,
+      group: mergedGroupOf(entry.channel.id, entry.channel.group, options.mergedGroups),
       tvgId: entry.channel.tvgId ?? undefined,
       logo: entry.channel.logo ?? undefined,
       aliases: [],
@@ -319,11 +345,12 @@ export function poolEtag(
   config: SubscriptionConfig,
   tombstones: Array<{ created_at: string }> = [],
   customVersion = '',
+  mergedVersion = '',
 ): string {
   const overrideVersion = overrides.reduce((max, row) => (row.updated_at > max ? row.updated_at : max), '');
   const tombstoneVersion = tombstones.reduce((max, row) => (row.created_at > max ? row.created_at : max), '');
   const fingerprint = hashId(
-    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}:${(config.poolIds ?? []).join(',')}:${customVersion}:${config.proxyMode ?? 'direct'}:${config.format}:${config.filterMode ?? 'inherit'}:${config.groups.join(',')}:${config.excludeGroups.join(',')}:${(config.channelIds ?? []).join(',')}:${config.minResolution}:${config.minSpeedKbps}:${(config.protocols ?? []).join(',')}:${config.maxLinesPerChannel}:${config.mergedMode ?? 'inherit'}:${config.mergedMaxLines ?? 0}:${config.includeCnReachable !== false ? 1 : 0}:${config.showRegionSuffix ? 1 : 0}:${config.includeEpg ? 1 : 0}`,
+    `${snapshot.generatedAt}:${overrideVersion}:${tombstones.length}:${tombstoneVersion}:${config.updatedAt ?? ''}:${config.poolMode}:${(config.poolIds ?? []).join(',')}:${customVersion}:${mergedVersion}:${config.proxyMode ?? 'direct'}:${config.format}:${config.filterMode ?? 'inherit'}:${config.groups.join(',')}:${config.excludeGroups.join(',')}:${(config.channelIds ?? []).join(',')}:${config.minResolution}:${config.minSpeedKbps}:${(config.protocols ?? []).join(',')}:${config.maxLinesPerChannel}:${config.mergedMode ?? 'inherit'}:${config.mergedMaxLines ?? 0}:${config.includeCnReachable !== false ? 1 : 0}:${config.showRegionSuffix ? 1 : 0}:${config.includeEpg ? 1 : 0}`,
     16,
   );
   return `W/"pool-${fingerprint}"`;
@@ -336,6 +363,10 @@ export async function renderSubscription(
 ): Promise<{ body: string; etag: string; channels: number; lines: number } | null> {
   const epgUrl = config.includeEpg ? `${baseUrl}/epg/${config.token}.xml` : null;
   const logoProxyBase = `${baseUrl.replace(/\/+$/, '')}/api/public/logo`;
+  // Merged channels live under a fixed `x-mc-` id and a user-configured group.
+  // The snapshot may still carry the source's line group, so resolve it from D1.
+  const mergedGroups = await listMergedChannelGroups(env);
+  const mergedVersion = mergedGroupsVersion(mergedGroups);
   // F2: direct mode keeps raw URLs; playlist/full replace playable URLs with signed relay links.
   const finalize = async (result: { body: string; etag: string; channels: number; lines: number }) => {
     const mode = config.proxyMode ?? 'direct';
@@ -358,11 +389,11 @@ export async function renderSubscription(
         listLineTombstones(env),
         listCustomPoolMembers(env, customIds),
       ]);
-      const rendered = buildFromPools(snapshot, overrides, config, members, { epgUrl, logoProxyBase }, new Set(tombstones.map((row) => row.url)));
+      const rendered = buildFromPools(snapshot, overrides, config, members, { epgUrl, logoProxyBase, mergedGroups }, new Set(tombstones.map((row) => row.url)));
       const customVersion = customIds
         .map((id) => `${id}:${[...(members.get(id) ?? [])].sort().join(',')}`)
         .join('|');
-      return finalize({ ...rendered, etag: poolEtag(snapshot, overrides, config, tombstones, customVersion) });
+      return finalize({ ...rendered, etag: poolEtag(snapshot, overrides, config, tombstones, customVersion, mergedVersion) });
     }
   }
 
@@ -418,13 +449,13 @@ export async function renderSubscription(
     const snapshot = await loadPoolSnapshot(env);
     if (snapshot) {
       const [overrides, tombstones] = await Promise.all([listLineOverrides(env), listLineTombstones(env)]);
-      const rendered = buildFromPool(snapshot, overrides, config, { epgUrl, logoProxyBase }, new Set(tombstones.map((row) => row.url)));
-      return finalize({ ...rendered, etag: poolEtag(snapshot, overrides, config, tombstones) });
+      const rendered = buildFromPool(snapshot, overrides, config, { epgUrl, logoProxyBase, mergedGroups }, new Set(tombstones.map((row) => row.url)));
+      return finalize({ ...rendered, etag: poolEtag(snapshot, overrides, config, tombstones, '', mergedVersion) });
     }
   }
 
   const catalog = await loadCatalog(env);
   if (!catalog) return null;
-  const rendered = buildFromCatalog(catalog, config, { logoBaseUrl: undefined, epgUrl, logoProxyBase });
-  return finalize({ ...rendered, etag: playlistEtag(catalog, config) });
+  const rendered = buildFromCatalog(catalog, config, { logoBaseUrl: undefined, epgUrl, logoProxyBase, mergedGroups });
+  return finalize({ ...rendered, etag: playlistEtag(catalog, config, mergedVersion) });
 }

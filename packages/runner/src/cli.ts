@@ -25,6 +25,7 @@ import {
   lineSignature,
   pickDuplicateOwner,
   mergedChannelId,
+  isMergedChannelId,
   activeProbeProfile,
   type AppSettings,
   type ChannelConfig,
@@ -521,12 +522,27 @@ async function runExport(): Promise<void> {
 /** Build and persist the pool snapshot used by pool-driven subscriptions. */
 function poolSnapshotFor(remote: RemoteConfig, lines: LineEntry[], generatedAt: string) {
   const registry = buildRegistry(remote);
+  const mergedGroups = mergedGroupMap(remote);
   return buildPoolSnapshot({
     lines,
-    channels: registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: seed.group, tvgId: seed.tvgId, logo: seed.logo })),
+    channels: registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: poolChannelGroup(seed.id, seed.group, mergedGroups), tvgId: seed.tvgId, logo: seed.logo })),
     maxLinesPerChannel: remote.settings.maxLinesPerChannel,
     generatedAt,
   });
+}
+
+/** Merged channels (`x-mc-…`) must use the user-configured group, not the line group. */
+function mergedGroupMap(remote: RemoteConfig): Map<string, string> {
+  const groups = new Map<string, string>();
+  for (const source of remote.sources) {
+    if (!source.mergeChannelName) continue;
+    groups.set(mergedChannelId(source.id), source.mergeChannelGroup || '影视');
+  }
+  return groups;
+}
+
+function poolChannelGroup(id: string, fallback: string, mergedGroups: Map<string, string>): string {
+  return isMergedChannelId(id) ? (mergedGroups.get(id) ?? fallback) : fallback;
 }
 
 const LIVENESS_RETRY_MS = 6 * 3_600_000;
@@ -854,7 +870,7 @@ async function publishPhase(
   const logKey = await writeLog(store, runId, logger);
   const poolSnapshot = buildPoolSnapshot({
     lines,
-    channels: registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: seed.group, tvgId: seed.tvgId, logo: seed.logo })),
+    channels: registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: poolChannelGroup(seed.id, seed.group, mergedGroupMap(remote)), tvgId: seed.tvgId, logo: seed.logo })),
     maxLinesPerChannel: settings.maxLinesPerChannel,
     generatedAt: output.catalog.generatedAt,
   });
@@ -1701,7 +1717,7 @@ async function runLiveness(): Promise<void> {
     await saveLinesState(store, lines, generatedAt);
     const poolSnapshot = buildPoolSnapshot({
       lines,
-      channels: remote.channels.map((channel) => ({ id: channel.id, name: channel.name, group: channel.group_title ?? '其他', tvgId: channel.tvg_id, logo: channel.logo })),
+      channels: remote.channels.map((channel) => ({ id: channel.id, name: channel.name, group: poolChannelGroup(channel.id, channel.group_title ?? '其他', mergedGroupMap(remote)), tvgId: channel.tvg_id, logo: channel.logo })),
       maxLinesPerChannel: settings.maxLinesPerChannel,
       generatedAt,
     });
@@ -1809,7 +1825,7 @@ async function runSelectedProbes(): Promise<void> {
     await saveLinesState(store, lines, generatedAt);
     const poolSnapshot = buildPoolSnapshot({
       lines,
-      channels: remote.channels.map((channel) => ({ id: channel.id, name: channel.name, group: channel.group_title ?? '其他', tvgId: channel.tvg_id, logo: channel.logo })),
+      channels: remote.channels.map((channel) => ({ id: channel.id, name: channel.name, group: poolChannelGroup(channel.id, channel.group_title ?? '其他', mergedGroupMap(remote)), tvgId: channel.tvg_id, logo: channel.logo })),
       maxLinesPerChannel: settings.maxLinesPerChannel,
       generatedAt,
     });
