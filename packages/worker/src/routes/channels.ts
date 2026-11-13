@@ -18,6 +18,7 @@ import {
 } from '../db.js';
 import { fail, ok, readJson } from '../lib/http.js';
 import { loadChannelShard, loadIndex } from '../lib/catalog.js';
+import { loadLines } from '../lib/linesState.js';
 import { sourceMetaMap } from '../lib/source.js';
 import { countryOfGroup, countryRank } from '../lib/channelCountry.js';
 import type { ChannelRow } from '../db.js';
@@ -318,6 +319,8 @@ channelRoutes.post('/cleanup-empty', async (c) => {
   const index = await loadIndex(c.env);
   if (!index) return fail('频道索引尚未生成', 409);
   const active = new Set(index.channels.map((channel) => channel.id));
+  const state = await loadLines(c.env);
+  const referenced = new Set(state.lines.map((line) => line.channelId));
   const channels = await listChannels(c.env);
   const { results: aliasRows } = await c.env.DB.prepare(
     'SELECT channel_id, alias FROM aliases',
@@ -333,6 +336,7 @@ channelRoutes.post('/cleanup-empty', async (c) => {
   // stale channel when it has an additional, manually added alias.
   const candidates = channels.filter((channel) => {
     if (active.has(channel.id)) return false;
+    if (referenced.has(channel.id)) return false;
     const list = aliases.get(channel.id) ?? [];
     return list.every((alias) => alias === channel.name || alias === channel.tvg_id);
   });
@@ -346,6 +350,34 @@ channelRoutes.post('/cleanup-empty', async (c) => {
   }
   await audit(c.env, c.get('actor'), 'channel.cleanup_empty', 'all', { deleted: candidates.length, active: active.size });
   return ok({ deleted: candidates.length, kept: channels.length - candidates.length, active: active.size });
+});
+
+channelRoutes.post('/ensure', async (c) => {
+  const body = (await readJson<{ items?: Array<{ id?: string; name?: string; group?: string }> }>(c)) ?? {};
+  const items = (body.items ?? [])
+    .filter((item) => typeof item.id === 'string' && item.id.trim().startsWith('x-') && typeof item.name === 'string' && item.name.trim())
+    .slice(0, 5000)
+    .map((item) => ({ id: item.id!.trim(), name: item.name!.trim().slice(0, 120), group: (item.group ?? '').trim().slice(0, 60) || '其他' }));
+  if (!items.length) return ok({ created: 0, updated: 0, total: 0 });
+  const { results: existingRows } = await c.env.DB.prepare('SELECT id FROM channels').all<{ id: string }>();
+  const known = new Set(existingRows.map((row) => row.id));
+  let created = 0;
+  let updated = 0;
+  for (const item of items) {
+    if (!known.has(item.id)) {
+      await c.env.DB.prepare(
+        "INSERT INTO channels (id, name, group_title, enabled, updated_at) VALUES (?, ?, ?, 1, datetime('now'))",
+      ).bind(item.id, item.name, item.group).run();
+      created++;
+    } else {
+      await c.env.DB.prepare(
+        "UPDATE channels SET name = ?, group_title = ?, updated_at = datetime('now') WHERE id = ? AND (name <> ? OR COALESCE(group_title, '') <> ?)",
+      ).bind(item.name, item.group, item.id, item.name, item.group).run();
+      updated++;
+    }
+  }
+  await audit(c.env, c.get('actor'), 'channel.ensure', 'bulk', { created, updated });
+  return ok({ created, updated, total: items.length });
 });
 
 channelRoutes.get('/:id', async (c) => {

@@ -359,6 +359,11 @@ function normalize(
     if (removed.has(key)) continue;
     if (merged.has(key)) continue;
     if (!old.lastProbeAt && old.status === 'unknown') continue;
+    if (old.channelId.startsWith('x-mc-')) {
+      const source = sources.get(old.sourceId);
+      const mergeName = (source?.mergeChannelName ?? source?.merge_channel_name ?? '').trim();
+      if (!mergeName) continue;
+    }
     if (!withinRetention(old.lastSeenAt, nowMs, retentionDays)) continue;
     merged.set(key, old.retained ? old : { ...old, retained: true });
     diffFor(old.sourceId).retained++;
@@ -830,6 +835,33 @@ async function publishPhase(
   }
   if ('sourcesReport' in epg && epg.sourcesReport.length) {
     await store.put('state/epg-sources.json', JSON.stringify({ generatedAt: nowIso(), items: epg.sourcesReport }), 'application/json; charset=utf-8');
+  }
+
+  const knownChannels = new Set(remote.channels.map((channel) => channel.id));
+  const sourceById = new Map(remote.sources.map((source) => [source.id, source]));
+  const ensureItems = new Map<string, { id: string; name: string; group: string }>();
+  for (const line of lines) {
+    if (knownChannels.has(line.channelId)) continue;
+    const seed = registry.get(line.channelId);
+    if (!seed || !seed.id.startsWith('x-')) continue;
+    const source = sourceById.get(line.sourceId);
+    const groupOverride = (source?.mergeChannelGroup ?? (source as { merge_channel_group?: string } | undefined)?.merge_channel_group ?? '').trim();
+    ensureItems.set(seed.id, { id: seed.id, name: seed.name, group: groupOverride || seed.group || '其他' });
+  }
+  if (ensureItems.size) {
+    const ensured = await api.post<{ created: number; updated: number }>('/api/admin/channels/ensure', { items: [...ensureItems.values()] });
+    logger.info('补建频道', { ...ensured, total: ensureItems.size });
+    for (const item of ensureItems.values()) {
+      const seed = registry.get(item.id);
+      remote.channels.push({
+        id: item.id,
+        name: item.name,
+        tvg_id: seed?.tvgId ?? null,
+        group_title: item.group,
+        logo: seed?.logo ?? null,
+        enabled: 1,
+      } as unknown as (typeof remote.channels)[number]);
+    }
   }
 
   const output = buildArtifacts({
