@@ -103,6 +103,7 @@ describe('publish', () => {
       delete: async (key: string) => {
         delete written[key];
       },
+      getJson: async () => null,
     } as unknown as ArtifactStore;
 
     const registry = new ChannelRegistry(BUILTIN_CHANNELS);

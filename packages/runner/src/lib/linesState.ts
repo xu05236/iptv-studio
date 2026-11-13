@@ -46,7 +46,7 @@ export async function loadLinesState(store: ArtifactStore): Promise<LinesState> 
   return (await store.getJson<LinesState>(LINES_LEGACY_KEY)) ?? { lines: [] };
 }
 
-/** Write 8 gzip shards + manifest, then remove the legacy single value. */
+/** Write only changed gzip shards + manifest; drop the legacy value once. */
 export async function saveLinesState(store: ArtifactStore, lines: LineEntry[], generatedAt: string): Promise<void> {
   if (!lines.length) {
     // A zero-line state is almost always a failed read, not an intentional
@@ -54,10 +54,25 @@ export async function saveLinesState(store: ArtifactStore, lines: LineEntry[], g
     throw new Error('拒绝写入 0 条线路：疑似读取失败，已保留现有线路状态');
   }
   const { manifest, shards } = packLines(lines, generatedAt);
+  const previous = await store.getJson<LinesManifest>(LINES_MANIFEST_KEY).catch(() => null);
+  const previousByKey = new Map((previous?.shards ?? []).map((shard) => [shard.key, shard]));
+  let wroteShard = false;
   for (const shard of shards) {
+    const prev = previousByKey.get(shard.key);
+    if (prev && prev.hash && prev.hash === shard.hash && prev.count === shard.count) continue;
     const compressed = new Uint8Array(gzipSync(Buffer.from(shard.body)));
     await store.put(shard.key, compressed, 'application/json; charset=utf-8');
+    wroteShard = true;
+  }
+  if (!wroteShard && previous) {
+    // Reuse the old timestamp so an unchanged state produces an identical
+    // manifest and the API's etag check turns the write into a no-op.
+    manifest.generatedAt = previous.generatedAt;
+  }
+  if (previous?.legacyRemoved) manifest.legacyRemoved = true;
+  if (previous?.legacyRemoved !== true) {
+    await store.delete(LINES_LEGACY_KEY).catch(() => undefined);
+    manifest.legacyRemoved = true;
   }
   await store.put(LINES_MANIFEST_KEY, JSON.stringify(manifest), 'application/json; charset=utf-8');
-  await store.delete(LINES_LEGACY_KEY).catch(() => undefined);
 }

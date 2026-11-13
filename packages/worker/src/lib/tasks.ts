@@ -1,7 +1,7 @@
 import type { AppSettings } from '@iptv/core';
 import { DEFAULT_SETTINGS, activeProbeProfile } from '@iptv/core';
 import type { Env } from '../env.js';
-import { getJson } from './store.js';
+import { getJson, kvWriteBudget } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 import { cancelGithubRun, dispatchWorkflow, listWorkflowRuns } from './github.js';
 import { deletePlaceholderRun, finishPlaceholderRun, loadSettings, upsertPlaceholderRun } from '../db.js';
@@ -218,6 +218,10 @@ async function createTaskCore(
   env: Env,
   input: { type: string; source: TaskSource; priority?: number; payload?: Record<string, string>; total?: number; unit?: string; message?: string },
 ): Promise<Task> {
+  const budget = await kvWriteBudget(env);
+  if (budget.exhausted) {
+    throw new Error(`今日 KV 写入接近上限（${budget.limit} 次），已暂停新任务，UTC 00:00 后恢复`);
+  }
   const tasks = await loadTasks(env);
   // Scheduled tasks are deduplicated: one active task per type+phase.
   if (input.source === 'schedule') {

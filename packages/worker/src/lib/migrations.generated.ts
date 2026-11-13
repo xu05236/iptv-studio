@@ -33,5 +33,6 @@ export const MIGRATION_FILES: string[] = [
   "0032_source_progress.sql",
   "0033_sources_merge_channel.sql",
   "0034_subscription_merged.sql",
-  "0035_proxy_nodes.sql"
+  "0035_proxy_nodes.sql",
+  "0036_kv_write_counter.sql"
 ];

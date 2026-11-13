@@ -1,6 +1,6 @@
 import type { Env } from '../env.js';
 import { upsertRun } from '../db.js';
-import { deleteArtifact, deletePrefix, getJson, putArtifact } from './store.js';
+import { deleteArtifact, deletePrefix, getJson, putArtifact, reserveKvWrite } from './store.js';
 
 export interface SnapshotItem {
   id: string;
@@ -34,11 +34,38 @@ async function listSnapshotDirs(env: Env): Promise<string[]> {
   return [...dirs];
 }
 
-/** Delete snapshot directories that are no longer in the manifest. */
-export async function pruneSnapshotDirs(env: Env, keep: Set<string>): Promise<number> {
-  const stale = dirsToPrune(await listSnapshotDirs(env), keep);
-  for (const dir of stale) await deletePrefix(env, `state/snapshots/${dir}/`);
-  return stale.length;
+/** Cleanup is throttled so a large backlog does not burn the daily KV write budget. */
+export const SNAPSHOT_PRUNE_KEYS_PER_RUN = 40;
+
+/** Delete snapshot directories that are no longer in the manifest, up to `maxKeys` per run. */
+export async function pruneSnapshotDirs(
+  env: Env,
+  keep: Set<string>,
+  maxKeys = SNAPSHOT_PRUNE_KEYS_PER_RUN,
+): Promise<number> {
+  const stale = new Set(dirsToPrune(await listSnapshotDirs(env), keep));
+  if (!stale.size || maxKeys <= 0) return 0;
+  let deleted = 0;
+  let cursor: string | undefined;
+  for (let page = 0; page < 5; page++) {
+    const listing = await env.KV.list({ prefix: 'state/snapshots/', cursor, limit: 1000 });
+    for (const key of listing.keys) {
+      const rest = key.name.slice('state/snapshots/'.length);
+      const dir = rest.slice(0, rest.indexOf('/'));
+      if (!stale.has(dir)) continue;
+      try {
+        await reserveKvWrite(env);
+      } catch {
+        return deleted;
+      }
+      await env.KV.delete(key.name);
+      deleted++;
+      if (deleted >= maxKeys) return deleted;
+    }
+    if (listing.list_complete) break;
+    cursor = listing.cursor;
+  }
+  return deleted;
 }
 
 /** Create a rollback snapshot of the currently published artifacts. */

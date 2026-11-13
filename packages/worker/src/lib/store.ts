@@ -13,6 +13,54 @@ export interface ArtifactMeta {
 
 const MAX_VALUE_BYTES = 24 * 1024 * 1024; // KV hard limit is 25 MiB
 
+/** Free plan allows 1,000 KV writes/day; stop short so workers don't 500 mid-run. */
+export const KV_WRITE_DAILY_LIMIT = 900;
+
+function utcDay(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export interface KvWriteBudget {
+  day: string;
+  puts: number;
+  limit: number;
+  exhausted: boolean;
+}
+
+export async function kvWriteBudget(env: Env): Promise<KvWriteBudget> {
+  const day = utcDay();
+  try {
+    const row = await env.DB.prepare('SELECT puts FROM kv_write_counter WHERE day = ?')
+      .bind(day)
+      .first<{ puts: number }>();
+    const puts = row?.puts ?? 0;
+    return { day, puts, limit: KV_WRITE_DAILY_LIMIT, exhausted: puts >= KV_WRITE_DAILY_LIMIT };
+  } catch {
+    return { day, puts: 0, limit: KV_WRITE_DAILY_LIMIT, exhausted: false };
+  }
+}
+
+/** Count a KV write before doing it; throws once the daily budget is spent. */
+export async function reserveKvWrite(env: Env, count = 1): Promise<void> {
+  const day = utcDay();
+  try {
+    const row = await env.DB.prepare(
+      `INSERT INTO kv_write_counter (day, puts) VALUES (?, ?)
+       ON CONFLICT(day) DO UPDATE SET puts = puts + excluded.puts, updated_at = datetime('now')
+       RETURNING puts`,
+    )
+      .bind(day, count)
+      .first<{ puts: number }>();
+    if (row && row.puts > KV_WRITE_DAILY_LIMIT) {
+      throw new Error(`今日 KV 写入已达上限（${KV_WRITE_DAILY_LIMIT} 次），已暂停写入，UTC 00:00 后自动恢复`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('KV 写入已达上限')) throw error;
+    // Counter table missing (migration lag) or D1 hiccup: don't block writes
+    // the platform itself would still accept.
+  }
+}
+
 export interface ArtifactOptions {
   contentType?: string;
   maxAge?: number;
@@ -74,6 +122,7 @@ export async function putArtifact(
   if (existing.value) await existing.value.cancel().catch(() => undefined);
   const current = existing.metadata ?? undefined;
   if (current?.etag === etag && current.contentType === contentType) return current;
+  await reserveKvWrite(env);
   await env.KV.put(key, bytes, { metadata: meta });
   return meta;
 }
@@ -83,6 +132,7 @@ export async function getText(env: Env, key: string): Promise<string | null> {
 }
 
 export async function deleteArtifact(env: Env, key: string): Promise<void> {
+  await reserveKvWrite(env);
   await env.KV.delete(key);
 }
 

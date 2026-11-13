@@ -18,6 +18,8 @@ export interface LinesManifestShard {
   key: string;
   count: number;
   bytes: number;
+  /** Content hash; lets writers skip unchanged shards (KV puts are the scarce resource). */
+  hash?: string;
 }
 
 export interface LinesManifest {
@@ -26,6 +28,8 @@ export interface LinesManifest {
   total: number;
   shardCount: number;
   shards: LinesManifestShard[];
+  /** Set after the legacy single-value key has been deleted. */
+  legacyRemoved?: boolean;
 }
 
 export interface PackedShard {
@@ -33,6 +37,21 @@ export interface PackedShard {
   body: string;
   count: number;
   bytes: number;
+  hash: string;
+}
+
+/** Two seeded FNV-1a passes: cheap and collision-safe enough for shard skipping. */
+export function shardHash(body: string): string {
+  let first = 2166136261;
+  let second = 16777619;
+  for (let index = 0; index < body.length; index += 1) {
+    const code = body.charCodeAt(index);
+    first ^= code;
+    first = Math.imul(first, 16777619);
+    second ^= code;
+    second = Math.imul(second, 16777619);
+  }
+  return `${(first >>> 0).toString(16)}-${(second >>> 0).toString(16)}`;
 }
 
 export function lineShardIndex(key: string, shardCount = LINES_SHARD_COUNT): number {
@@ -74,15 +93,18 @@ export function packLines(
 
   const encoder = new TextEncoder();
   const shards: PackedShard[] = buckets.map((bucket, index) => {
-    const body = JSON.stringify({ generatedAt, lines: bucket });
-    return { key: lineShardKey(index), body, count: bucket.length, bytes: encoder.encode(body).byteLength };
+    // Deliberately no generatedAt here: it made every shard differ on every
+    // save, so the writer's etag/hash skip never worked and 8 puts were spent
+    // even when no line changed. The manifest keeps the timestamp instead.
+    const body = JSON.stringify({ lines: bucket });
+    return { key: lineShardKey(index), body, count: bucket.length, bytes: encoder.encode(body).byteLength, hash: shardHash(body) };
   });
   const manifest: LinesManifest = {
     version: LINES_FORMAT_VERSION,
     generatedAt,
     total: lines.length,
     shardCount,
-    shards: shards.map(({ key, count, bytes }) => ({ key, count, bytes })),
+    shards: shards.map(({ key, count, bytes, hash }) => ({ key, count, bytes, hash })),
   };
   return { manifest, shards };
 }

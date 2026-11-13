@@ -55,13 +55,24 @@ export async function loadLines(env: Env): Promise<LinesState> {
   return (await env.KV.get<LinesState>(LINES_LEGACY_KEY, 'json')) ?? { lines: [] };
 }
 
-/** Write gzip shards + manifest; drop the legacy value once shards exist. */
+/** Write only changed gzip shards + manifest; drop the legacy value once. */
 export async function saveLines(env: Env, lines: LineEntry[], generatedAt: string, options: { allowEmpty?: boolean } = {}): Promise<void> {
   if (!lines.length && !options.allowEmpty) throw new Error('拒绝写入 0 条线路：疑似读取失败，已保留现有线路状态');
   const { manifest, shards } = packLines(lines, generatedAt);
+  const previous = await env.KV.get<LinesManifest>(LINES_MANIFEST_KEY, 'json');
+  const previousByKey = new Map((previous?.shards ?? []).map((shard) => [shard.key, shard]));
+  let wroteShard = false;
   for (const shard of shards) {
+    const prev = previousByKey.get(shard.key);
+    if (prev && prev.hash && prev.hash === shard.hash && prev.count === shard.count) continue;
     await putArtifact(env, shard.key, await gzipBytes(shard.body), 'application/json; charset=utf-8');
+    wroteShard = true;
+  }
+  if (!wroteShard && previous) manifest.generatedAt = previous.generatedAt;
+  if (previous?.legacyRemoved) manifest.legacyRemoved = true;
+  if (previous?.legacyRemoved !== true) {
+    await deleteArtifact(env, LINES_LEGACY_KEY);
+    manifest.legacyRemoved = true;
   }
   await putArtifact(env, LINES_MANIFEST_KEY, JSON.stringify(manifest), 'application/json; charset=utf-8');
-  await deleteArtifact(env, LINES_LEGACY_KEY);
 }

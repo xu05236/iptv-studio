@@ -88,6 +88,25 @@ describe('lines state sharding', () => {
     expect(loaded.lines).toHaveLength(200);
   });
 
+  it('skips unchanged shards and keeps the manifest byte-identical', async () => {
+    const store = new MemoryStore();
+    const originalPut = store.put.bind(store);
+    const writes: string[] = [];
+    store.put = async (key: string, body: string | Uint8Array) => {
+      writes.push(key);
+      return originalPut(key, body);
+    };
+    const lines = Array.from({ length: 25 }, (_, index) =>
+      line({ key: `k${index}`, url: `http://a/${index}.m3u8`, urlKey: `http://a/${index}.m3u8` }),
+    );
+    await saveLinesState(store as unknown as ArtifactStore, lines, '2026-01-02T00:00:00Z');
+    const before = store.values.get(LINES_MANIFEST_KEY);
+    writes.length = 0;
+    await saveLinesState(store as unknown as ArtifactStore, lines, '2026-01-03T00:00:00Z');
+    expect(writes).toEqual([LINES_MANIFEST_KEY]);
+    expect(store.values.get(LINES_MANIFEST_KEY)).toBe(before);
+  });
+
   it('refuses to save an empty state so a failed read cannot wipe the pool', async () => {
     const store = new MemoryStore();
     await expect(saveLinesState(store as unknown as ArtifactStore, [], '2026-01-05T00:00:00Z')).rejects.toThrow('拒绝写入 0 条线路');
