@@ -356,7 +356,7 @@ channelRoutes.post('/ensure', async (c) => {
   const body = (await readJson<{ items?: Array<{ id?: string; name?: string; group?: string }> }>(c)) ?? {};
   const items = (body.items ?? [])
     .filter((item) => typeof item.id === 'string' && item.id.trim().startsWith('x-') && typeof item.name === 'string' && item.name.trim())
-    .slice(0, 5000)
+    .slice(0, 20000)
     .map((item) => ({ id: item.id!.trim(), name: item.name!.trim().slice(0, 120), group: (item.group ?? '').trim().slice(0, 60) || '其他' }));
   if (!items.length) return ok({ total: 0 });
   // One UPSERT per channel, batched into D1 `batch` calls. Sequential writes
