@@ -164,7 +164,7 @@ export function SourceDetail() {
         <Card><Stat value={<>{formatNumber(stats.rejected)}<Delta value={data.delta?.rejected ?? null} /></>} label="已淘汰" /></Card>
         <Card><Stat value={formatNumber(stats.tested)} label="已测过" /></Card>
       </div>
-      <div className="caption">可探测线路 = 可用 + 待测 + 待复测 + 已淘汰，只统计频道存在且非 rtsp/udp 的线路；另有 {formatNumber(stats.unmatched)} 条未匹配频道/不可探测（含在总数 {formatNumber(stats.total)} 里），未计入以上统计。变化值相对该源上一轮抓取（首次没有基线时不显示）。</div>
+      <div className="caption">可探测线路 = 可用 + 待测 + 待复测 + 已淘汰，只统计频道存在且非 rtsp/udp 的线路；另有 {formatNumber(stats.unmatched)} 条未匹配频道/不可探测（含在总数 {formatNumber(stats.total)} 里），未计入以上统计。变化值 = 当前值 − 本次抓取完成时值（之后的探测/合并也算）；首次没有基线时不显示。</div>
 
       <Card>
         <div className="card__header" style={{ padding: '2px 2px 12px' }}>

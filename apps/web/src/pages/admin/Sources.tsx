@@ -645,8 +645,8 @@ export function Sources() {
               <div className="source-card__stats">
                 <div><strong>{formatNumber(source.progress?.usableTotal ?? source.entry_count ?? 0)}<Delta value={delta?.total ?? null} /></strong><span>线路</span></div>
                 <div><strong>{formatNumber(source.alive_count ?? 0)}<Delta value={delta?.alive ?? null} /></strong><span>可用</span></div>
-                <div title="变化值相对该源上一轮抓取"><strong>{pendingDue}<Delta value={delta?.pending ?? null} /><em>/{pendingTotal}</em></strong><span>待测</span></div>
-                <div title="变化值相对该源上一轮抓取"><strong>{quarantineDue}<Delta value={delta?.quarantine ?? null} /><em>/{quarantineTotal}</em></strong><span>待复测</span></div>
+                <div title="相对本次抓取完成时的变化（之后的探测/合并也算）"><strong>{pendingDue}<Delta value={delta?.pending ?? null} /><em>/{pendingTotal}</em></strong><span>待测</span></div>
+                <div title="相对本次抓取完成时的变化（之后的探测/合并也算）"><strong>{quarantineDue}<Delta value={delta?.quarantine ?? null} /><em>/{quarantineTotal}</em></strong><span>待复测</span></div>
                 <div><strong>{formatNumber(source.progress?.rejectedTotal ?? 0)}<Delta value={delta?.rejected ?? null} /></strong><span>已淘汰</span></div>
               </div>
 

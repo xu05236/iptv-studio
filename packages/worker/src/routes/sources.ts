@@ -17,7 +17,7 @@ import { getText, putText } from '../lib/r2.js';
 import { getJson } from '../lib/store.js';
 import { loadLines } from '../lib/linesState.js';
 import { createTask, dispatchNext } from '../lib/tasks.js';
-import { deltaOf, listSourceProgress, parseDelta, PROGRESS_VERSION, saveSourceProgress, type SourceCounts } from '../lib/sourceProgress.js';
+import { deltaOf, listSourceProgress, PROGRESS_VERSION, saveSourceProgress, type SourceCounts } from '../lib/sourceProgress.js';
 
 export const sourceRoutes = new Hono<AppEnv>();
 
@@ -169,11 +169,12 @@ sourceRoutes.get('/', async (c) => {
     };
     const previous = progressRows.get(source.id);
     if (previous && previous.report_at === reportAt && (previous.version ?? 1) >= PROGRESS_VERSION) {
-      deltas.set(source.id, parseDelta(previous.delta));
+      // Same fetch round: show changes that happened after it (probes, merges),
+      // computed live so the badge never lags behind the counters.
+      deltas.set(source.id, deltaOf(current, previous));
     } else {
-      const delta = previous && (previous.version ?? 1) >= PROGRESS_VERSION ? deltaOf(current, previous) : null;
-      deltas.set(source.id, delta);
-      saves.push(saveSourceProgress(c.env, source.id, reportAt, current, delta));
+      deltas.set(source.id, null);
+      saves.push(saveSourceProgress(c.env, source.id, reportAt, current, null));
     }
   }
   if (saves.length) await Promise.all(saves);
@@ -434,10 +435,10 @@ sourceRoutes.get('/:id/detail', async (c) => {
       rejected: stats.rejected,
     };
     if (previous && previous.report_at === reportAt && (previous.version ?? 1) >= PROGRESS_VERSION) {
-      delta = parseDelta(previous.delta);
+      delta = deltaOf(counts, previous);
     } else {
-      delta = previous && (previous.version ?? 1) >= PROGRESS_VERSION ? deltaOf(counts, previous) : null;
-      await saveSourceProgress(c.env, id, reportAt, counts, delta);
+      delta = null;
+      await saveSourceProgress(c.env, id, reportAt, counts, null);
     }
   }
 
