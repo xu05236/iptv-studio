@@ -12,9 +12,13 @@ export interface SourceProgressRow extends SourceCounts {
   source_id: string;
   report_at: string;
   delta: string;
+  version: number;
 }
 
 export const ZERO_COUNTS: SourceCounts = { total: 0, alive: 0, pending: 0, quarantine: 0, rejected: 0 };
+
+/** Bumped whenever the count definition changes, so stale baselines are ignored. */
+export const PROGRESS_VERSION = 2;
 
 /** Difference between two probeable snapshots; null when there is no baseline yet. */
 export function deltaOf(current: SourceCounts, previous: SourceCounts | null): SourceCounts | null {
@@ -49,7 +53,7 @@ export async function listSourceProgress(env: Env): Promise<Map<string, SourcePr
   const map = new Map<string, SourceProgressRow>();
   try {
     const { results } = await env.DB.prepare(
-      'SELECT source_id, report_at, total, alive, pending, quarantine, rejected, delta FROM source_progress',
+      'SELECT source_id, report_at, total, alive, pending, quarantine, rejected, delta, version FROM source_progress',
     ).all<SourceProgressRow>();
     for (const row of results) map.set(row.source_id, row);
   } catch {
@@ -66,12 +70,12 @@ export async function saveSourceProgress(
   delta: SourceCounts | null,
 ): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO source_progress (source_id, report_at, total, alive, pending, quarantine, rejected, delta, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `INSERT INTO source_progress (source_id, report_at, total, alive, pending, quarantine, rejected, delta, version, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(source_id) DO UPDATE SET
        report_at = excluded.report_at, total = excluded.total, alive = excluded.alive,
        pending = excluded.pending, quarantine = excluded.quarantine, rejected = excluded.rejected,
-       delta = excluded.delta, updated_at = datetime('now')`,
+       delta = excluded.delta, version = excluded.version, updated_at = datetime('now')`,
   ).bind(
     sourceId,
     reportAt,
@@ -81,5 +85,6 @@ export async function saveSourceProgress(
     counts.quarantine,
     counts.rejected,
     JSON.stringify(delta ?? {}),
+    PROGRESS_VERSION,
   ).run();
 }

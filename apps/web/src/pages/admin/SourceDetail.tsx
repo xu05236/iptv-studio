@@ -21,7 +21,7 @@ interface HealthPoint {
 
 interface SourceDetailResponse {
   source: SourceItem;
-  stats: { total: number; alive: number; pending: number; quarantine: number; rejected: number; tested: number; dueQuarantine: number; duePending: number };
+  stats: { total: number; alive: number; pending: number; pendingAll?: number; quarantine: number; rejected: number; tested: number; dueQuarantine: number; duePending: number; usableTotal: number; unmatched: number };
   lastProbeAt: string | null;
   oldestAliveProbeAt: string | null;
   health: { days: number; points: HealthPoint[] };
@@ -157,14 +157,14 @@ export function SourceDetail() {
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
-        <Card><Stat value={<>{formatNumber(stats.total)}<Delta value={data.delta?.total ?? null} /></>} label="线路总数" /></Card>
+        <Card><Stat value={<>{formatNumber(stats.usableTotal)}<Delta value={data.delta?.total ?? null} /></>} label="可探测线路" /></Card>
         <Card><Stat value={<>{formatNumber(stats.alive)}<Delta value={data.delta?.alive ?? null} /></>} label="可用" /></Card>
         <Card><Stat value={<>{formatNumber(stats.pending)}<Delta value={data.delta?.pending ?? null} /></>} label="待测" /></Card>
         <Card><Stat value={<>{formatNumber(stats.quarantine)}<Delta value={data.delta?.quarantine ?? null} /></>} label="待复测" /></Card>
         <Card><Stat value={<>{formatNumber(stats.rejected)}<Delta value={data.delta?.rejected ?? null} /></>} label="已淘汰" /></Card>
         <Card><Stat value={formatNumber(stats.tested)} label="已测过" /></Card>
       </div>
-      <div className="caption">可用 / 待测 / 待复测 / 已淘汰只统计可探测线路（频道存在且非 rtsp/udp）；线路总数包含全部。变化值相对该源上一轮抓取（首次没有基线时不显示）。</div>
+      <div className="caption">可探测线路 = 可用 + 待测 + 待复测 + 已淘汰，只统计频道存在且非 rtsp/udp 的线路；另有 {formatNumber(stats.unmatched)} 条未匹配频道/不可探测（含在总数 {formatNumber(stats.total)} 里），未计入以上统计。变化值相对该源上一轮抓取（首次没有基线时不显示）。</div>
 
       <Card>
         <div className="card__header" style={{ padding: '2px 2px 12px' }}>

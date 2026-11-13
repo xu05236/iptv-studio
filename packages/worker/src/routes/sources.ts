@@ -17,7 +17,7 @@ import { getText, putText } from '../lib/r2.js';
 import { getJson } from '../lib/store.js';
 import { loadLines } from '../lib/linesState.js';
 import { createTask, dispatchNext } from '../lib/tasks.js';
-import { deltaOf, listSourceProgress, parseDelta, saveSourceProgress, type SourceCounts } from '../lib/sourceProgress.js';
+import { deltaOf, listSourceProgress, parseDelta, PROGRESS_VERSION, saveSourceProgress, type SourceCounts } from '../lib/sourceProgress.js';
 
 export const sourceRoutes = new Hono<AppEnv>();
 
@@ -101,10 +101,10 @@ sourceRoutes.get('/', async (c) => {
   const validChannels = new Set(channels.map((channel) => channel.id));
   const unprobeable = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
   const now = new Date();
-  const progress = new Map<string, { total: number; tested: number; alive: number; pending: number; pendingTotal: number; quarantine: number; quarantineTotal: number; rejected: number; rejectedTotal: number }>();
+  const progress = new Map<string, { total: number; tested: number; alive: number; pending: number; pendingTotal: number; quarantine: number; quarantineTotal: number; rejected: number; rejectedTotal: number; usableTotal: number; unmatched: number }>();
   const channelSets = new Map<string, Set<string>>();
   for (const line of state?.lines ?? []) {
-    const item = progress.get(line.sourceId) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0 };
+    const item = progress.get(line.sourceId) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0, usableTotal: 0, unmatched: 0 };
     item.total++;
     if (line.lastProbeAt || line.lastLivenessAt) item.tested++;
     const usable = validChannels.has(line.channelId) && !unprobeable.test(line.url);
@@ -127,6 +127,10 @@ sourceRoutes.get('/', async (c) => {
     }
     progress.set(line.sourceId, item);
   }
+  for (const item of progress.values()) {
+    item.usableTotal = item.alive + item.pendingTotal + item.quarantineTotal + item.rejectedTotal;
+    item.unmatched = Math.max(0, item.total - item.usableTotal);
+  }
 
   // Real deltas: compare this report with the probeable counts captured after
   // the source's previous fetch. Both sides now use the same definition, so a
@@ -144,17 +148,17 @@ sourceRoutes.get('/', async (c) => {
     }
     const item = progress.get(source.id);
     const current: SourceCounts = {
-      total: item?.total ?? 0,
+      total: item?.usableTotal ?? 0,
       alive: item?.alive ?? 0,
       pending: item?.pendingTotal ?? 0,
       quarantine: item?.quarantineTotal ?? 0,
       rejected: item?.rejectedTotal ?? 0,
     };
     const previous = progressRows.get(source.id);
-    if (previous && previous.report_at === reportAt) {
+    if (previous && previous.report_at === reportAt && (previous.version ?? 1) >= PROGRESS_VERSION) {
       deltas.set(source.id, parseDelta(previous.delta));
     } else {
-      const delta = deltaOf(current, previous ?? null);
+      const delta = previous && (previous.version ?? 1) >= PROGRESS_VERSION ? deltaOf(current, previous) : null;
       deltas.set(source.id, delta);
       saves.push(saveSourceProgress(c.env, source.id, reportAt, current, delta));
     }
@@ -178,7 +182,7 @@ sourceRoutes.get('/', async (c) => {
       mergeChannelGroup: source.merge_channel_group ?? null,
       ...parseReportOf(source),
       enabled: source.enabled === 1,
-      progress: { ...(progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0 }), channels: channelSets.get(source.id)?.size ?? 0 },
+      progress: { ...(progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0, usableTotal: 0, unmatched: 0 }), channels: channelSets.get(source.id)?.size ?? 0 },
       report: reportBySource.get(source.id) ?? null,
       delta: deltas.get(source.id) ?? null,
       feedbackOpen: feedbackOpen.get(source.id) ?? 0,
@@ -376,7 +380,7 @@ sourceRoutes.get('/:id/detail', async (c) => {
   const { results: channelRows } = await c.env.DB.prepare('SELECT id FROM channels').all<{ id: string }>();
   const validChannels = new Set(channelRows.map((row) => row.id));
   const unprobeable = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
-  const stats = { total: lines.length, alive: 0, pending: 0, quarantine: 0, rejected: 0, tested: 0, dueQuarantine: 0, duePending: 0 };
+  const stats = { total: lines.length, alive: 0, pending: 0, pendingAll: 0, quarantine: 0, rejected: 0, tested: 0, dueQuarantine: 0, duePending: 0, usableTotal: 0, unmatched: 0 };
   let lastProbeAt: string | null = null;
   let oldestAliveProbeAt: string | null = null;
   for (const line of lines) {
@@ -392,11 +396,16 @@ sourceRoutes.get('/:id/detail', async (c) => {
       if (isDueForProbe(line, 'normal', now)) stats.dueQuarantine++;
     } else if (line.status === 'dead') {
       stats.rejected++;
-    } else if (line.status === 'unknown' && !line.lastProbeAt) {
-      stats.pending++;
-      stats.duePending++;
+    } else if (line.status === 'unknown') {
+      stats.pendingAll++;
+      if (!line.lastProbeAt) {
+        stats.pending++;
+        stats.duePending++;
+      }
     }
   }
+  stats.usableTotal = stats.alive + stats.pendingAll + stats.quarantine + stats.rejected;
+  stats.unmatched = Math.max(0, stats.total - stats.usableTotal);
 
   const reportItem = (fetchReport?.sources ?? []).find((item) => item.sourceId === id) ?? null;
   const reportAt = reportItem && typeof reportItem.fetchedAt === 'string' ? reportItem.fetchedAt : null;
@@ -404,11 +413,18 @@ sourceRoutes.get('/:id/detail', async (c) => {
   if (reportAt) {
     const rows = await listSourceProgress(c.env);
     const previous = rows.get(id);
-    if (previous && previous.report_at === reportAt) {
+    const counts: SourceCounts = {
+      total: stats.usableTotal,
+      alive: stats.alive,
+      pending: stats.pendingAll,
+      quarantine: stats.quarantine,
+      rejected: stats.rejected,
+    };
+    if (previous && previous.report_at === reportAt && (previous.version ?? 1) >= PROGRESS_VERSION) {
       delta = parseDelta(previous.delta);
     } else {
-      delta = deltaOf(stats, previous ?? null);
-      await saveSourceProgress(c.env, id, reportAt, stats, delta);
+      delta = previous && (previous.version ?? 1) >= PROGRESS_VERSION ? deltaOf(counts, previous) : null;
+      await saveSourceProgress(c.env, id, reportAt, counts, delta);
     }
   }
 

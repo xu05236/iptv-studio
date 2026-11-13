@@ -602,6 +602,7 @@ export function Sources() {
           const cardTone = !source.enabled ? 'orange' : source.status === 'paused' ? 'orange' : source.status === 'degraded' || source.last_error ? 'red' : (source.alive_count ?? 0) > 0 ? 'green' : 'default';
           const report = source.report;
           const delta = source.delta ?? null;
+          const unmatched = source.progress?.unmatched ?? 0;
           const reportReused = report ? report.reused + report.skippedRejected : 0;
           const reportParsed = report ? (report.parsed ?? (report.added + reportReused + (report.skippedTombstoned ?? 0))) : 0;
           return (
@@ -642,7 +643,7 @@ export function Sources() {
               </div>
 
               <div className="source-card__stats">
-                <div><strong>{formatNumber(source.entry_count ?? 0)}<Delta value={delta?.total ?? null} /></strong><span>线路</span></div>
+                <div><strong>{formatNumber(source.progress?.usableTotal ?? source.entry_count ?? 0)}<Delta value={delta?.total ?? null} /></strong><span>线路</span></div>
                 <div><strong>{formatNumber(source.alive_count ?? 0)}<Delta value={delta?.alive ?? null} /></strong><span>可用</span></div>
                 <div title="变化值相对该源上一轮抓取"><strong>{pendingDue}<Delta value={delta?.pending ?? null} /><em>/{pendingTotal}</em></strong><span>待测</span></div>
                 <div title="变化值相对该源上一轮抓取"><strong>{quarantineDue}<Delta value={delta?.quarantine ?? null} /><em>/{quarantineTotal}</em></strong><span>待复测</span></div>
@@ -650,6 +651,9 @@ export function Sources() {
               </div>
 
               <div className="source-card__meta-lines">
+              {unmatched > 0 ? (
+                <div className="caption">另有 {formatNumber(unmatched)} 条未匹配频道/不可探测，未计入以上统计</div>
+              ) : null}
               <div className="source-card__meta">
                 更新 {timeAgo(source.last_fetch_at ?? source.last_ok_at)} · {source.refresh_hours != null && source.refresh_hours > 0 ? (source.refresh_hours % 24 === 0 ? `每 ${source.refresh_hours / 24} 天` : `每 ${source.refresh_hours}h`) : source.refresh_hours === 0 ? '不自动重抓' : '跟随分档（12/24/72h）'}
                 {source.region ? ` · ${source.region}${source.operator ?? ''}` : ''}

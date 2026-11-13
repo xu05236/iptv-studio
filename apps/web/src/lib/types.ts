@@ -82,7 +82,7 @@ export interface SourceItem {
   fetchTimeoutMs?: number;
   fetchConcurrency?: number;
   fetchDelayMs?: number;
-  progress?: { total: number; tested: number; alive: number; pending: number; pendingTotal?: number; quarantine: number; quarantineTotal?: number; rejected: number; rejectedTotal?: number; channels?: number };
+  progress?: { total: number; tested: number; alive: number; pending: number; pendingTotal?: number; quarantine: number; quarantineTotal?: number; rejected: number; rejectedTotal?: number; channels?: number; usableTotal?: number; unmatched?: number };
   report?: {
     fetchedAt?: string;
     parsed?: number;
