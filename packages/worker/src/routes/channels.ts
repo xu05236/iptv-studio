@@ -358,26 +358,19 @@ channelRoutes.post('/ensure', async (c) => {
     .filter((item) => typeof item.id === 'string' && item.id.trim().startsWith('x-') && typeof item.name === 'string' && item.name.trim())
     .slice(0, 5000)
     .map((item) => ({ id: item.id!.trim(), name: item.name!.trim().slice(0, 120), group: (item.group ?? '').trim().slice(0, 60) || '其他' }));
-  if (!items.length) return ok({ created: 0, updated: 0, total: 0 });
-  const { results: existingRows } = await c.env.DB.prepare('SELECT id FROM channels').all<{ id: string }>();
-  const known = new Set(existingRows.map((row) => row.id));
-  let created = 0;
-  let updated = 0;
-  for (const item of items) {
-    if (!known.has(item.id)) {
-      await c.env.DB.prepare(
-        "INSERT INTO channels (id, name, group_title, enabled, updated_at) VALUES (?, ?, ?, 1, datetime('now'))",
-      ).bind(item.id, item.name, item.group).run();
-      created++;
-    } else {
-      await c.env.DB.prepare(
-        "UPDATE channels SET name = ?, group_title = ?, updated_at = datetime('now') WHERE id = ? AND (name <> ? OR COALESCE(group_title, '') <> ?)",
-      ).bind(item.name, item.group, item.id, item.name, item.group).run();
-      updated++;
-    }
+  if (!items.length) return ok({ total: 0 });
+  // One UPSERT per channel, batched into D1 `batch` calls. Sequential writes
+  // take tens of seconds for a few thousand channels and time the publisher out.
+  const statements = items.map((item) =>
+    c.env.DB.prepare(
+      "INSERT INTO channels (id, name, group_title, enabled, updated_at) VALUES (?, ?, ?, 1, datetime('now')) ON CONFLICT(id) DO UPDATE SET name = excluded.name, group_title = excluded.group_title, updated_at = datetime('now')",
+    ).bind(item.id, item.name, item.group),
+  );
+  for (let offset = 0; offset < statements.length; offset += 50) {
+    await c.env.DB.batch(statements.slice(offset, offset + 50));
   }
-  await audit(c.env, c.get('actor'), 'channel.ensure', 'bulk', { created, updated });
-  return ok({ created, updated, total: items.length });
+  await audit(c.env, c.get('actor'), 'channel.ensure', 'bulk', { total: items.length });
+  return ok({ total: items.length });
 });
 
 channelRoutes.get('/:id', async (c) => {
