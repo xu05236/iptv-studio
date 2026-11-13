@@ -264,6 +264,8 @@ export interface Rule {
 
 export interface RuleMatch {
   groups?: string[];
+  /** Source-provided group on the line itself (before channel classification). */
+  lineGroups?: string[];
   namePattern?: string;
   channelPattern?: string;
   protocols?: Protocol[];

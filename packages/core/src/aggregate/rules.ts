@@ -3,7 +3,7 @@ import { qualityRank } from './merge.js';
 
 export interface RuleContext {
   channel: Pick<ChannelConfig, 'id' | 'name' | 'group' | 'tvgId'>;
-  line: Pick<LineEntry, 'name' | 'url' | 'protocol' | 'resolution' | 'speedKbps' | 'sourceId' | 'tags' | 'status'>;
+  line: Pick<LineEntry, 'name' | 'url' | 'group' | 'protocol' | 'resolution' | 'speedKbps' | 'sourceId' | 'tags' | 'status'>;
 }
 
 export interface CompiledRule {
@@ -23,6 +23,7 @@ export function compileRule(rule: Rule): CompiledRule | null {
   const nameRe = safeRegex(match.namePattern);
   const minRank = match.minResolution ? qualityRank(match.minResolution) : -1;
   const groups = match.groups?.map((group) => group.trim()).filter(Boolean) ?? [];
+  const lineGroups = match.lineGroups?.map((group) => group.trim()).filter(Boolean) ?? [];
   const protocols = match.protocols ?? [];
   const sourceIds = match.sourceIds ?? [];
   const tags = match.tags ?? [];
@@ -33,6 +34,7 @@ export function compileRule(rule: Rule): CompiledRule | null {
       const channel = context.channel;
       const line = context.line;
       if (groups.length && !groups.includes(channel.group)) return false;
+      if (lineGroups.length && !lineGroups.includes((line.group ?? '').trim())) return false;
       if (channelRe && !channelRe.test(channel.name)) return false;
       if (nameRe && !nameRe.test(line.name)) return false;
       if (protocols.length && !protocols.includes(line.protocol)) return false;
