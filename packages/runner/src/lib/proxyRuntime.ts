@@ -1,4 +1,4 @@
-import { probeKernelNode, startKernel, type KernelHandle } from './kernelBridge.js';
+import { probeKernelNode, startKernel, type ChainHop, type KernelHandle } from './kernelBridge.js';
 import { probeProxy, type ProxyProbeInput, type ProxyProbeResult } from './proxyFetch.js';
 
 /** Proxy row as returned by `/api/admin/proxies?secrets=1`. */
@@ -30,12 +30,15 @@ export function isUdpOnlyProxy(node: { protocol: string }): boolean {
 }
 
 /** Probe a plain proxy or, for kernel nodes, start mihomo briefly and probe through it. */
-export async function probeRuntimeProxy(node: RuntimeProxy): Promise<ProxyProbeResult> {
+export async function probeRuntimeProxy(node: RuntimeProxy, options: { hops?: ChainHop[] } = {}): Promise<ProxyProbeResult> {
   if (!isKernelProxy(node)) return probeProxy(node);
   if (!node.config?.trim()) {
     return { ok: false, latencyMs: 0, egressIp: '', country: '', asn: '', error: '内核节点缺少配置' };
   }
-  return probeKernelNode({ id: node.id, name: node.name ?? node.id, protocol: node.protocol, config: node.config });
+  return probeKernelNode(
+    { id: node.id, name: node.name ?? node.id, protocol: node.protocol, config: node.config },
+    { hops: options.hops },
+  );
 }
 
 /**

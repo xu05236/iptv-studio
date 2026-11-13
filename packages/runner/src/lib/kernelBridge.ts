@@ -196,14 +196,23 @@ function parseKernelNode(node: KernelNode): { yaml?: string; proxy?: Record<stri
   return { warning: `${node.name}：无法识别的配置格式` };
 }
 
+export interface ChainHop {
+  protocol: 'http' | 'socks5';
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+}
+
 /**
  * Build a single-node mihomo config. Each kernel test starts its own process so
  * the MATCH rule can pin one node without cross-node leakage.
  */
-export function buildKernelConfig(nodes: KernelNode[], mixedPort = 7890): KernelConfig {
+export function buildKernelConfig(nodes: KernelNode[], mixedPort = 7890, options: { hop?: ChainHop } = {}): KernelConfig {
   const usable: KernelNode[] = [];
   const warnings: string[] = [];
   const blocks: string[] = [];
+  const hop = options.hop;
   nodes.forEach((node, index) => {
     const parsed = parseKernelNode(node);
     if (parsed.warning) {
@@ -213,6 +222,7 @@ export function buildKernelConfig(nodes: KernelNode[], mixedPort = 7890): Kernel
     if (parsed.proxy) {
       const name = `node-${index}`;
       const lines = [`  - name: ${quoteYaml(name)}`];
+      if (hop) lines.push('    dialer-proxy: "hop"');
       for (const [key, value] of Object.entries(parsed.proxy)) {
         if (value === undefined || value === null || value === '') continue;
         if (typeof value === 'object') lines.push(`    ${key}: ${JSON.stringify(value)}`);
@@ -225,10 +235,21 @@ export function buildKernelConfig(nodes: KernelNode[], mixedPort = 7890): Kernel
       return;
     }
     if (parsed.yaml) {
-      blocks.push(parsed.yaml);
+      const yaml = hop ? parsed.yaml.replace(/^(\s*-\s*name:.*)$/m, '$1\n    dialer-proxy: "hop"') : parsed.yaml;
+      blocks.push(yaml);
       usable.push(node);
     }
   });
+  const hopBlock = hop
+    ? [
+        '  - name: "hop"',
+        `    type: ${hop.protocol === 'socks5' ? 'socks5' : 'http'}`,
+        `    server: ${quoteYaml(hop.host)}`,
+        `    port: ${hop.port}`,
+        ...(hop.username ? [`    username: ${quoteYaml(hop.username)}`] : []),
+        ...(hop.password ? [`    password: ${quoteYaml(hop.password)}`] : []),
+      ].join('\n')
+    : '';
   const rules = usable.length ? `rules:\n  - MATCH,${usable.length === 1 ? firstProxyName(blocks[0] ?? '') : 'node-0'}` : 'rules:\n  - MATCH,DIRECT';
   const yaml = [
     `mixed-port: ${mixedPort}`,
@@ -236,7 +257,7 @@ export function buildKernelConfig(nodes: KernelNode[], mixedPort = 7890): Kernel
     'mode: rule',
     'log-level: info',
     'proxies:',
-    blocks.join('\n'),
+    [hopBlock, blocks.join('\n')].filter(Boolean).join('\n'),
     rules,
   ].join('\n');
   return { yaml: `${yaml}\n`, usable, warnings };
@@ -321,11 +342,11 @@ function freePort(): Promise<number> {
 /** Start mihomo for one node and wait until its mixed port accepts connections. */
 export async function startKernel(
   node: KernelNode,
-  options: { dir?: string; mixedPort?: number; binary?: string; sha256?: string; startupTimeoutMs?: number } = {},
+  options: { dir?: string; mixedPort?: number; binary?: string; sha256?: string; startupTimeoutMs?: number; hop?: ChainHop } = {},
 ): Promise<KernelHandle> {
   const dir = options.dir ?? DEFAULT_KERNEL_DIR;
   const port = options.mixedPort ?? (await freePort());
-  const built = buildKernelConfig([node], port);
+  const built = buildKernelConfig([node], port, { hop: options.hop });
   if (!built.usable.length) throw new Error(built.warnings[0] ?? '节点配置不可用');
   const binary = options.binary ?? (await ensureMihomoBinary(dir, { sha256: options.sha256 }));
   // Per-port config/log files: concurrent probes in the same directory must not
@@ -382,7 +403,32 @@ export async function startKernel(
 }
 
 /** Probe one kernel-only node; the engine is started and stopped per node. */
-export async function probeKernelNode(node: KernelNode, options: { dir?: string; mixedPort?: number; startupTimeoutMs?: number } = {}): Promise<ProxyProbeResult> {
+export async function probeKernelNode(
+  node: KernelNode,
+  options: { dir?: string; mixedPort?: number; startupTimeoutMs?: number; hops?: ChainHop[]; maxHops?: number } = {},
+): Promise<ProxyProbeResult> {
+  // Some servers reject datacenter egress; retry through domestic hops first,
+  // then fall back to a direct probe so a bad hop never blocks the test.
+  const hops = (options.hops ?? []).filter((hop) => hop.host && hop.port).slice(0, Math.max(1, options.maxHops ?? 3));
+  const attempts: Array<ChainHop | null> = [...hops, null];
+  let last: ProxyProbeResult | null = null;
+  for (const hop of attempts) {
+    const result = await probeKernelOnce(node, {
+      dir: options.dir,
+      mixedPort: options.mixedPort,
+      startupTimeoutMs: options.startupTimeoutMs,
+      hop: hop ?? undefined,
+    });
+    if (result.ok) return result;
+    last = result;
+  }
+  return last ?? { ok: false, latencyMs: 0, egressIp: '', country: '', asn: '', error: '内核探测失败' };
+}
+
+async function probeKernelOnce(
+  node: KernelNode,
+  options: { dir?: string; mixedPort?: number; startupTimeoutMs?: number; hop?: ChainHop } = {},
+): Promise<ProxyProbeResult> {
   let kernel: KernelHandle | null = null;
   let result: ProxyProbeResult = { ok: false, latencyMs: 0, egressIp: '', country: '', asn: '', error: '内核未启动' };
   try {

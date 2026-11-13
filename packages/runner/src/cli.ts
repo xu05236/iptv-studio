@@ -1119,7 +1119,7 @@ async function runProxyTest(): Promise<void> {
   try {
     const remote = await loadRemoteConfig(api);
     const { items } = await api.get<{
-      items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean; config?: string; engine?: string; subscriptionId?: string }>;
+      items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean; config?: string; engine?: string; subscriptionId?: string; lastOkAt?: string | null; lastLatencyMs?: number | null }>;
     }>('/api/admin/proxies?secrets=1');
     const only = (process.env.PROXY_ID ?? '').trim();
     const onlySubscription = (process.env.PROXY_SUB_ID ?? '').trim();
@@ -1134,6 +1134,19 @@ async function runProxyTest(): Promise<void> {
         : (onlySubscription ? '该订阅没有可测活的节点（需启用）' : '没有可测活的代理（需启用）'));
     }
     const concurrency = Math.max(1, Math.min(10, Number(remote.settings.cnProbeConcurrency) || 5));
+    // Domestic HTTP/SOCKS endpoints already proven alive; kernel nodes chain
+    // through them because some servers reject datacenter egress.
+    const hops = items
+      .filter((node) => node.enabled && !node.kernelOnly && !isUdpOnlyProxy(node) && node.lastOkAt && (node.protocol === 'http' || node.protocol === 'socks5'))
+      .sort((a, b) => (a.lastLatencyMs ?? Number.MAX_SAFE_INTEGER) - (b.lastLatencyMs ?? Number.MAX_SAFE_INTEGER))
+      .slice(0, 3)
+      .map((node) => ({
+        protocol: node.protocol === 'socks5' ? ('socks5' as const) : ('http' as const),
+        host: node.host,
+        port: node.port,
+        username: node.username || undefined,
+        password: node.password || undefined,
+      }));
     const total = testable.length;
     const queue = [...testable];
     let skippedUdp = udpNodes.length;
@@ -1146,7 +1159,7 @@ async function runProxyTest(): Promise<void> {
       for (;;) {
         const node = queue.shift();
         if (!node) return;
-        const result = await probeRuntimeProxy(node);
+        const result = await probeRuntimeProxy(node, isKernelProxy(node) ? { hops } : {});
         if (result.ok) {
           ok += 1;
           if (isKernelProxy(node)) kernelOk += 1;
