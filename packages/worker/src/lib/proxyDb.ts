@@ -13,6 +13,8 @@ interface ProxyRow {
   isp: string;
   enabled: number;
   kernel_only: number;
+  engine: string;
+  config_enc: string;
   sort_score: number;
   last_ok_at: string | null;
   last_checked_at: string | null;
@@ -38,6 +40,8 @@ function toNode(row: ProxyRow): ProxyNode {
     isp: row.isp,
     enabled: row.enabled === 1,
     kernelOnly: row.kernel_only === 1,
+    engine: row.engine || undefined,
+    hasConfig: Boolean(row.config_enc),
     sortScore: row.sort_score,
     lastOkAt: row.last_ok_at,
     lastCheckedAt: row.last_checked_at,
@@ -53,7 +57,7 @@ function toNode(row: ProxyRow): ProxyNode {
 
 export async function listProxyNodes(env: Env): Promise<ProxyNode[]> {
   const { results } = await env.DB.prepare(
-    `SELECT id, name, protocol, host, port, username, password_enc, region, isp, enabled, kernel_only, sort_score,
+    `SELECT id, name, protocol, host, port, username, password_enc, region, isp, enabled, kernel_only, engine, config_enc, sort_score,
             last_ok_at, last_checked_at, last_latency_ms, last_error, last_egress_ip, last_country, last_asn,
             success_count, fail_count
      FROM proxy_nodes
@@ -77,13 +81,15 @@ export interface NewProxyInput {
   region?: string;
   isp?: string;
   kernelOnly?: boolean;
+  engine?: string;
+  configEnc?: string;
 }
 
 export async function insertProxyNode(env: Env, input: NewProxyInput): Promise<ProxyNode> {
   const id = `proxy-${crypto.randomUUID().slice(0, 8)}`;
   await env.DB.prepare(
-    `INSERT INTO proxy_nodes (id, name, protocol, host, port, username, password_enc, region, isp, kernel_only, sort_score)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    `INSERT INTO proxy_nodes (id, name, protocol, host, port, username, password_enc, region, isp, kernel_only, engine, config_enc, sort_score)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
   ).bind(
     id,
     input.name,
@@ -95,6 +101,8 @@ export async function insertProxyNode(env: Env, input: NewProxyInput): Promise<P
     input.region ?? '',
     input.isp ?? '',
     input.kernelOnly ? 1 : 0,
+    input.engine ?? '',
+    input.configEnc ?? '',
   ).run();
   const created = await getProxyNode(env, id);
   if (!created) throw new Error('新建代理失败');
@@ -104,7 +112,7 @@ export async function insertProxyNode(env: Env, input: NewProxyInput): Promise<P
 export async function updateProxyNode(
   env: Env,
   id: string,
-  patch: Partial<Pick<ProxyNode, 'name' | 'protocol' | 'host' | 'port' | 'username' | 'region' | 'isp' | 'enabled' | 'kernelOnly' | 'sortScore'>> & { passwordEnc?: string },
+  patch: Partial<Pick<ProxyNode, 'name' | 'protocol' | 'host' | 'port' | 'username' | 'region' | 'isp' | 'enabled' | 'kernelOnly' | 'sortScore'>> & { passwordEnc?: string; configEnc?: string; engine?: string },
 ): Promise<boolean> {
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -118,6 +126,8 @@ export async function updateProxyNode(
   if (patch.port !== undefined) push('port', patch.port);
   if (patch.username !== undefined) push('username', patch.username);
   if (patch.passwordEnc !== undefined) push('password_enc', patch.passwordEnc);
+  if (patch.engine !== undefined) push('engine', patch.engine);
+  if (patch.configEnc !== undefined) push('config_enc', patch.configEnc);
   if (patch.region !== undefined) push('region', patch.region);
   if (patch.isp !== undefined) push('isp', patch.isp);
   if (patch.enabled !== undefined) push('enabled', patch.enabled ? 1 : 0);

@@ -22,6 +22,13 @@ describe('proxyCrypto', () => {
     expect(await decryptProxyPassword(env, `${blob.slice(0, -4)}AAAA`)).toBe('');
   });
 
+  it('round-trips a long node config used by kernel protocols', async () => {
+    const config = JSON.stringify({ type: 'vmess', name: '节点', server: '1.2.3.4', port: 443, uuid: 'x'.repeat(2000), ws: { path: '/' } });
+    const blob = await encryptProxyPassword(env, config);
+    expect(blob).not.toContain('1.2.3.4');
+    expect(await decryptProxyPassword(env, blob)).toBe(config);
+  });
+
   it('masks the presence of a stored password', () => {
     expect(maskProxyPassword('')).toBe('');
     expect(maskProxyPassword('encrypted')).toBe('******');

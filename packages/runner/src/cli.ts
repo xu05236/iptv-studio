@@ -47,6 +47,7 @@ import { buildGuide, collectEpg, guideIsFresh, mergeGuideFallback, type StoredGu
 import { loadLogoPacks } from './pipeline/logoFiles.js';
 import { loadLinesState, saveLinesState } from './lib/linesState.js';
 import { fetchViaProxy, probeProxy } from './lib/proxyFetch.js';
+import { activateRuntimeProxy, isKernelProxy, probeRuntimeProxy } from './lib/proxyRuntime.js';
 import { buildProxyAgent, probeCnUrl } from './pipeline/cnProbe.js';
 import { prefilterLiveness } from './pipeline/liveness.js';
 import { publishSubscriptions } from './pipeline/subscriptions.js';
@@ -1118,29 +1119,33 @@ async function runProxyTest(): Promise<void> {
   try {
     const remote = await loadRemoteConfig(api);
     const { items } = await api.get<{
-      items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean }>;
+      items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean; config?: string; engine?: string }>;
     }>('/api/admin/proxies?secrets=1');
     const only = (process.env.PROXY_ID ?? '').trim();
-    const nodes = items.filter((node) => node.enabled && !node.kernelOnly && (!only || node.id === only));
-    if (!nodes.length) throw new Error('没有可测活的代理（需启用且非内核协议）');
+    const nodes = items.filter((node) => node.enabled && (!only || node.id === only));
+    if (!nodes.length) throw new Error('没有可测活的代理（需启用）');
     const concurrency = Math.max(1, Math.min(10, Number(remote.settings.cnProbeConcurrency) || 5));
     const total = nodes.length;
     const queue = [...nodes];
     let done = 0;
     let ok = 0;
+    let kernelOk = 0;
     logger.info('开始代理测活', { total, concurrency });
     await reportTaskProgress(api, 0, total, `代理测活 0/${total}`, true);
     const workers = Array.from({ length: Math.min(concurrency, total) }, async () => {
       for (;;) {
         const node = queue.shift();
         if (!node) return;
-        const result = await probeProxy(node);
-        if (result.ok) ok += 1;
+        const result = await probeRuntimeProxy(node);
+        if (result.ok) {
+          ok += 1;
+          if (isKernelProxy(node)) kernelOk += 1;
+        }
         await api.post(`/api/admin/proxies/${node.id}/check`, result).catch((error) => {
           logger.warn('写入测活结果失败', { proxy: node.name, error: error instanceof Error ? error.message : String(error) });
         });
         done += 1;
-        await reportTaskProgress(api, done, total, `代理测活 ${done}/${total} · 成功 ${ok}`, true);
+        await reportTaskProgress(api, done, total, `代理测活 ${done}/${total} · 成功 ${ok}${kernelOk ? ` · 内核 ${kernelOk}` : ''}`, true);
       }
     });
     await Promise.all(workers);
@@ -1192,28 +1197,37 @@ async function runProxyFetchSub(): Promise<void> {
       used = 'Actions 出口';
     } else {
       const { items } = await api.get<{
-        items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean; lastOkAt: string | null }>;
+        items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean; config?: string; engine?: string; lastOkAt: string | null }>;
       }>('/api/admin/proxies?secrets=1');
-      const candidates = items
+      // Plain proxies are fast to try; kernel nodes start mihomo, so keep them last.
+      const plain = items
         .filter((node) => node.enabled && !node.kernelOnly && (!proxyId || node.id === proxyId))
         .sort((a, b) => (b.lastOkAt ?? '').localeCompare(a.lastOkAt ?? ''));
+      const kernel = items
+        .filter((node) => node.enabled && node.kernelOnly && (!proxyId || node.id === proxyId))
+        .sort((a, b) => (b.lastOkAt ?? '').localeCompare(a.lastOkAt ?? ''));
+      const candidates = [...plain, ...kernel];
       if (!candidates.length) throw new Error('没有可用代理，请先测活至少一个');
       await reportTaskProgress(api, 0, 1, `代理拉取订阅 · 预检 ${candidates[0].name}`, true);
       let lastError = '';
-      for (const node of candidates.slice(0, 3)) {
-        const probe = await probeProxy(node);
+      for (const node of candidates.slice(0, 6)) {
+        const probe = await probeRuntimeProxy(node);
         await api.post(`/api/admin/proxies/${node.id}/check`, probe).catch(() => undefined);
         if (!probe.ok) {
           lastError = `${node.name}: ${probe.error}`;
           continue;
         }
+        let active: Awaited<ReturnType<typeof activateRuntimeProxy>> | null = null;
         try {
-          const response = await fetchViaProxy(url, node, { userAgent, timeoutMs: 20_000 });
+          active = await activateRuntimeProxy(node);
+          const response = await fetchViaProxy(url, active.proxy, { userAgent, timeoutMs: 30_000 });
           text = response.body;
-          used = `${node.name}（出口 ${probe.egressIp || '未知'}）`;
+          used = `${node.name}${active.kernelOnly ? '（内核）' : ''}（出口 ${probe.egressIp || '未知'}）`;
           break;
         } catch (error) {
           lastError = `${node.name}: ${error instanceof Error ? error.message : String(error)}`;
+        } finally {
+          await active?.stop();
         }
       }
       if (!text.trim()) throw new Error(`没有代理能拉取订阅：${lastError}`);
@@ -1251,14 +1265,15 @@ async function runCnProbe(): Promise<void> {
     const settings = remote.settings;
     const sourceNames = new Map(remote.sources.map((source) => [source.id, source.name]));
     const { items } = await api.get<{
-      items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean }>;
+      items: Array<{ id: string; name: string; protocol: string; host: string; port: number; username: string; password?: string; enabled: boolean; kernelOnly: boolean; config?: string; engine?: string }>;
     }>('/api/admin/proxies?secrets=1');
-    const usable = items.filter((node) => node.enabled && !node.kernelOnly);
+    const usable = items.filter((node) => node.enabled);
     if (!usable.length) throw new Error('没有启用的国内代理，无法补测');
-    // Prefer the current proxy (list is already ordered); fall back to trying all.
+    // Plain proxies are cheap to precheck; kernel nodes start mihomo, so try them last.
+    const ordered = [...usable].sort((left, right) => Number(isKernelProxy(left)) - Number(isKernelProxy(right)));
     let chosen: (typeof usable)[number] | null = null;
-    for (const node of usable) {
-      const result = await probeProxy(node);
+    for (const node of ordered) {
+      const result = await probeRuntimeProxy(node);
       await api.post(`/api/admin/proxies/${node.id}/check`, result).catch(() => undefined);
       if (result.ok) {
         chosen = node;
@@ -1266,8 +1281,10 @@ async function runCnProbe(): Promise<void> {
       }
     }
     if (!chosen) throw new Error('所有国内代理都不可用，补测中止');
-    logger.info('补测代理已选定', { proxy: chosen.name });
-    const agent = buildProxyAgent(chosen);
+    const active = await activateRuntimeProxy(chosen);
+    try {
+      logger.info('补测代理已选定', { proxy: chosen.name, kernel: active.kernelOnly });
+      const agent = buildProxyAgent(active.proxy);
     const previous = await loadLinesState(store);
     const lines = previous?.lines ?? [];
     const now = Date.now();
@@ -1346,7 +1363,7 @@ async function runCnProbe(): Promise<void> {
       api,
       selected.length,
       selected.length,
-      `国内补测完成 · ${selected.length} 条 · 成功 ${ok}${sourceSummary ? ` · 来源：${sourceSummary}` : ''}`,
+      `国内补测完成 · ${selected.length} 条 · 成功 ${ok}${active.kernelOnly ? ' · 内核' : ''}${sourceSummary ? ` · 来源：${sourceSummary}` : ''}`,
       true,
     );
     await saveLinesState(store, lines, nowIso());
@@ -1355,7 +1372,10 @@ async function runCnProbe(): Promise<void> {
       sources: bySource.size, channels: 0, lines: selected.length, alive: ok, dead: 0, probed: selected.length, bytes: 0,
       durationMs: Date.now() - startedMs, warnings: [],
     });
-    logger.info('国内补测完成', { tested: selected.length, ok, proxy: chosen.name });
+    logger.info('国内补测完成', { tested: selected.length, ok, proxy: chosen.name, kernel: active.kernelOnly });
+    } finally {
+      await active.stop();
+    }
   } catch (error) {
     await finishRun(api, {
       id: runId, trigger: 'manual', status: 'failed', startedAt, finishedAt: nowIso(),

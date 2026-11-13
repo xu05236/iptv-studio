@@ -62,14 +62,19 @@ proxyRoutes.get('/', async (c) => {
   const sort = (SORTS as readonly string[]).includes(rawSort) ? (rawSort as ProxySort) : 'default';
   const items = sortProxyNodes(loaded, sort, currentId);
   if (c.req.query('secrets') !== '1') return ok({ items, currentId });
-  // Runner-only view: the probe client needs the plaintext password to authenticate.
-  const { results } = await c.env.DB.prepare('SELECT id, password_enc FROM proxy_nodes').all<{ id: string; password_enc: string }>();
-  const secretById = new Map(results.map((row) => [row.id, row.password_enc]));
+  // Runner-only view: the probe client needs the plaintext password/config to
+  // authenticate, and kernel-only nodes need their original config to start the engine.
+  const { results } = await c.env.DB.prepare('SELECT id, password_enc, config_enc FROM proxy_nodes').all<{ id: string; password_enc: string; config_enc: string }>();
+  const secretById = new Map(results.map((row) => [row.id, row]));
   const withSecrets = await Promise.all(
-    items.map(async (node) => ({
-      ...node,
-      password: secretById.get(node.id) ? await decryptProxyPassword(c.env, secretById.get(node.id)!) : '',
-    })),
+    items.map(async (node) => {
+      const secrets = secretById.get(node.id);
+      return {
+        ...node,
+        password: secrets?.password_enc ? await decryptProxyPassword(c.env, secrets.password_enc) : '',
+        config: secrets?.config_enc ? await decryptProxyPassword(c.env, secrets.config_enc) : '',
+      };
+    }),
   );
   return ok({ items: withSecrets, currentId });
 });
@@ -83,6 +88,7 @@ proxyRoutes.post('/', async (c) => {
   const port = validPort(body.port);
   if (!host || !port) return fail('请填写有效的服务器地址和端口');
   const password = cleanText(body.password, 200);
+  const config = cleanText(body.config, 65_536);
   const node = await insertProxyNode(c.env, {
     name,
     protocol,
@@ -93,6 +99,8 @@ proxyRoutes.post('/', async (c) => {
     region: cleanText(body.region, 40),
     isp: cleanText(body.isp, 40),
     kernelOnly: KERNEL.has(protocol),
+    engine: KERNEL.has(protocol) ? (cleanText(body.engine, 20) || 'mihomo') : '',
+    configEnc: config ? await encryptProxyPassword(c.env, config) : '',
   });
   await audit(c.env, c.get('actor'), 'proxy.create', node.id, { protocol, host, port });
   return ok({ proxy: node });
@@ -150,6 +158,7 @@ proxyRoutes.post('/import', async (c) => {
       continue;
     }
     const passwordEnc = node.password ? await encryptProxyPassword(c.env, node.password) : '';
+    const configEnc = node.config ? await encryptProxyPassword(c.env, node.config) : '';
     await insertProxyNode(c.env, {
       name: node.name || `${node.protocol}-${node.host}`,
       protocol: node.protocol,
@@ -158,6 +167,8 @@ proxyRoutes.post('/import', async (c) => {
       username: node.username,
       passwordEnc,
       kernelOnly: node.kernelOnly,
+      engine: node.kernelOnly ? 'mihomo' : '',
+      configEnc,
     });
     existing.add(key);
     added += 1;
@@ -250,6 +261,12 @@ proxyRoutes.patch('/:id', async (c) => {
   if (body.password !== undefined) {
     const password = cleanText(body.password, 200);
     patch.passwordEnc = password ? await encryptProxyPassword(c.env, password) : '';
+  }
+  if (body.config !== undefined) {
+    const config = cleanText(body.config, 65_536);
+    patch.configEnc = config ? await encryptProxyPassword(c.env, config) : '';
+    if (patch.protocol) patch.engine = KERNEL.has(patch.protocol) ? (cleanText(body.engine, 20) || 'mihomo') : '';
+    else if (body.engine !== undefined) patch.engine = cleanText(body.engine, 20);
   }
   await updateProxyNode(c.env, id, patch);
   await audit(c.env, c.get('actor'), 'proxy.update', id, { changed: Object.keys(patch) });

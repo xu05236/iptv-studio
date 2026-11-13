@@ -8,6 +8,8 @@ export interface ParsedProxy {
   username: string;
   password: string;
   kernelOnly: boolean;
+  /** Original node config (raw YAML block / JSON / URI) kept for kernel protocols. */
+  config?: string;
 }
 
 export interface ProxyParseResult {
@@ -53,6 +55,7 @@ export function parseProxyUri(raw: string): ParsedProxy | null {
     node.port = Number(url.port) || 0;
     node.username = decodeURIComponent(url.username || '');
     node.password = decodeURIComponent(url.password || '');
+    if (node.kernelOnly) node.config = text;
     return node;
   } catch {
     return null;
@@ -90,18 +93,23 @@ function nodeFromRecord(record: Record<string, unknown>, fallbackName: string): 
   const rawType = String(record.type ?? record.protocol ?? '');
   const protocol = normalizeProtocol(rawType);
   if (!protocol) return null;
-  const node = emptyNode(protocol, String(record.name ?? fallbackName));
+  const node = emptyNode(protocol, String(record.name ?? record.tag ?? fallbackName));
   node.host = String(record.server ?? record.host ?? record.address ?? '');
-  node.port = Number(record.port) || 0;
+  node.port = Number(record.port ?? record.server_port) || 0;
   node.username = String(record.username ?? record.user ?? '');
   node.password = String(record.password ?? record.pass ?? '');
+  // Kernel protocols need the complete config (ws/grpc/tls/reality/...), which
+  // the flat fields above cannot represent. Keep the source object verbatim.
+  if (node.kernelOnly) node.config = JSON.stringify(record);
   return node;
 }
 
 function parseJson(text: string): ProxyParseResult | null {
   try {
     const parsed = JSON.parse(text) as unknown;
-    const list = Array.isArray(parsed) ? parsed : (parsed as { proxies?: unknown[] }).proxies;
+    const list = Array.isArray(parsed)
+      ? parsed
+      : (parsed as { proxies?: unknown[] }).proxies ?? (parsed as { outbounds?: unknown[] }).outbounds;
     if (!Array.isArray(list)) return null;
     const nodes: ParsedProxy[] = [];
     const warnings: string[] = [];
@@ -124,21 +132,32 @@ function parseClashYaml(text: string): ProxyParseResult | null {
   const nodes: ParsedProxy[] = [];
   const warnings: string[] = [];
   let current: Record<string, unknown> | null = null;
+  let rawLines: string[] = [];
   const flush = () => {
     if (!current) return;
     const node = nodeFromRecord(current, `yaml-${nodes.length + 1}`);
-    if (node) nodes.push(node);
-    else warnings.push(`YAML 节点 ${String(current.name ?? '')} 协议不支持`);
+    if (node) {
+      // Preserve the whole YAML block so kernel-only nodes keep ws/grpc/tls fields.
+      if (node.kernelOnly) node.config = rawLines.join('\n').trim();
+      nodes.push(node);
+    } else {
+      warnings.push(`YAML 节点 ${String(current.name ?? '')} 协议不支持`);
+    }
     current = null;
+    rawLines = [];
   };
   for (let index = start + 1; index < lines.length; index += 1) {
     const line = lines[index] ?? '';
-    if (!line.trim()) continue;
+    if (!line.trim()) {
+      if (current) rawLines.push('');
+      continue;
+    }
     // A non-indented key ends the proxies block.
     if (/^\S/.test(line) && !line.startsWith('-')) break;
     const item = line.match(/^\s*-\s*(.*)$/);
     if (item) {
       flush();
+      rawLines = [line];
       const rest = item[1]?.trim() ?? '';
       if (rest.startsWith('{')) {
         const record: Record<string, unknown> = {};
@@ -157,8 +176,12 @@ function parseClashYaml(text: string): ProxyParseResult | null {
       }
       continue;
     }
-    const pair = line.match(/^\s+([\w-]+)\s*:\s*(.*)$/);
-    if (pair && current) current[pair[1]] = unquote(pair[2] ?? '');
+    if (current) rawLines.push(line);
+    const pair = line.match(/^(\s+)([\w-]+)\s*:\s*(.*)$/);
+    const indent = line.match(/^(\s*)/)?.[1].length ?? 0;
+    // Only top-level node fields are read from the flat map; nested ws/grpc/tls
+    // options stay in the preserved raw block above.
+    if (pair && current && indent <= 4) current[pair[2]] = unquote(pair[3] ?? '');
   }
   flush();
   return { nodes, warnings };

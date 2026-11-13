@@ -413,6 +413,10 @@ export interface ProxyNode {
   isp: string;
   enabled: boolean;
   kernelOnly: boolean;
+  /** Kernel engine required to run this node (empty for plain HTTP/SOCKS proxies). */
+  engine?: string;
+  /** Whether an encrypted node config is stored (config itself never leaves the Worker). */
+  hasConfig?: boolean;
   sortScore: number;
   lastOkAt: string | null;
   lastCheckedAt: string | null;

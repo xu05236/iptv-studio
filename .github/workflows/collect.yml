@@ -79,6 +79,13 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Cache mihomo kernel
+        if: ${{ contains(fromJSON('["proxy-test","cn-probe","proxy-fetch-sub"]'), github.event.inputs.command || 'collect') }}
+        uses: actions/cache@v4
+        with:
+          path: .tmp/mihomo
+          key: mihomo-${{ vars.MIHOMO_VERSION || 'v1.19.9' }}-${{ runner.os }}-${{ runner.arch }}
+
       - name: Diagnose D1 migration
         continue-on-error: true
         env:
@@ -125,6 +132,9 @@ jobs:
           SUB_URL: ${{ github.event.inputs.sub_url || '' }}
           USER_AGENT: ${{ github.event.inputs.user_agent || '' }}
           FETCH_MODE: ${{ github.event.inputs.fetch_mode || 'proxy' }}
+          MIHOMO_DIR: .tmp/mihomo
+          MIHOMO_VERSION: ${{ vars.MIHOMO_VERSION || 'v1.19.9' }}
+          MIHOMO_SHA256: ${{ secrets.MIHOMO_SHA256 }}
           TASK_ID: ${{ github.event.inputs.task_id || '' }}
           AUTO_PUBLISH: ${{ github.event.inputs.auto_publish || '' }}
           TRIGGER: ${{ github.event.inputs.trigger || 'manual' }}

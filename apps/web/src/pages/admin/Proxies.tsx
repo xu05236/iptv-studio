@@ -371,7 +371,7 @@ export function Proxies() {
                       </div>
                     </td>
                     <td><span className="mono">{node.protocol}</span></td>
-                    <td className="mono">{node.host}:{node.port}{node.username ? ` · ${node.username}` : ''}{node.hasPassword ? ' · 有密码' : ''}</td>
+                    <td className="mono">{node.host}:{node.port}{node.username ? ` · ${node.username}` : ''}{node.hasPassword ? ' · 有密码' : ''}{node.hasConfig ? ' · 配置已存' : ''}</td>
                     <td>{[node.region, node.isp].filter(Boolean).join(' / ') || '—'}</td>
                     <td>
                       <Badge tone={status.tone}>{status.label}</Badge>

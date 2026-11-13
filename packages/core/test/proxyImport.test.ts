@@ -53,4 +53,42 @@ describe('parseProxyText', () => {
     expect(result.nodes).toHaveLength(2);
     expect(dedupeParsedProxies(result.nodes)).toHaveLength(1);
   });
+
+  it('keeps the full YAML block for kernel-only nodes', () => {
+    const yaml = [
+      'proxies:',
+      '  - name: n1',
+      '    type: vmess',
+      '    server: 1.2.3.4',
+      '    port: 443',
+      '    uuid: abc',
+      '    network: ws',
+      '    ws-opts:',
+      '      path: /ws',
+      '      headers:',
+      '        Host: example.com',
+    ].join('\n');
+    const result = parseProxyText(yaml);
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0]).toMatchObject({ protocol: 'vmess', host: '1.2.3.4', port: 443, kernelOnly: true });
+    expect(result.nodes[0]?.config).toContain('ws-opts');
+    expect(result.nodes[0]?.config).toContain('/ws');
+    expect(result.nodes[0]?.config).toContain('example.com');
+  });
+
+  it('parses sing-box outbounds with tag/server_port and keeps their config', () => {
+    const result = parseProxyText(JSON.stringify({
+      outbounds: [{ type: 'trojan', tag: 'hk', server: 'x.example', server_port: 8443, password: 'p' }],
+    }));
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0]).toMatchObject({ name: 'hk', protocol: 'trojan', host: 'x.example', port: 8443, kernelOnly: true });
+    expect(result.nodes[0]?.config).toContain('x.example');
+  });
+
+  it('keeps the raw URI as config for kernel protocols', () => {
+    const raw = 'vmess://eyJ2IjoiMiIsInBzIjoi5rWL6K+VIn0=#name';
+    const node = parseProxyText(raw).nodes[0];
+    expect(node?.kernelOnly).toBe(true);
+    expect(node?.config).toBe(raw);
+  });
 });
