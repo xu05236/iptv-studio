@@ -359,9 +359,24 @@ channelRoutes.post('/ensure', async (c) => {
     .slice(0, 20000)
     .map((item) => ({ id: item.id!.trim(), name: item.name!.trim().slice(0, 120), group: (item.group ?? '').trim().slice(0, 60) || '其他' }));
   if (!items.length) return ok({ total: 0 });
+  // Read current rows first and upsert only new/changed channels: publishers call
+  // this on every publish and an unconditional UPSERT would rewrite unchanged
+  // rows, burning D1 writes for nothing.
+  const existing = new Map<string, { name: string; group_title: string | null }>();
+  for (let offset = 0; offset < items.length; offset += 40) {
+    const chunk = items.slice(offset, offset + 40);
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, name, group_title FROM channels WHERE id IN (${chunk.map(() => '?').join(', ')})`,
+    ).bind(...chunk.map((item) => item.id)).all<{ id: string; name: string; group_title: string | null }>();
+    for (const row of results) existing.set(row.id, row);
+  }
+  const changed = items.filter((item) => {
+    const row = existing.get(item.id);
+    return !row || row.name !== item.name || (row.group_title ?? '') !== item.group;
+  });
   // One UPSERT per channel, batched into D1 `batch` calls. Sequential writes
   // take tens of seconds for a few thousand channels and time the publisher out.
-  const statements = items.map((item) =>
+  const statements = changed.map((item) =>
     c.env.DB.prepare(
       "INSERT INTO channels (id, name, group_title, enabled, updated_at) VALUES (?, ?, ?, 1, datetime('now')) ON CONFLICT(id) DO UPDATE SET name = excluded.name, group_title = excluded.group_title, updated_at = datetime('now')",
     ).bind(item.id, item.name, item.group),
@@ -369,8 +384,8 @@ channelRoutes.post('/ensure', async (c) => {
   for (let offset = 0; offset < statements.length; offset += 50) {
     await c.env.DB.batch(statements.slice(offset, offset + 50));
   }
-  await audit(c.env, c.get('actor'), 'channel.ensure', 'bulk', { total: items.length });
-  return ok({ total: items.length });
+  await audit(c.env, c.get('actor'), 'channel.ensure', 'bulk', { total: changed.length, skipped: items.length - changed.length });
+  return ok({ total: changed.length, skipped: items.length - changed.length });
 });
 
 channelRoutes.get('/:id', async (c) => {

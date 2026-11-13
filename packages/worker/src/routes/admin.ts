@@ -1238,15 +1238,32 @@ adminRoutes.post('/sync/sources', async (c) => {
 adminRoutes.post('/sync/source-counts', async (c) => {
   const body = await readJson<{ counts?: Array<{ sourceId?: string; entryCount?: number; aliveCount?: number }> }>(c);
   if (!Array.isArray(body?.counts)) return fail('缺少 counts');
-  const statements = body.counts
+  const items = body.counts
     .filter((item) => item && typeof item.sourceId === 'string' && Number.isFinite(item.entryCount) && Number.isFinite(item.aliveCount))
-    .map((item) =>
-      c.env.DB.prepare(
-        "UPDATE sources SET entry_count = ?, alive_count = ?, updated_at = datetime('now') WHERE id = ?",
-      ).bind(Math.max(0, Number(item.entryCount)), Math.max(0, Number(item.aliveCount)), item.sourceId),
-    );
+    .map((item) => ({
+      sourceId: item.sourceId as string,
+      entryCount: Math.max(0, Number(item.entryCount)),
+      aliveCount: Math.max(0, Number(item.aliveCount)),
+    }));
+  const existing = new Map<string, { entry_count: number; alive_count: number }>();
+  for (let offset = 0; offset < items.length; offset += 40) {
+    const chunk = items.slice(offset, offset + 40);
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, entry_count, alive_count FROM sources WHERE id IN (${chunk.map(() => '?').join(', ')})`,
+    ).bind(...chunk.map((item) => item.sourceId)).all<{ id: string; entry_count: number; alive_count: number }>();
+    for (const row of results) existing.set(row.id, row);
+  }
+  const changed = items.filter((item) => {
+    const row = existing.get(item.sourceId);
+    return !row || row.entry_count !== item.entryCount || row.alive_count !== item.aliveCount;
+  });
+  const statements = changed.map((item) =>
+    c.env.DB.prepare(
+      "UPDATE sources SET entry_count = ?, alive_count = ?, updated_at = datetime('now') WHERE id = ?",
+    ).bind(item.entryCount, item.aliveCount, item.sourceId),
+  );
   if (statements.length) await c.env.DB.batch(statements);
-  return ok({ synced: statements.length });
+  return ok({ synced: changed.length, skipped: items.length - changed.length });
 });
 
 adminRoutes.get('/catalog', async (c) => {

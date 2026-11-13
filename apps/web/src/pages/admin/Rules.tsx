@@ -119,8 +119,8 @@ function summarize(rule: RuleItem): string {
   const match: string[] = [];
   if (rule.match.groups?.length) match.push(`分组 ${rule.match.groups.join('/')}`);
   if (rule.match.lineGroups?.length) match.push(`线路分组 ${rule.match.lineGroups.join('/')}`);
-  if (rule.match.namePattern) match.push(`频道名 ${rule.match.namePattern}`);
-  if (rule.match.channelPattern) match.push(`线路名 ${rule.match.channelPattern}`);
+  if (rule.match.namePattern) match.push(`线路名 ${rule.match.namePattern}`);
+  if (rule.match.channelPattern) match.push(`频道名 ${rule.match.channelPattern}`);
   if (rule.match.protocols?.length) match.push(rule.match.protocols.join('/'));
   if (rule.match.minResolution) match.push(`≥${rule.match.minResolution}`);
   if (rule.match.minSpeedKbps) match.push(`≥${rule.match.minSpeedKbps}kbps`);
@@ -388,8 +388,8 @@ export function Rules() {
           <div className="form-grid">
             <Field label="分组" hint="逗号分隔，例如 央视,卫视"><input className="input" value={form.groups} onChange={(event) => set('groups', event.target.value)} /></Field>
             <Field label="线路分组" hint="源自带分组，逗号分隔，例如 虎牙,虎牙影视"><input className="input" value={form.lineGroups} onChange={(event) => set('lineGroups', event.target.value)} /></Field>
-            <Field label="频道名包含" hint="支持正则表达式"><input className="input" value={form.namePattern} onChange={(event) => set('namePattern', event.target.value)} /></Field>
-            <Field label="线路名包含" hint="支持正则表达式"><input className="input" value={form.channelPattern} onChange={(event) => set('channelPattern', event.target.value)} /></Field>
+            <Field label="线路名包含" hint="匹配线路名称，支持正则表达式"><input className="input" value={form.namePattern} onChange={(event) => set('namePattern', event.target.value)} /></Field>
+            <Field label="频道名包含" hint="匹配频道名称，支持正则表达式"><input className="input" value={form.channelPattern} onChange={(event) => set('channelPattern', event.target.value)} /></Field>
             <Field label="协议" hint="hls,http,rtmp"><input className="input" value={form.protocols} onChange={(event) => set('protocols', event.target.value)} /></Field>
             <Field label="最低分辨率"><select className="input" value={form.minResolution} onChange={(event) => set('minResolution', event.target.value)}><option value="">不限</option><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option><option value="2160p">2160p</option></select></Field>
             <Field label="最低速率 (kbps)"><input className="input" inputMode="numeric" value={form.minSpeedKbps} onChange={(event) => set('minSpeedKbps', event.target.value)} /></Field>
