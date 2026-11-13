@@ -18,6 +18,8 @@ export interface UsageSnapshot {
   d1: { day: string; rowsRead: number; rowsWritten: number };
   github: { month: string; minutes: number; runs: number; private?: boolean };
   history: DayUsage[];
+  /** Present when the Cloudflare Analytics query failed; the kv/d1 blocks are then stale. */
+  cloudflareError?: string | null;
 }
 
 interface GithubRun {
@@ -145,7 +147,10 @@ async function graphql(token: string, query: string): Promise<Record<string, unk
     body: JSON.stringify({ query }),
   });
   const data = (await response.json()) as { data?: Record<string, unknown>; errors?: Array<{ message: string }> };
-  if (!response.ok || data.errors?.length) throw new Error(`GraphQL HTTP ${response.status}`);
+  if (!response.ok || data.errors?.length) {
+    const detail = data.errors?.[0]?.message ?? `HTTP ${response.status}`;
+    throw new Error(`Cloudflare ${response.status}: ${String(detail).slice(0, 300)}`);
+  }
   return data.data ?? {};
 }
 
@@ -225,10 +230,12 @@ export async function refreshUsage(env: Env): Promise<UsageSnapshot> {
   const github = await collectGithub(env);
   const days = Array.from({ length: 7 }, (_, index) => utcDay(-index)).reverse();
   let cloudflare: CloudflareUsage | null = null;
+  let cloudflareError: string | null = null;
   try {
     cloudflare = await collectCloudflare(env, days);
-  } catch {
-    cloudflare = null;
+    if (!cloudflare) cloudflareError = '未配置 CLOUDFLARE_API_TOKEN 或 CLOUDFLARE_ACCOUNT_ID';
+  } catch (error) {
+    cloudflareError = error instanceof Error ? error.message : String(error);
   }
 
   const history = days.map((date) => {
@@ -252,6 +259,7 @@ export async function refreshUsage(env: Env): Promise<UsageSnapshot> {
     d1: cloudflare?.d1 ?? previous?.d1 ?? { day: utcDay(), rowsRead: 0, rowsWritten: 0 },
     github: { month: github.month, minutes: github.minutes, runs: github.runs, private: visibility },
     history,
+    cloudflareError: cloudflare ? null : cloudflareError,
   };
   await putRuntimeJson(env, KEY, snapshot);
   return snapshot;

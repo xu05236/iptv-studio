@@ -832,6 +832,11 @@ export function Dashboard() {
                         : `额度已重置，快照仍是 ${snapshot.kv.day} 的数据，等下一轮刷新`}
                       {yesterday ? ` · 昨日（${yesterday.date}）写 ${formatNumber(yesterday.kvWrites)}` : ''}
                     </div>
+                    {snapshot.cloudflareError ? (
+                      <div className="caption" style={{ marginTop: 6, color: '#b45309' }}>
+                        Cloudflare 统计读取失败：{snapshot.cloudflareError}（当前显示的是 {snapshot.kv.day} 的旧数据）
+                      </div>
+                    ) : null}
                   </>
                 ) : (
                   <div className="caption" style={{ marginTop: 10 }}>等待用量工作流采集</div>
