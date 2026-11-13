@@ -39,6 +39,55 @@ async function ensureMergedChannel(env: AppEnv['Bindings'], sourceId: string, na
   }
 }
 
+/**
+ * Re-apply a source's configured category to all of its existing channels.
+ * New channels already get the category at fetch time; this fixes channels
+ * that were created before the category was set (or changed later).
+ */
+async function applySourceGroup(
+  env: AppEnv['Bindings'],
+  sourceId: string,
+  group: string,
+  dryRun = false,
+  actor = 'system',
+): Promise<{ channels: number; lines: number; changed: number }> {
+  const wanted = group.trim().slice(0, 60);
+  if (!wanted) return { channels: 0, lines: 0, changed: 0 };
+  const state = await loadLines(env);
+  const ids = new Set<string>();
+  let lines = 0;
+  for (const line of state?.lines ?? []) {
+    if (line.sourceId !== sourceId) continue;
+    if (!line.channelId.startsWith('x-')) continue;
+    ids.add(line.channelId);
+    lines++;
+  }
+  if (!ids.size) return { channels: 0, lines: 0, changed: 0 };
+  if (dryRun) {
+    const idList = [...ids];
+    let changed = 0;
+    for (let offset = 0; offset < idList.length; offset += 50) {
+      const chunk = idList.slice(offset, offset + 50);
+      const placeholders = chunk.map(() => '?').join(',');
+      const { results } = await env.DB.prepare(
+        `SELECT id, group_title FROM channels WHERE id IN (${placeholders})`,
+      ).bind(...chunk).all<{ id: string; group_title: string | null }>();
+      for (const row of results) {
+        if ((row.group_title ?? '') !== wanted) changed++;
+      }
+    }
+    return { channels: ids.size, lines, changed };
+  }
+  const statements = [...ids].map((id) =>
+    env.DB.prepare("UPDATE channels SET group_title = ?, updated_at = datetime('now') WHERE id = ?").bind(wanted, id),
+  );
+  for (let offset = 0; offset < statements.length; offset += 50) {
+    await env.DB.batch(statements.slice(offset, offset + 50));
+  }
+  await audit(env, actor as never, 'channel.apply_source_group', sourceId, { group: wanted, channels: ids.size, lines });
+  return { channels: ids.size, lines, changed: ids.size };
+}
+
 /** refresh_hours: -1 = follow tiers, 0 = never, N = custom hours (24 = daily). */
 function refreshHoursOf(value: unknown): number {
   if (value === null || value === undefined || value === '') return -1;
@@ -788,8 +837,22 @@ sourceRoutes.patch('/:id', async (c) => {
   if (row?.merge_channel_name) {
     await ensureMergedChannel(c.env, id, row.merge_channel_name, row.merge_channel_group);
   }
+  if (row?.merge_channel_group && row.merge_channel_group !== (source.merge_channel_group ?? null)) {
+    await applySourceGroup(c.env, id, row.merge_channel_group, false, c.get('actor'));
+  }
   await audit(c.env, c.get('actor'), 'source.update', id, patch);
   return ok({ source: await getSource(c.env, id) });
+});
+
+sourceRoutes.post('/:id/apply-group', async (c) => {
+  const id = c.req.param('id');
+  const source = await getSource(c.env, id);
+  if (!source) return fail('直播源不存在', 404);
+  const group = (source.merge_channel_group ?? '').trim();
+  if (!group) return fail('该源没有设置频道分类', 400);
+  const dryRun = c.req.query('dryRun') === '1';
+  const result = await applySourceGroup(c.env, id, group, dryRun, c.get('actor'));
+  return ok({ ...result, group, dryRun });
 });
 
 sourceRoutes.delete('/:id', async (c) => {
