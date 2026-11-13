@@ -13,7 +13,7 @@ export interface ArtifactMeta {
 
 const MAX_VALUE_BYTES = 24 * 1024 * 1024; // KV hard limit is 25 MiB
 
-/** Free plan allows 1,000 KV writes/day; stop short so workers don't 500 mid-run. */
+/** Free plan allows 1,000 KV writes and 1,000 deletes per day; stop short. */
 export const KV_WRITE_DAILY_LIMIT = 900;
 
 function utcDay(): string {
@@ -23,6 +23,7 @@ function utcDay(): string {
 export interface KvWriteBudget {
   day: string;
   puts: number;
+  deletes: number;
   limit: number;
   exhausted: boolean;
 }
@@ -30,32 +31,44 @@ export interface KvWriteBudget {
 export async function kvWriteBudget(env: Env): Promise<KvWriteBudget> {
   const day = utcDay();
   try {
-    const row = await env.DB.prepare('SELECT puts FROM kv_write_counter WHERE day = ?')
+    const row = await env.DB.prepare('SELECT puts, deletes FROM kv_write_counter WHERE day = ?')
       .bind(day)
-      .first<{ puts: number }>();
+      .first<{ puts: number; deletes: number }>();
     const puts = row?.puts ?? 0;
-    return { day, puts, limit: KV_WRITE_DAILY_LIMIT, exhausted: puts >= KV_WRITE_DAILY_LIMIT };
+    const deletes = row?.deletes ?? 0;
+    return {
+      day,
+      puts,
+      deletes,
+      limit: KV_WRITE_DAILY_LIMIT,
+      exhausted: puts >= KV_WRITE_DAILY_LIMIT || deletes >= KV_WRITE_DAILY_LIMIT,
+    };
   } catch {
-    return { day, puts: 0, limit: KV_WRITE_DAILY_LIMIT, exhausted: false };
+    return { day, puts: 0, deletes: 0, limit: KV_WRITE_DAILY_LIMIT, exhausted: false };
   }
 }
 
-/** Count a KV write before doing it; throws once the daily budget is spent. */
-export async function reserveKvWrite(env: Env, count = 1): Promise<void> {
+/** Count a KV operation before doing it; writes and deletes have separate quotas. */
+export async function reserveKvWrite(env: Env, kind: 'put' | 'delete' = 'put', count = 1): Promise<void> {
   const day = utcDay();
   try {
     const row = await env.DB.prepare(
-      `INSERT INTO kv_write_counter (day, puts) VALUES (?, ?)
-       ON CONFLICT(day) DO UPDATE SET puts = puts + excluded.puts, updated_at = datetime('now')
-       RETURNING puts`,
+      `INSERT INTO kv_write_counter (day, puts, deletes) VALUES (?, ?, ?)
+       ON CONFLICT(day) DO UPDATE SET
+         puts = puts + excluded.puts,
+         deletes = deletes + excluded.deletes,
+         updated_at = datetime('now')
+       RETURNING puts, deletes`,
     )
-      .bind(day, count)
-      .first<{ puts: number }>();
-    if (row && row.puts > KV_WRITE_DAILY_LIMIT) {
-      throw new Error(`今日 KV 写入已达上限（${KV_WRITE_DAILY_LIMIT} 次），已暂停写入，UTC 00:00 后自动恢复`);
+      .bind(day, kind === 'put' ? count : 0, kind === 'delete' ? count : 0)
+      .first<{ puts: number; deletes: number }>();
+    const used = kind === 'put' ? row?.puts ?? 0 : row?.deletes ?? 0;
+    if (used > KV_WRITE_DAILY_LIMIT) {
+      const label = kind === 'put' ? '写入' : '删除';
+      throw new Error(`今日 KV ${label}已达上限（${KV_WRITE_DAILY_LIMIT} 次），已暂停${label}，UTC 00:00 后自动恢复`);
     }
   } catch (error) {
-    if (error instanceof Error && error.message.includes('KV 写入已达上限')) throw error;
+    if (error instanceof Error && error.message.includes('已达上限')) throw error;
     // Counter table missing (migration lag) or D1 hiccup: don't block writes
     // the platform itself would still accept.
   }
@@ -132,7 +145,7 @@ export async function getText(env: Env, key: string): Promise<string | null> {
 }
 
 export async function deleteArtifact(env: Env, key: string): Promise<void> {
-  await reserveKvWrite(env);
+  await reserveKvWrite(env, 'delete');
   await env.KV.delete(key);
 }
 

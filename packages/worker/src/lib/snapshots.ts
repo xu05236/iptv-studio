@@ -54,7 +54,7 @@ export async function pruneSnapshotDirs(
       const dir = rest.slice(0, rest.indexOf('/'));
       if (!stale.has(dir)) continue;
       try {
-        await reserveKvWrite(env);
+        await reserveKvWrite(env, 'delete');
       } catch {
         return deleted;
       }

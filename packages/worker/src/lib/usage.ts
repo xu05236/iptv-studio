@@ -272,5 +272,29 @@ export async function refreshUsage(env: Env): Promise<UsageSnapshot> {
     cloudflareError: cloudflare ? null : cloudflareError,
   };
   await putRuntimeJson(env, KEY, snapshot);
+  // The local guard counts puts/deletes itself. Calibrate it against the
+  // official daily numbers: a counter inflated by a former bug (deletes counted
+  // as writes) is reset once, otherwise the counter only ratchets upward so a
+  // lagging analytics report can never lower the guard below real usage.
+  const today = utcDay();
+  if (cloudflare?.kv?.day === today) {
+    try {
+      const { kvWriteBudget } = await import('./store.js');
+      const local = await kvWriteBudget(env);
+      const officialPuts = cloudflare.kv.writes ?? 0;
+      const officialDeletes = cloudflare.kv.deletes ?? 0;
+      const inflated = local.puts > officialPuts + 200;
+      const nextPuts = inflated ? officialPuts : Math.max(local.puts, officialPuts);
+      const nextDeletes = Math.max(local.deletes, officialDeletes);
+      if (nextPuts !== local.puts || nextDeletes !== local.deletes) {
+        await env.DB.prepare(
+          `INSERT INTO kv_write_counter (day, puts, deletes) VALUES (?, ?, ?)
+           ON CONFLICT(day) DO UPDATE SET puts = excluded.puts, deletes = excluded.deletes, updated_at = datetime('now')`,
+        ).bind(today, nextPuts, nextDeletes).run();
+      }
+    } catch {
+      // Counter table may lag the deploy; ignore.
+    }
+  }
   return snapshot;
 }
