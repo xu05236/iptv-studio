@@ -22,6 +22,13 @@ export function isKernelProxy(node: RuntimeProxy): boolean {
   return node.kernelOnly === true;
 }
 
+const UDP_ONLY_PROTOCOLS = new Set(['hysteria', 'hysteria2', 'tuic']);
+
+/** hy2/tuic are UDP; Actions and HTTP CONNECT tunnels cannot carry them. */
+export function isUdpOnlyProxy(node: { protocol: string }): boolean {
+  return UDP_ONLY_PROTOCOLS.has(node.protocol.toLowerCase());
+}
+
 /** Probe a plain proxy or, for kernel nodes, start mihomo briefly and probe through it. */
 export async function probeRuntimeProxy(node: RuntimeProxy): Promise<ProxyProbeResult> {
   if (!isKernelProxy(node)) return probeProxy(node);

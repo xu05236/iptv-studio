@@ -44,7 +44,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 export function clashProxyFromJson(record: Record<string, unknown>): Record<string, unknown> | null {
   const rawType = String(record.type ?? record.protocol ?? '').toLowerCase();
   const type = rawType === 'shadowsocks' ? 'ss' : rawType;
-  if (!['ss', 'vmess', 'vless', 'trojan', 'hysteria2', 'tuic'].includes(type)) return null;
+  if (!['ss', 'vmess', 'vless', 'trojan', 'hysteria2', 'tuic', 'anytls'].includes(type)) return null;
   const server = String(record.server ?? record.address ?? '');
   const port = Number(record.server_port ?? record.port);
   if (!server || !Number.isFinite(port) || port <= 0) return null;
@@ -53,7 +53,9 @@ export function clashProxyFromJson(record: Record<string, unknown>): Record<stri
   if (record.uuid) proxy.uuid = String(record.uuid);
   if (record.method) proxy.cipher = String(record.method);
   if (record.cipher) proxy.cipher = String(record.cipher);
+  if (type === 'vmess' && !proxy.cipher) proxy.cipher = String(record.security ?? 'auto');
   if (record.alter_id !== undefined) proxy.alterId = Number(record.alter_id) || 0;
+  if (type === 'vmess' && proxy.alterId === undefined) proxy.alterId = 0;
   if (record.flow) proxy.flow = String(record.flow);
   const tls = isPlainRecord(record.tls) ? record.tls : null;
   if (tls) {
@@ -66,9 +68,15 @@ export function clashProxyFromJson(record: Record<string, unknown>): Record<stri
   const network = String(transport?.type ?? record.network ?? '');
   if (network === 'ws') {
     proxy.network = 'ws';
+    const rawHeaders = isPlainRecord(transport?.headers) ? transport.headers : {};
+    const headers: Record<string, string> = {};
+    for (const [name, value] of Object.entries(rawHeaders)) {
+      const first = Array.isArray(value) ? value[0] : value;
+      if (first !== undefined && first !== null) headers[name] = String(first);
+    }
     proxy['ws-opts'] = {
       path: String((transport?.path as string) ?? record.path ?? '/'),
-      headers: isPlainRecord(transport?.headers) ? transport.headers : {},
+      headers,
     };
   } else if (network === 'grpc') {
     proxy.network = 'grpc';

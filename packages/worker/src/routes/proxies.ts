@@ -153,6 +153,8 @@ proxyRoutes.post('/import', async (c) => {
   if (!text.trim()) return fail('请粘贴节点内容或填写订阅地址');
   const parsed = parseProxyText(text);
   const nodes = dedupeParsedProxies(parsed.nodes);
+  const parsedTotal = parsed.nodes.length;
+  const deduped = parsedTotal - nodes.length;
   if (!nodes.length) return fail(parsed.warnings[0] ?? '没有识别到可用节点');
   const existingNodes = await listProxyNodes(c.env);
   const existing = new Map(existingNodes.map((node) => [proxyNodeKey(node), node]));
@@ -219,8 +221,8 @@ proxyRoutes.post('/import', async (c) => {
       `新增 ${added} · 更新 ${updated} · 停用 ${disabled}`,
     );
   }
-  await audit(c.env, c.get('actor'), 'proxy.import', subscriptionId || 'bulk', { added, updated, skipped, kernelOnly, disabled });
-  return ok({ added, updated, skipped, kernelOnly, disabled, warnings: parsed.warnings.slice(0, 10) });
+  await audit(c.env, c.get('actor'), 'proxy.import', subscriptionId || 'bulk', { added, updated, skipped, kernelOnly, disabled, parsedTotal, deduped });
+  return ok({ added, updated, skipped, kernelOnly, disabled, parsedTotal, deduped, warnings: parsed.warnings.slice(0, 10) });
 });
 
 proxyRoutes.get('/subscriptions', async (c) => ok({ items: await listProxySubscriptions(c.env) }));

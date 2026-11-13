@@ -47,7 +47,7 @@ import { buildGuide, collectEpg, guideIsFresh, mergeGuideFallback, type StoredGu
 import { loadLogoPacks } from './pipeline/logoFiles.js';
 import { loadLinesState, saveLinesState } from './lib/linesState.js';
 import { fetchViaProxy, probeProxy } from './lib/proxyFetch.js';
-import { activateRuntimeProxy, isKernelProxy, probeRuntimeProxy } from './lib/proxyRuntime.js';
+import { activateRuntimeProxy, isKernelProxy, isUdpOnlyProxy, probeRuntimeProxy } from './lib/proxyRuntime.js';
 import { buildProxyAgent, probeCnUrl } from './pipeline/cnProbe.js';
 import { prefilterLiveness } from './pipeline/liveness.js';
 import { publishSubscriptions } from './pipeline/subscriptions.js';
@@ -1126,15 +1126,22 @@ async function runProxyTest(): Promise<void> {
     const nodes = items.filter((node) => node.enabled
       && (!only || node.id === only)
       && (!onlySubscription || node.subscriptionId === onlySubscription));
-    if (!nodes.length) throw new Error(onlySubscription ? '该订阅没有可测活的节点（需启用）' : '没有可测活的代理（需启用）');
+    const udpNodes = nodes.filter((node) => isUdpOnlyProxy(node));
+    const testable = nodes.filter((node) => !isUdpOnlyProxy(node));
+    if (!testable.length) {
+      throw new Error(udpNodes.length
+        ? `该订阅只有 UDP 节点（hy2/tuic，${udpNodes.length} 个），当前环境不可测`
+        : (onlySubscription ? '该订阅没有可测活的节点（需启用）' : '没有可测活的代理（需启用）'));
+    }
     const concurrency = Math.max(1, Math.min(10, Number(remote.settings.cnProbeConcurrency) || 5));
-    const total = nodes.length;
-    const queue = [...nodes];
+    const total = testable.length;
+    const queue = [...testable];
+    let skippedUdp = udpNodes.length;
     let done = 0;
     let ok = 0;
     let kernelOk = 0;
-    logger.info('开始代理测活', { total, concurrency });
-    await reportTaskProgress(api, 0, total, `代理测活 0/${total}`, true);
+    logger.info('开始代理测活', { total, concurrency, skippedUdp });
+    await reportTaskProgress(api, 0, total, `代理测活 0/${total}${skippedUdp ? ` · 跳过 UDP ${skippedUdp}` : ''}`, true);
     const workers = Array.from({ length: Math.min(concurrency, total) }, async () => {
       for (;;) {
         const node = queue.shift();
@@ -1148,14 +1155,15 @@ async function runProxyTest(): Promise<void> {
           logger.warn('写入测活结果失败', { proxy: node.name, error: error instanceof Error ? error.message : String(error) });
         });
         done += 1;
-        await reportTaskProgress(api, done, total, `代理测活 ${done}/${total} · 成功 ${ok}${kernelOk ? ` · 内核 ${kernelOk}` : ''}`, true);
+        await reportTaskProgress(api, done, total, `代理测活 ${done}/${total} · 成功 ${ok}${kernelOk ? ` · 内核 ${kernelOk}` : ''}${skippedUdp ? ` · 跳过 UDP ${skippedUdp}` : ''}`, true);
       }
     });
     await Promise.all(workers);
     await finishRun(api, {
       id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
       sources: 0, channels: 0, lines: 0, alive: ok, dead: total - ok, probed: total, bytes: 0,
-      durationMs: Date.now() - startedMs, warnings: [],
+      durationMs: Date.now() - startedMs,
+      warnings: skippedUdp ? [`跳过 ${skippedUdp} 个 UDP 节点（hy2/tuic，当前环境不可测）`] : [],
     });
     logger.info('代理测活完成', { total, ok });
   } catch (error) {

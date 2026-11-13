@@ -4,9 +4,34 @@ import os from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { buildKernelConfig, ensureMihomoBinary } from '../src/lib/kernelBridge.js';
+import { buildKernelConfig, clashProxyFromJson, ensureMihomoBinary } from '../src/lib/kernelBridge.js';
 
 describe('kernelBridge config generation', () => {
+  it('maps sing-box vmess security to cipher and flattens ws headers', () => {
+    const proxy = clashProxyFromJson({
+      type: 'vmess',
+      server: '1.2.3.4',
+      server_port: 80,
+      uuid: '33bb',
+      security: 'auto',
+      alter_id: 0,
+      transport: { type: 'ws', path: '/', headers: { Host: ['tms.dingtalk.com'] } },
+    });
+    expect(proxy).toMatchObject({ type: 'vmess', cipher: 'auto', alterId: 0, network: 'ws' });
+    expect((proxy?.['ws-opts'] as { headers: Record<string, string> }).headers.Host).toBe('tms.dingtalk.com');
+  });
+
+  it('accepts anytls sing-box outbounds', () => {
+    const proxy = clashProxyFromJson({
+      type: 'anytls',
+      server: 'v6.example.com',
+      server_port: 8443,
+      password: 'secret',
+      tls: { enabled: true, server_name: 'v6.example.com', insecure: true },
+    });
+    expect(proxy).toMatchObject({ type: 'anytls', server: 'v6.example.com', port: 8443, password: 'secret', 'skip-cert-verify': true });
+  });
+
   it('embeds a stored Clash YAML block and pins MATCH to its name', () => {
     const block = [
       '  - name: n1',
