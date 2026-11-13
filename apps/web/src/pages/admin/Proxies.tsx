@@ -16,6 +16,7 @@ interface ProxySubscriptionItem {
   id: string;
   name: string;
   url: string;
+  kind?: 'url' | 'file';
   nodeCount: number;
   enabled: boolean;
   lastFetchAt: string | null;
@@ -67,6 +68,8 @@ export function Proxies() {
   const [importFileName, setImportFileName] = useState('');
   const [pullTaskId, setPullTaskId] = useState<string | null>(null);
   const [subName, setSubName] = useState('');
+  const [deleteSub, setDeleteSub] = useState<{ id: string; name: string } | null>(null);
+  const [deleteNodeMode, setDeleteNodeMode] = useState<'delete_all' | 'keep_alive' | 'keep_all'>('delete_all');
 
   const proxies = useQuery({
     queryKey: ['admin', 'proxies', sort],
@@ -123,20 +126,40 @@ export function Proxies() {
   });
 
   const importProxies = useMutation({
-    mutationFn: () =>
+    mutationFn: (input?: { subscriptionId?: string }) =>
       api.post<{ added: number; updated?: number; disabled?: number; skipped: number; kernelOnly: number; warnings: string[] }>('/api/admin/proxies/import', {
         text: importText,
         url: importUrl,
         userAgent: importUa.trim(),
         headers: headersObject(),
+        ...(input?.subscriptionId ? { subscriptionId: input.subscriptionId } : {}),
       }),
     onSuccess: (data) => {
       setImportResult(data);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'proxies'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'proxy-subs'] });
       show(`导入完成：新增 ${data.added}，跳过 ${data.skipped}`);
     },
     onError: (error) => show(error instanceof Error ? error.message : '导入失败', 'error'),
   });
+
+  const runImport = async () => {
+    try {
+      let subscriptionId: string | undefined;
+      if (importMode !== 'subscribe' && subName.trim()) {
+        const created = await api.post<{ subscription: { id: string } }>('/api/admin/proxies/subscriptions', {
+          name: subName.trim(),
+          kind: 'file',
+          url: '',
+        });
+        subscriptionId = created.subscription.id;
+        setSubName('');
+      }
+      await importProxies.mutateAsync({ subscriptionId });
+    } catch (error) {
+      show(error instanceof Error ? error.message : '导入失败', 'error');
+    }
+  };
 
   const addSubscription = useMutation({
     mutationFn: () =>
@@ -168,11 +191,13 @@ export function Proxies() {
   });
 
   const deleteSubscription = useMutation({
-    mutationFn: (id: string) => api.del<{ ok: boolean }>(`/api/admin/proxies/subscriptions/${id}`),
-    onSuccess: () => {
+    mutationFn: ({ id, mode }: { id: string; mode: 'delete_all' | 'keep_alive' | 'keep_all' }) =>
+      api.del<{ ok: boolean; deleted: number; kept: number }>(`/api/admin/proxies/subscriptions/${id}?nodes=${mode}`),
+    onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'proxy-subs'] });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'proxies'] });
-      show('订阅源已删除，节点已停用');
+      setDeleteSub(null);
+      show(`订阅源已删除 · 删除 ${data.deleted} 个节点${data.kept ? ` · 保留 ${data.kept} 个` : ''}`);
     },
     onError: (error) => show(error instanceof Error ? error.message : '删除失败', 'error'),
   });
@@ -186,12 +211,14 @@ export function Proxies() {
 
   const pullSubscription = useMutation({
     mutationFn: (mode: 'proxy' | 'actions') =>
-      api.post<{ taskId: string }>('/api/admin/proxies/pull-subscription', { url: importUrl.trim(), userAgent: importUa.trim(), mode }),
+      api.post<{ taskId: string; subscription?: { id: string } }>('/api/admin/proxies/pull-subscription', { url: importUrl.trim(), name: subName.trim(), userAgent: importUa.trim(), mode }),
     onSuccess: (data, mode) => {
       setImportOpen(false);
       setImportResult(null);
+      setSubName('');
       setPullTaskId(data.taskId);
-      show(mode === 'actions' ? '已派发 Actions 直连拉取，完成后会自动刷新列表' : '已派发代理拉取，完成后会自动刷新列表');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'proxy-subs'] });
+      show(mode === 'actions' ? '已保存为订阅源，并派发 Actions 直连拉取' : '已保存为订阅源，并派发代理拉取');
     },
     onError: (error) => show(error instanceof Error ? error.message : '派发失败', 'error'),
   });
@@ -326,19 +353,24 @@ export function Proxies() {
                 <div style={{ minWidth: 0 }}>
                   <div className="row" style={{ gap: 6, alignItems: 'center' }}>
                     <strong className="truncate" style={{ maxWidth: 320 }}>{sub.name}</strong>
+                    {sub.kind === 'file' ? <Badge>文件</Badge> : <Badge tone="blue">链接</Badge>}
                     {sub.enabled ? null : <Badge>已停用</Badge>}
                   </div>
-                  <div className="caption truncate" style={{ maxWidth: 520 }}>{sub.url}</div>
+                  <div className="caption truncate" style={{ maxWidth: 520 }}>{sub.kind === 'file' ? '本地文件导入，不参与定时刷新' : sub.url}</div>
                   <div className="caption">
-                    {sub.nodeCount} 个节点 · {sub.lastFetchAt ? `上次 ${timeAgo(sub.lastFetchAt)}` : '尚未刷新'}
-                    {sub.lastStatus ? ` · ${sub.lastStatus}` : ''}
+                    {sub.nodeCount} 个节点 · {sub.lastFetchAt ? `上次 ${timeAgo(sub.lastFetchAt)}` : '尚未导入'}
+                    {sub.lastStatus ? (
+                      <span style={sub.lastStatus.includes('失败') ? { color: '#c0392b' } : undefined}> · {sub.lastStatus}</span>
+                    ) : ''}
                   </div>
                 </div>
                 <div className="row" style={{ gap: 8 }}>
-                  <Button variant="ghost" loading={refreshSubscription.isPending} onClick={() => refreshSubscription.mutate(sub.id)}>
-                    <RefreshCw size={14} /> 刷新
-                  </Button>
-                  <Button variant="ghost" onClick={() => deleteSubscription.mutate(sub.id)}>
+                  {sub.kind === 'file' ? null : (
+                    <Button variant="ghost" loading={refreshSubscription.isPending} onClick={() => refreshSubscription.mutate(sub.id)}>
+                      <RefreshCw size={14} /> 刷新
+                    </Button>
+                  )}
+                  <Button variant="ghost" onClick={() => { setDeleteNodeMode('delete_all'); setDeleteSub({ id: sub.id, name: sub.name }); }}>
                     <Trash2 size={14} /> 删除
                   </Button>
                 </div>
@@ -640,6 +672,11 @@ export function Proxies() {
           </Field>
           </>) : null}
           {importMode === 'file' ? (
+            <Field label="订阅名称（可选，填写后保存为文件订阅）">
+              <input className="input" value={subName} onChange={(event) => setSubName(event.target.value)} placeholder="例如 机场A · 电脑配置文件" />
+            </Field>
+          ) : null}
+          {importMode === 'file' ? (
             <Field label="选择文件（.yaml / .yml / .json / .txt / .conf）">
               <input
                 className="input"
@@ -689,13 +726,41 @@ export function Proxies() {
           <div className="caption">
             支持：URI 行（http/https/socks5/ss/vmess/vless/trojan/hysteria2/tuic）、host:port[:user:pass]、Clash YAML、sing-box JSON、Base64；自动去重，需内核节点会灰显。
           </div>
-          <Button loading={importProxies.isPending} onClick={() => importProxies.mutate()}><Upload size={14} /> 导入</Button>
+          {importMode === 'subscribe' ? null : (
+            <Button loading={importProxies.isPending} onClick={() => void runImport()}><Upload size={14} /> {subName.trim() ? '导入并保存为订阅源' : '导入'}</Button>
+          )}
           {importResult ? (
             <div className="caption">
               新增 {importResult.added} 个{importResult.updated ? ` · 更新 ${importResult.updated} 个` : ''}{importResult.disabled ? ` · 停用 ${importResult.disabled} 个` : ''} · 跳过 {importResult.skipped} 个{importResult.kernelOnly ? ` · 需内核 ${importResult.kernelOnly} 个` : ''}
               {importResult.warnings.length ? <div style={{ marginTop: 6 }}>{importResult.warnings.join('；')}</div> : null}
             </div>
           ) : null}
+        </div>
+      </Sheet>
+      <Sheet open={Boolean(deleteSub)} onClose={() => setDeleteSub(null)} title="删除订阅源" subtitle={deleteSub ? `${deleteSub.name} · 选择订阅带来的节点如何处理` : undefined}>
+        <div className="stack">
+          <div className="caption">删除订阅记录后，节点可以按下面三种方式处理；被删掉的节点以后只能重新导入才会回来。</div>
+          <label className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+            <input type="radio" name="delete-nodes" checked={deleteNodeMode === 'delete_all'} onChange={() => setDeleteNodeMode('delete_all')} />
+            <span>删除全部节点（默认）</span>
+          </label>
+          <label className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+            <input type="radio" name="delete-nodes" checked={deleteNodeMode === 'keep_alive'} onChange={() => setDeleteNodeMode('keep_alive')} />
+            <span>保留测活成功过的节点，其余删除</span>
+          </label>
+          <label className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+            <input type="radio" name="delete-nodes" checked={deleteNodeMode === 'keep_all'} onChange={() => setDeleteNodeMode('keep_all')} />
+            <span>保留全部节点，只删除订阅记录</span>
+          </label>
+          <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+            <Button variant="ghost" onClick={() => setDeleteSub(null)}>取消</Button>
+            <Button
+              loading={deleteSubscription.isPending}
+              onClick={() => deleteSub ? deleteSubscription.mutate({ id: deleteSub.id, mode: deleteNodeMode }) : undefined}
+            >
+              删除
+            </Button>
+          </div>
         </div>
       </Sheet>
     </div>

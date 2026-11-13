@@ -5,6 +5,7 @@ import { getJson, kvWriteBudget } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 import { cancelGithubRun, dispatchWorkflow, listWorkflowRuns } from './github.js';
 import { deletePlaceholderRun, finishPlaceholderRun, loadSettings, upsertPlaceholderRun } from '../db.js';
+import { setProxySubscriptionStatus } from './proxyDb.js';
 
 export type TaskSource = 'schedule' | 'manual' | 'detection' | 'source' | 'cli';
 export type TaskStatus = 'scheduled' | 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
@@ -482,6 +483,16 @@ async function finishTaskCore(env: Env, taskId: string, status: 'done' | 'failed
     return null;
   }
   await saveTasks(env, tasks);
+  if (status === 'failed' && task.type === 'proxy-fetch-sub') {
+    const subscriptionId = String(task.payload?.sub_id ?? '');
+    if (subscriptionId) {
+      try {
+        await setProxySubscriptionStatus(env, subscriptionId, `拉取失败：${taskMessage}`);
+      } catch {
+        // Best effort: the task record still carries the failure.
+      }
+    }
+  }
   if (status === 'failed') await notifyTaskFailure(env, task, task.message);
   return status === 'done' ? task : null;
 }

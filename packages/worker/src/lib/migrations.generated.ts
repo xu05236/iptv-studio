@@ -37,5 +37,6 @@ export const MIGRATION_FILES: string[] = [
   "0036_kv_write_counter.sql",
   "0037_source_progress_version.sql",
   "0038_proxy_kernel.sql",
-  "0039_proxy_subscriptions.sql"
+  "0039_proxy_subscriptions.sql",
+  "0040_proxy_subscription_kind.sql"
 ];

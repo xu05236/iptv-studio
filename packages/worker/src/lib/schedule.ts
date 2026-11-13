@@ -686,7 +686,7 @@ async function runProxySubWatch(env: Env, settings: AppSettings, now: number): P
   if (tasks.some((task) => task.type === 'proxy-fetch-sub' && (task.status === 'queued' || task.status === 'running'))) return false;
   const subscriptions = await listProxySubscriptions(env);
   const due = subscriptions.find((sub) => {
-    if (!sub.enabled) return false;
+    if (!sub.enabled || sub.kind === 'file') return false;
     if (!sub.lastFetchAt) return true;
     const stamp = sub.lastFetchAt.includes('T') ? sub.lastFetchAt : `${sub.lastFetchAt.replace(' ', 'T')}Z`;
     return now - Date.parse(stamp) >= hours * 3_600_000;

@@ -172,6 +172,7 @@ export interface ProxySubscription {
   id: string;
   name: string;
   url: string;
+  kind: 'url' | 'file';
   userAgent: string;
   headers: Record<string, string>;
   enabled: boolean;
@@ -185,6 +186,7 @@ interface SubscriptionRow {
   id: string;
   name: string;
   url: string;
+  kind?: string;
   user_agent: string;
   headers: string;
   enabled: number;
@@ -206,6 +208,7 @@ function toSubscription(row: SubscriptionRow): ProxySubscription {
     id: row.id,
     name: row.name,
     url: row.url,
+    kind: row.kind === 'file' ? 'file' : 'url',
     userAgent: row.user_agent,
     headers,
     enabled: row.enabled === 1,
@@ -233,13 +236,13 @@ export async function getProxySubscription(env: Env, id: string): Promise<ProxyS
 
 export async function insertProxySubscription(
   env: Env,
-  input: { name: string; url: string; userAgent?: string; headers?: Record<string, string> },
+  input: { name: string; url: string; kind?: 'url' | 'file'; userAgent?: string; headers?: Record<string, string> },
 ): Promise<ProxySubscription> {
   const id = `psub-${crypto.randomUUID().slice(0, 8)}`;
   await env.DB.prepare(
-    `INSERT INTO proxy_subscriptions (id, name, url, user_agent, headers)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).bind(id, input.name || input.url, input.url, input.userAgent ?? '', JSON.stringify(input.headers ?? {})).run();
+    `INSERT INTO proxy_subscriptions (id, name, url, kind, user_agent, headers)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).bind(id, input.name || input.url, input.url, input.kind === 'file' ? 'file' : 'url', input.userAgent ?? '', JSON.stringify(input.headers ?? {})).run();
   const created = await getProxySubscription(env, id);
   if (!created) throw new Error('新建代理订阅失败');
   return created;
@@ -273,10 +276,34 @@ export async function updateProxySubscription(
   await env.DB.prepare(`UPDATE proxy_subscriptions SET ${sets.join(', ')} WHERE id = ?`).bind(...values).run();
 }
 
-/** Delete the subscription and disable (not delete) the nodes it owned. */
-export async function deleteProxySubscription(env: Env, id: string): Promise<void> {
-  await env.DB.prepare("UPDATE proxy_nodes SET subscription_id = '', enabled = 0 WHERE subscription_id = ?").bind(id).run();
+export type ProxySubscriptionNodeMode = 'delete_all' | 'keep_alive' | 'keep_all';
+
+/**
+ * Delete the subscription record and handle its nodes:
+ * - delete_all: remove every node that came from this subscription
+ * - keep_alive: remove nodes that never succeeded; unbind the rest
+ * - keep_all: unbind every node and keep it
+ */
+export async function deleteProxySubscription(
+  env: Env,
+  id: string,
+  nodeMode: ProxySubscriptionNodeMode = 'delete_all',
+): Promise<{ deleted: number; kept: number }> {
+  const totalRow = await env.DB.prepare('SELECT COUNT(*) AS n FROM proxy_nodes WHERE subscription_id = ?').bind(id).first<{ n: number }>();
+  const total = Number(totalRow?.n ?? 0);
+  let deleted = 0;
+  if (nodeMode === 'delete_all') {
+    const result = await env.DB.prepare('DELETE FROM proxy_nodes WHERE subscription_id = ?').bind(id).run();
+    deleted = Number(result.meta.changes ?? 0);
+  } else {
+    if (nodeMode === 'keep_alive') {
+      const result = await env.DB.prepare("DELETE FROM proxy_nodes WHERE subscription_id = ? AND (last_ok_at IS NULL OR last_ok_at = '')").bind(id).run();
+      deleted = Number(result.meta.changes ?? 0);
+    }
+    await env.DB.prepare("UPDATE proxy_nodes SET subscription_id = '' WHERE subscription_id = ?").bind(id).run();
+  }
   await env.DB.prepare('DELETE FROM proxy_subscriptions WHERE id = ?').bind(id).run();
+  return { deleted, kept: Math.max(0, total - deleted) };
 }
 
 export async function finishProxySubscription(env: Env, id: string, nodeCount: number, status: string): Promise<void> {
@@ -286,6 +313,13 @@ export async function finishProxySubscription(env: Env, id: string, nodeCount: n
 }
 
 /** Record a dispatch so a failed refresh does not retry on every 5-minute tick. */
+/** Record the outcome on the subscription card without touching its nodes. */
+export async function setProxySubscriptionStatus(env: Env, id: string, status: string): Promise<void> {
+  await env.DB.prepare(
+    "UPDATE proxy_subscriptions SET last_status = ?, last_fetch_at = datetime('now') WHERE id = ?",
+  ).bind(status.slice(0, 300), id).run();
+}
+
 export async function markProxySubscriptionAttempt(env: Env, id: string): Promise<void> {
   await env.DB.prepare("UPDATE proxy_subscriptions SET last_fetch_at = datetime('now'), last_status = '刷新中…' WHERE id = ?").bind(id).run();
 }

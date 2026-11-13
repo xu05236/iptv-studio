@@ -238,16 +238,20 @@ function headersOf(value: unknown): Record<string, string> {
 }
 
 proxyRoutes.post('/subscriptions', async (c) => {
-  const body = (await readJson<{ name?: string; url?: string; userAgent?: string; headers?: Record<string, string> }>(c)) ?? {};
+  const body = (await readJson<{ name?: string; url?: string; kind?: string; userAgent?: string; headers?: Record<string, string> }>(c)) ?? {};
+  const kind = body.kind === 'file' ? 'file' : 'url';
   const url = cleanText(body.url, 500);
-  if (!/^https?:\/\//i.test(url)) return fail('请填写 http(s) 订阅地址');
+  if (kind === 'url' && !/^https?:\/\//i.test(url)) return fail('请填写 http(s) 订阅地址');
+  const name = cleanText(body.name, 80);
+  if (kind === 'file' && !name) return fail('请填写订阅名称');
   const sub = await insertProxySubscription(c.env, {
-    name: cleanText(body.name, 80) || url,
+    name: name || url,
     url,
+    kind,
     userAgent: cleanText(body.userAgent, 300) || 'clash-verge/v1.0',
     headers: headersOf(body.headers),
   });
-  await audit(c.env, c.get('actor'), 'proxy_subscription.create', sub.id, { url });
+  await audit(c.env, c.get('actor'), 'proxy_subscription.create', sub.id, { url, kind });
   return ok({ subscription: sub });
 });
 
@@ -270,15 +274,18 @@ proxyRoutes.delete('/subscriptions/:id', async (c) => {
   const id = c.req.param('id');
   const sub = await getProxySubscription(c.env, id);
   if (!sub) return fail('订阅不存在', 404);
-  await deleteProxySubscription(c.env, id);
-  await audit(c.env, c.get('actor'), 'proxy_subscription.delete', id, { nodes: 'disabled' });
-  return ok({ ok: true });
+  const requested = c.req.query('nodes');
+  const nodeMode = requested === 'keep_alive' || requested === 'keep_all' ? requested : 'delete_all';
+  const result = await deleteProxySubscription(c.env, id, nodeMode);
+  await audit(c.env, c.get('actor'), 'proxy_subscription.delete', id, { nodes: nodeMode, deleted: result.deleted });
+  return ok({ ok: true, ...result });
 });
 
 proxyRoutes.post('/subscriptions/:id/refresh', async (c) => {
   const id = c.req.param('id');
   const sub = await getProxySubscription(c.env, id);
   if (!sub) return fail('订阅不存在', 404);
+  if (sub.kind === 'file') return fail('文件订阅不支持刷新，请重新导入文件', 409);
   if (!sub.enabled) return fail('订阅已停用', 409);
   const body = (await readJson<{ mode?: string }>(c)) ?? {};
   const mode = body.mode === 'proxy' ? 'proxy' : 'actions';
@@ -299,7 +306,7 @@ proxyRoutes.post('/subscriptions/:id/refresh', async (c) => {
 });
 
 proxyRoutes.post('/pull-subscription', async (c) => {
-  const body = (await readJson<{ url?: string; userAgent?: string; mode?: string }>(c)) ?? {};
+  const body = (await readJson<{ url?: string; name?: string; userAgent?: string; mode?: string }>(c)) ?? {};
   const url = cleanText(body.url, 500);
   if (!/^https?:\/\//i.test(url)) return fail('请填写 http(s) 订阅地址');
   const mode = body.mode === 'actions' ? 'actions' : 'proxy';
@@ -308,16 +315,25 @@ proxyRoutes.post('/pull-subscription', async (c) => {
     if (!nodes.some((node) => node.enabled && !node.kernelOnly)) return fail('没有可用代理，请先测活至少一个', 409);
   }
   const userAgent = cleanText(body.userAgent, 300) || 'clash-verge/v1.0';
+  // Pulling always creates a subscription so the result is kept and can be
+  // refreshed or deleted later instead of only being imported once.
+  const sub = await insertProxySubscription(c.env, {
+    name: cleanText(body.name, 80) || url,
+    url,
+    kind: 'url',
+    userAgent,
+    headers: {},
+  });
   const task = await createTask(c.env, {
     type: 'proxy-fetch-sub',
     source: 'manual',
     priority: 80,
-    payload: { sub_url: url, user_agent: userAgent, fetch_mode: mode },
+    payload: { sub_id: sub.id, sub_url: url, user_agent: userAgent, fetch_mode: mode },
     message: mode === 'actions' ? 'Actions 直连拉取订阅' : '代理拉取订阅',
   });
   await dispatchNext(c.env);
-  await audit(c.env, c.get('actor'), 'proxy.pull_subscription', task.id, { url: url.slice(0, 120), mode });
-  return ok({ taskId: task.id });
+  await audit(c.env, c.get('actor'), 'proxy.pull_subscription', task.id, { url: url.slice(0, 120), mode, subId: sub.id });
+  return ok({ taskId: task.id, subscription: sub });
 });
 
 proxyRoutes.post('/check-all', async (c) => {
