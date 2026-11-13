@@ -1,5 +1,7 @@
 import type { Env } from './env.js';
 import { loadSettings, purgeOldRows } from './db.js';
+import { getJson } from './lib/store.js';
+import { pruneSnapshotDirs, SNAPSHOT_KEEP, type SnapshotItem } from './lib/snapshots.js';
 
 const DAY = 86_400_000;
 
@@ -17,6 +19,13 @@ export async function runCron(env: Env): Promise<void> {
   await prunePrefix(env, 'snapshots/', Math.max(3, Math.min(30, settings.retentionDays)));
   await prunePrefix(env, 'logs/', 30);
   await prunePrefix(env, 'shots/', 30);
+
+  // Rollback snapshots are only useful while listed; older directories were
+  // never pruned before this fallback existed and could pile up to hundreds MB.
+  const manifest = await getJson<{ items: SnapshotItem[] }>(env, 'state/snapshots.json');
+  if (manifest?.items?.length) {
+    await pruneSnapshotDirs(env, new Set(manifest.items.slice(0, SNAPSHOT_KEEP).map((item) => item.id)));
+  }
 }
 
 /** Delete KV artifacts older than N days (metadata.updatedAt is set on write). */

@@ -160,7 +160,7 @@ export function Runs() {
         <div className="card__header" style={{ padding: '2px 2px 12px' }}>
           <div>
             <div className="title-3">快照回滚</div>
-            <div className="caption">手动创建 · 保留最近 10 个</div>
+            <div className="caption">手动创建 · 保留最近 3 个</div>
           </div>
           <Button size="sm" variant="primary" loading={createSnapshot.isPending} onClick={() => createSnapshot.mutate()}>
             <Camera size={14} /> 创建快照

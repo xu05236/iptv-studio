@@ -11,6 +11,36 @@ export interface SnapshotItem {
   createdAt: string;
 }
 
+/** How many rollback snapshots the manifest (and KV) keeps. */
+export const SNAPSHOT_KEEP = 3;
+
+export function dirsToPrune(dirs: Iterable<string>, keep: Set<string>): string[] {
+  return [...dirs].filter((dir) => !keep.has(dir));
+}
+
+async function listSnapshotDirs(env: Env): Promise<string[]> {
+  const dirs = new Set<string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const listing = await env.KV.list({ prefix: 'state/snapshots/', cursor, limit: 1000 });
+    for (const key of listing.keys) {
+      const rest = key.name.slice('state/snapshots/'.length);
+      const slash = rest.indexOf('/');
+      if (slash > 0) dirs.add(rest.slice(0, slash));
+    }
+    if (listing.list_complete) break;
+    cursor = listing.cursor;
+  }
+  return [...dirs];
+}
+
+/** Delete snapshot directories that are no longer in the manifest. */
+export async function pruneSnapshotDirs(env: Env, keep: Set<string>): Promise<number> {
+  const stale = dirsToPrune(await listSnapshotDirs(env), keep);
+  for (const dir of stale) await deletePrefix(env, `state/snapshots/${dir}/`);
+  return stale.length;
+}
+
 /** Create a rollback snapshot of the currently published artifacts. */
 export async function createSnapshot(env: Env, actor: string): Promise<SnapshotItem | null> {
   const [index, catalog, pool, guide] = await Promise.all([
@@ -38,7 +68,9 @@ export async function createSnapshot(env: Env, actor: string): Promise<SnapshotI
     createdAt: new Date().toISOString(),
   };
   items.unshift(item);
-  await putArtifact(env, 'state/snapshots.json', JSON.stringify({ items: items.slice(0, 10) }), json);
+  const kept = items.slice(0, SNAPSHOT_KEEP);
+  await putArtifact(env, 'state/snapshots.json', JSON.stringify({ items: kept }), json);
+  await pruneSnapshotDirs(env, new Set(kept.map((entry) => entry.id)));
   return item;
 }
 
