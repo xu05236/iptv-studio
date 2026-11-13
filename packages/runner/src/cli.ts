@@ -842,11 +842,16 @@ async function publishPhase(
   const ensureItems = new Map<string, { id: string; name: string; group: string }>();
   for (const line of lines) {
     if (knownChannels.has(line.channelId)) continue;
+    // Only per-name channels have a name that matches the line. Merged channels
+    // (`x-mc-…`) are created by the source settings and must not be recreated
+    // from an individual line name.
+    if (!line.channelId.startsWith('x-') || line.channelId.startsWith('x-mc-')) continue;
     const seed = registry.get(line.channelId);
-    if (!seed || !seed.id.startsWith('x-')) continue;
+    const name = (seed?.name ?? line.name ?? '').trim();
+    if (!name) continue;
     const source = sourceById.get(line.sourceId);
     const groupOverride = (source?.mergeChannelGroup ?? (source as { merge_channel_group?: string } | undefined)?.merge_channel_group ?? '').trim();
-    ensureItems.set(seed.id, { id: seed.id, name: seed.name, group: groupOverride || seed.group || '其他' });
+    ensureItems.set(line.channelId, { id: line.channelId, name, group: groupOverride || seed?.group || line.group || '其他' });
   }
   if (ensureItems.size) {
     const ensured = await api.post<{ created: number; updated: number }>('/api/admin/channels/ensure', { items: [...ensureItems.values()] });
