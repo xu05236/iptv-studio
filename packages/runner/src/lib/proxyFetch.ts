@@ -286,6 +286,7 @@ export async function fetchViaProxy(
 export async function probeProxy(proxy: ProxyProbeInput): Promise<ProxyProbeResult> {
   const startedAt = Date.now();
   let lastError = '没有可用的测活目标';
+  const failures: string[] = [];
   let agent: https.Agent;
   try {
     agent = buildAgent(proxy) as unknown as https.Agent;
@@ -306,7 +307,15 @@ export async function probeProxy(proxy: ProxyProbeInput): Promise<ProxyProbeResu
       return { ok: true, latencyMs: Date.now() - startedAt, ...egress, error: '' };
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
+      const host = (() => {
+        try {
+          return new URL(target.url).hostname;
+        } catch {
+          return target.url;
+        }
+      })();
+      failures.push(`${host}: ${lastError}`);
     }
   }
-  return { ok: false, latencyMs: Date.now() - startedAt, egressIp: '', country: '', asn: '', error: lastError };
+  return { ok: false, latencyMs: Date.now() - startedAt, egressIp: '', country: '', asn: '', error: (failures.join('；') || lastError).slice(0, 600) };
 }

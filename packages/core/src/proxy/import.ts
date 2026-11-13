@@ -374,12 +374,18 @@ export function parseProxyText(text: string): ProxyParseResult {
   return { nodes, warnings };
 }
 
-/** Dedupe by protocol + host + port + username; names are not part of identity. */
+/** http and socks5 usually describe the same proxy endpoint; treat them as one family. */
+export function proxyMatchKey(node: Pick<ParsedProxy, 'protocol' | 'host' | 'port' | 'username'>): string {
+  const family = node.protocol === 'http' || node.protocol === 'socks5' ? 'tcp-proxy' : node.protocol;
+  return `${family}|${node.host.toLowerCase()}|${node.port}|${node.username}`;
+}
+
+/** Dedupe by protocol family + host + port + username; names are not part of identity. */
 export function dedupeParsedProxies(nodes: ParsedProxy[]): ParsedProxy[] {
   const seen = new Set<string>();
   const result: ParsedProxy[] = [];
   for (const node of nodes) {
-    const key = `${node.protocol}|${node.host.toLowerCase()}|${node.port}|${node.username}`;
+    const key = proxyMatchKey(node);
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(node);

@@ -234,7 +234,7 @@ export function buildKernelConfig(nodes: KernelNode[], mixedPort = 7890): Kernel
     `mixed-port: ${mixedPort}`,
     'allow-lan: false',
     'mode: rule',
-    'log-level: warning',
+    'log-level: info',
     'proxies:',
     blocks.join('\n'),
     rules,
@@ -346,7 +346,7 @@ export async function startKernel(
   log.on('error', () => {
     logClosed = true;
   });
-  const child = spawn(binary, ['-f', configPath], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(binary, ['-f', configPath, '-d', dir], { stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout?.on('data', writeLog);
   child.stderr?.on('data', writeLog);
   let stopped = false;
@@ -384,11 +384,19 @@ export async function startKernel(
 /** Probe one kernel-only node; the engine is started and stopped per node. */
 export async function probeKernelNode(node: KernelNode, options: { dir?: string; mixedPort?: number; startupTimeoutMs?: number } = {}): Promise<ProxyProbeResult> {
   let kernel: KernelHandle | null = null;
+  let result: ProxyProbeResult = { ok: false, latencyMs: 0, egressIp: '', country: '', asn: '', error: '内核未启动' };
   try {
     kernel = await startKernel(node, options);
-    return await probeProxy({ id: node.id, protocol: 'socks5', host: '127.0.0.1', port: kernel.port });
+    // The mixed port starts accepting before the first outbound is warm; a
+    // cold kernel can reset the first TLS attempt, so retry once before
+    // declaring the node dead.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      result = await probeProxy({ id: node.id, protocol: 'socks5', host: '127.0.0.1', port: kernel.port });
+      if (result.ok) break;
+      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1_500));
+    }
   } catch (error) {
-    return {
+    result = {
       ok: false,
       latencyMs: 0,
       egressIp: '',
@@ -397,8 +405,21 @@ export async function probeKernelNode(node: KernelNode, options: { dir?: string;
       error: error instanceof Error ? error.message : String(error),
     };
   } finally {
-    await kernel?.stop();
+    const handle = kernel;
+    if (handle) {
+      await handle.stop();
+      if (!result.ok && existsSync(handle.logPath)) {
+        const tail = readFileSync(handle.logPath, 'utf8')
+          .trim()
+          .split('\n')
+          .slice(-6)
+          .join(' | ')
+          .slice(-500);
+        if (tail) result = { ...result, error: `${result.error}；内核日志：${tail}`.slice(0, 900) };
+      }
+    }
   }
+  return result;
 }
 
 /** Probe up to `limit` kernel nodes with a small concurrency (default 1). */

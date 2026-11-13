@@ -66,7 +66,7 @@ export function Proxies() {
   const [importUa, setImportUa] = useState('');
   const [importHeaders, setImportHeaders] = useState('');
   const [sort, setSort] = useState<ProxySort>('default');
-  const [importResult, setImportResult] = useState<{ added: number; updated?: number; disabled?: number; skipped: number; kernelOnly: number; deduped?: number; parsedTotal?: number; warnings: string[] } | null>(null);
+  const [importResult, setImportResult] = useState<{ added: number; updated?: number; merged?: number; disabled?: number; skipped: number; kernelOnly: number; deduped?: number; parsedTotal?: number; warnings: string[] } | null>(null);
   const [importMode, setImportMode] = useState<'paste' | 'file' | 'subscribe'>('paste');
   const [importFileName, setImportFileName] = useState('');
   const [pullTaskId, setPullTaskId] = useState<string | null>(null);
@@ -130,7 +130,7 @@ export function Proxies() {
 
   const importProxies = useMutation({
     mutationFn: (input?: { subscriptionId?: string }) =>
-      api.post<{ added: number; updated?: number; disabled?: number; skipped: number; kernelOnly: number; deduped?: number; parsedTotal?: number; warnings: string[] }>('/api/admin/proxies/import', {
+      api.post<{ added: number; updated?: number; merged?: number; disabled?: number; skipped: number; kernelOnly: number; deduped?: number; parsedTotal?: number; warnings: string[] }>('/api/admin/proxies/import', {
         text: importText,
         url: importUrl,
         userAgent: importUa.trim(),
@@ -141,7 +141,7 @@ export function Proxies() {
       setImportResult(data);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'proxies'] });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'proxy-subs'] });
-      show(`导入完成：解析 ${data.parsedTotal ?? data.added + data.skipped}，新增 ${data.added}，去重 ${data.deduped ?? 0}，跳过 ${data.skipped}`);
+      show(`导入完成：解析 ${data.parsedTotal ?? data.added + data.skipped}，新增 ${data.added}，去重 ${data.deduped ?? 0}${data.merged ? `，跨协议合并 ${data.merged}` : ''}，跳过 ${data.skipped}`);
     },
     onError: (error) => show(error instanceof Error ? error.message : '导入失败', 'error'),
   });
@@ -754,7 +754,7 @@ export function Proxies() {
           )}
           {importResult ? (
             <div className="caption">
-              解析 {importResult.parsedTotal ?? importResult.added + importResult.skipped} 条 · 新增 {importResult.added} 个{importResult.updated ? ` · 更新 ${importResult.updated} 个` : ''}{importResult.disabled ? ` · 停用 ${importResult.disabled} 个` : ''} · 去重 {importResult.deduped ?? 0} 个 · 跳过 {importResult.skipped} 个{importResult.kernelOnly ? ` · 需内核 ${importResult.kernelOnly} 个` : ''}
+              解析 {importResult.parsedTotal ?? importResult.added + importResult.skipped} 条 · 新增 {importResult.added} 个{importResult.updated ? ` · 更新 ${importResult.updated} 个` : ''}{importResult.merged ? ` · 跨协议合并 ${importResult.merged} 个` : ''}{importResult.disabled ? ` · 停用 ${importResult.disabled} 个` : ''} · 去重 {importResult.deduped ?? 0} 个 · 跳过 {importResult.skipped} 个{importResult.kernelOnly ? ` · 需内核 ${importResult.kernelOnly} 个` : ''}
               {importResult.warnings.length ? <div style={{ marginTop: 6 }}>{importResult.warnings.join('；')}</div> : null}
             </div>
           ) : null}

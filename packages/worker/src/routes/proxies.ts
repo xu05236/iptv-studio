@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { dedupeParsedProxies, parseProxyText, type ProxyCheckResult, type ProxyNode } from '@iptv/core';
+import { dedupeParsedProxies, parseProxyText, proxyMatchKey, type ProxyCheckResult, type ProxyNode } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import { audit } from '../db.js';
 import { fail, ok, readJson } from '../lib/http.js';
@@ -158,9 +158,11 @@ proxyRoutes.post('/import', async (c) => {
   if (!nodes.length) return fail(parsed.warnings[0] ?? '没有识别到可用节点');
   const existingNodes = await listProxyNodes(c.env);
   const existing = new Map(existingNodes.map((node) => [proxyNodeKey(node), node]));
+  const existingByFamily = new Map(existingNodes.map((node) => [proxyMatchKey(node), node]));
   let added = 0;
   let updated = 0;
   let skipped = 0;
+  let merged = 0;
   let kernelOnly = 0;
   const keepKeys: string[] = [];
   for (const node of nodes) {
@@ -169,12 +171,17 @@ proxyRoutes.post('/import', async (c) => {
       continue;
     }
     const key = proxyNodeKey(node);
-    keepKeys.push(key);
     const passwordEnc = node.password ? await encryptProxyPassword(c.env, node.password) : '';
     const configEnc = node.config ? await encryptProxyPassword(c.env, node.config) : '';
-    const previous = existing.get(key);
+    const exact = existing.get(key);
+    // http and socks5 on the same host:port are the same endpoint; merge them
+    // so a manual http import is not duplicated as socks5 later.
+    const familyMatch = exact ? null : existingByFamily.get(proxyMatchKey(node)) ?? null;
+    const previous = exact ?? familyMatch;
+    if (familyMatch && !exact) merged += 1;
     if (previous) {
       skipped += 1;
+      keepKeys.push(proxyNodeKey(previous));
       if (subscriptionId) {
         // A refresh must pick up rotated passwords/configs and re-enable nodes
         // the provider brought back, so update instead of leaving stale copies.
@@ -191,10 +198,7 @@ proxyRoutes.post('/import', async (c) => {
       }
       continue;
     }
-    if (existing.has(key)) {
-      skipped += 1;
-      continue;
-    }
+    keepKeys.push(key);
     await insertProxyNode(c.env, {
       name: node.name || `${node.protocol}-${node.host}`,
       protocol: node.protocol,
@@ -221,8 +225,8 @@ proxyRoutes.post('/import', async (c) => {
       `新增 ${added} · 更新 ${updated} · 停用 ${disabled}`,
     );
   }
-  await audit(c.env, c.get('actor'), 'proxy.import', subscriptionId || 'bulk', { added, updated, skipped, kernelOnly, disabled, parsedTotal, deduped });
-  return ok({ added, updated, skipped, kernelOnly, disabled, parsedTotal, deduped, warnings: parsed.warnings.slice(0, 10) });
+  await audit(c.env, c.get('actor'), 'proxy.import', subscriptionId || 'bulk', { added, updated, merged, skipped, kernelOnly, disabled, parsedTotal, deduped });
+  return ok({ added, updated, merged, skipped, kernelOnly, disabled, parsedTotal, deduped, warnings: parsed.warnings.slice(0, 10) });
 });
 
 proxyRoutes.get('/subscriptions', async (c) => ok({ items: await listProxySubscriptions(c.env) }));
