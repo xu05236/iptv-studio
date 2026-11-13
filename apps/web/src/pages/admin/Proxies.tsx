@@ -572,7 +572,7 @@ export function Proxies() {
                     <td data-label="成功率">{successRate(node)}</td>
                     <td data-label="最近检测" className="caption">{node.lastCheckedAt ? timeAgo(node.lastCheckedAt) : '—'}</td>
                     <td data-label="操作">
-                      <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
+                      <div className="row" style={{ gap: 2, flexWrap: 'nowrap' }}>
                         <Switch
                           checked={node.enabled}
                           onChange={(value) => patchProxy.mutate({ id: node.id, patch: { enabled: value } })}

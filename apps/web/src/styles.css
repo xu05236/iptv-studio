@@ -1419,7 +1419,7 @@ button {
 /* 国内代理列表：与线路池同一套表头与列宽规则 */
 .page--admin .proxies-table {
   table-layout: fixed;
-  min-width: 1350px;
+  min-width: 1300px;
 }
 
 .page--admin .proxies-table thead th {
@@ -1442,15 +1442,15 @@ button {
   text-overflow: ellipsis;
 }
 
-.proxies-table th:nth-child(1) { width: 220px; }
-.proxies-table th:nth-child(2) { width: 84px; }
-.proxies-table th:nth-child(3) { width: 300px; }
-.proxies-table th:nth-child(4) { width: 110px; }
-.proxies-table th:nth-child(5) { width: 130px; }
-.proxies-table th:nth-child(6) { width: 92px; }
-.proxies-table th:nth-child(7) { width: 84px; }
-.proxies-table th:nth-child(8) { width: 110px; }
-.proxies-table th:nth-child(9) { width: 220px; }
+.proxies-table th:nth-child(1) { width: 200px; }
+.proxies-table th:nth-child(2) { width: 80px; }
+.proxies-table th:nth-child(3) { width: 270px; }
+.proxies-table th:nth-child(4) { width: 100px; }
+.proxies-table th:nth-child(5) { width: 120px; }
+.proxies-table th:nth-child(6) { width: 90px; }
+.proxies-table th:nth-child(7) { width: 80px; }
+.proxies-table th:nth-child(8) { width: 100px; }
+.proxies-table th:nth-child(9) { width: 260px; }
 
 .pool-table tbody td {
   padding: 11px 12px;
