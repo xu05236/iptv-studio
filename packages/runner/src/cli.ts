@@ -35,6 +35,7 @@ import {
   type RunReport,
 } from '@iptv/core';
 import { loadConfig } from './config.js';
+import { MERGED_PROBE_PER_CHANNEL, selectProbeLines } from './pipeline/probeSelection.js';
 import { RunLogger, redact, redactError } from './logger.js';
 import { notifyTelegram } from './notify.js';
 import { ApiClient, ArtifactStore, loadRemoteConfig, type ChannelRecord, type RemoteConfig, type SourceRecord } from './store.js';
@@ -1377,38 +1378,28 @@ async function runBatchProbe(): Promise<void> {
     const perChannel = Math.max(1, Number(settings.probePerChannel) || 24);
     const cooldown = await loadPrefilterCooldown(store);
     const favoriteSources = new Set(remote.sources.filter((source) => source.weight >= 2).map((source) => source.id));
-    const favoriteRank = (line: LineEntry): number => (favoriteSources.has(line.sourceId) ? 0 : 1);
     const selectedSignatures = new Set<string>();
     const selected: LineEntry[] = [];
     const chosenByPhase = { pending: 0, quarantine: 0 };
 
     // One representative line per URL signature: the batch budget is spent on
-    // distinct streams, not on duplicates of the same URL.
+    // distinct streams, not on duplicates of the same URL. Channels are visited
+    // round-robin so a single merged channel cannot starve the rest.
     const pickPhase = (phase: 'pending' | 'quarantine', limit: number): void => {
-      const candidates = lines.filter((line) => channelIds.has(line.channelId) && phaseMatches(line, phase, now, forcedPhase === phase));
-      const byChannel = new Map<string, LineEntry[]>();
-      for (const line of candidates) {
-        const bucket = byChannel.get(line.channelId) ?? [];
-        bucket.push(line);
-        byChannel.set(line.channelId, bucket);
-      }
-      const picked: LineEntry[] = [];
-      for (const bucket of byChannel.values()) {
-        bucket.sort((a, b) => favoriteRank(a) - favoriteRank(b) || (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
-        picked.push(...bucket.slice(0, perChannel));
-      }
-      picked.sort((a, b) => favoriteRank(a) - favoriteRank(b) || (Date.parse(a.lastProbeAt ?? '') || 0) - (Date.parse(b.lastProbeAt ?? '') || 0) || compareLines(a, b));
-      let taken = 0;
+      const picked = selectProbeLines(lines, {
+        matches: (line) => phaseMatches(line, phase, now, forcedPhase === phase),
+        channelIds,
+        favorites: favoriteSources,
+        cooldown,
+        takenSignatures: selectedSignatures,
+        now,
+        perChannel,
+        mergedPerChannel: MERGED_PROBE_PER_CHANNEL,
+        limit,
+      });
       for (const line of picked) {
-        if (taken >= limit) break;
-        if (line.official) continue;
-        const signature = lineSignature(line);
-        if (selectedSignatures.has(signature)) continue;
-        if ((cooldown.get(signature) ?? 0) > now) continue;
-        selectedSignatures.add(signature);
         selected.push(line);
-        taken++;
-        chosenByPhase[phase]++;
+        chosenByPhase[phase] += 1;
       }
     };
 
@@ -1417,7 +1408,9 @@ async function runBatchProbe(): Promise<void> {
     if (forcedPhase && ['pending', 'quarantine'].includes(forcedPhase)) {
       pickPhase(forcedPhase, batchSize);
     } else {
-      if (!paused.has('pending')) pickPhase('pending', Math.floor(batchSize * 0.7));
+      // Pending first: a full batch should spend its quota on unknown streams.
+      // Suspect lines only fill the leftover when pending runs dry.
+      if (!paused.has('pending')) pickPhase('pending', batchSize);
       const quarantineTarget = batchSize - selected.length;
       if (!paused.has('quarantine') && quarantineTarget > 0) pickPhase('quarantine', quarantineTarget);
     }
