@@ -825,7 +825,12 @@ export function Dashboard() {
                     <UsageBar label="今日写入" used={kvWrites} limit={1000} />
                     <UsageBar label="今日读取" used={kvReads} limit={100000} />
                     <UsageBar label="今日列表" used={kvLists} limit={1000} />
-                    <UsageBar label="存储占用" used={snapshot.kv.storageBytes} limit={1024 ** 3} format={formatBytes} />
+                    <UsageBar
+                      label={snapshot.kv.storageDay && snapshot.kv.storageDay !== today ? `存储占用（截至 ${snapshot.kv.storageDay}）` : '存储占用'}
+                      used={snapshot.kv.storageBytes}
+                      limit={1024 ** 3}
+                      format={formatBytes}
+                    />
                     <div className="caption" style={{ marginTop: 8 }}>
                       {kvToday
                         ? '免费额度每日 UTC 00:00（北京时间 08:00）重置'

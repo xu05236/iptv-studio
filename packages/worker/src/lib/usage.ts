@@ -14,7 +14,7 @@ interface DayUsage {
 
 export interface UsageSnapshot {
   collectedAt: string;
-  kv: { day: string; reads: number; writes: number; lists: number; deletes: number; storageBytes: number };
+  kv: { day: string; reads: number; writes: number; lists: number; deletes: number; storageBytes: number; storageDay?: string };
   d1: { day: string; rowsRead: number; rowsWritten: number };
   github: { month: string; minutes: number; runs: number; private?: boolean };
   history: DayUsage[];
@@ -161,6 +161,15 @@ interface CloudflareUsage {
   d1WritesByDay: Map<string, number>;
 }
 
+/** KV storage is a daily gauge; pick the newest row we have (today's may lag). */
+export function pickStorageRow<T extends { dimensions: { date: string } }>(rows: T[]): T | undefined {
+  let latest: T | undefined;
+  for (const row of rows) {
+    if (!latest || row.dimensions.date > latest.dimensions.date) latest = row;
+  }
+  return latest;
+}
+
 async function collectCloudflare(env: Env, days: string[]): Promise<CloudflareUsage | null> {
   const token = env.CLOUDFLARE_API_TOKEN;
   const accountId = env.CLOUDFLARE_ACCOUNT_ID;
@@ -192,7 +201,7 @@ async function collectCloudflare(env: Env, days: string[]): Promise<CloudflareUs
   const d1Rows = (account.d1AnalyticsAdaptiveGroups as Array<{ dimensions: { date: string; databaseId: string }; sum: { rowsRead: number; rowsWritten: number } }> | undefined) ?? [];
 
   const kvWritesByDay = new Map<string, number>();
-  const kv = { day: today, reads: 0, writes: 0, lists: 0, deletes: 0, storageBytes: 0 };
+  const kv: { day: string; reads: number; writes: number; lists: number; deletes: number; storageBytes: number; storageDay?: string } = { day: today, reads: 0, writes: 0, lists: 0, deletes: 0, storageBytes: 0 };
   for (const item of ops) {
     const date = item.dimensions.date;
     const requests = item.sum.requests;
@@ -203,8 +212,9 @@ async function collectCloudflare(env: Env, days: string[]): Promise<CloudflareUs
     if (item.dimensions.actionType === 'list') kv.lists += requests;
     if (item.dimensions.actionType === 'delete') kv.deletes += requests;
   }
-  const latestStorage = storage.filter((item) => item.dimensions.date === today).at(-1);
+  const latestStorage = pickStorageRow(storage);
   kv.storageBytes = latestStorage?.max.byteCount ?? 0;
+  if (latestStorage) kv.storageDay = latestStorage.dimensions.date;
 
   const d1WritesByDay = new Map<string, number>();
   const d1 = { day: today, rowsRead: 0, rowsWritten: 0 };

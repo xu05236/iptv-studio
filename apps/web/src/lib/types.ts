@@ -150,7 +150,7 @@ export interface AdminStats {
 export interface UsageSnapshot {
   collectedAt: string;
   cloudflareError?: string | null;
-  kv: { day: string; reads: number; writes: number; lists: number; deletes: number; storageBytes: number };
+  kv: { day: string; reads: number; writes: number; lists: number; deletes: number; storageBytes: number; storageDay?: string };
   d1: { day: string; rowsRead: number; rowsWritten: number };
   github: { month: string; minutes: number; runs: number; private?: boolean };
   history?: Array<{ date: string; kvWrites: number; d1Writes: number; githubMinutes: number }>;

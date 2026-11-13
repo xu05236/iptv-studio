@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateGithubRuns } from '../src/lib/usage.js';
+import { aggregateGithubRuns, pickStorageRow } from '../src/lib/usage.js';
 
 describe('aggregateGithubRuns', () => {
   it('sums run durations and ignores runs from previous months', () => {
@@ -43,5 +43,20 @@ describe('aggregateGithubRuns', () => {
     );
     expect(result.minutes).toBe(0);
     expect(result.runs).toBe(1);
+  });
+});
+
+describe('pickStorageRow', () => {
+  it('falls back to the newest day when today has no storage row yet', () => {
+    const row = pickStorageRow([
+      { dimensions: { date: '2026-11-11' }, max: { byteCount: 148_000_000 } },
+      { dimensions: { date: '2026-11-12' }, max: { byteCount: 149_000_000 } },
+    ]);
+    expect(row?.dimensions.date).toBe('2026-11-12');
+    expect(row?.max.byteCount).toBe(149_000_000);
+  });
+
+  it('returns undefined when there are no rows', () => {
+    expect(pickStorageRow([])).toBeUndefined();
   });
 });
