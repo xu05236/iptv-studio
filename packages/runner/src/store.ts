@@ -214,7 +214,8 @@ export interface ChannelRecord {
   id: string;
   name: string;
   tvg_id: string | null;
-  group_title: string | null;
+  group_title?: string | null;
+  group?: string | null;
   logo: string | null;
   number: number | null;
   enabled: number | boolean;

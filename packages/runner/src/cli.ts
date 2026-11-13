@@ -87,7 +87,7 @@ function buildRegistry(config: RemoteConfig): ChannelRegistry {
   const registry = new ChannelRegistry(BUILTIN_CHANNELS);
   for (const row of config.channels as ChannelRecord[]) {
     const builtin = registry.get(row.id);
-    const stored = row.group_title?.trim();
+    const stored = (row.group_title ?? row.group)?.trim();
     const group = stored && stored !== '其他'
       ? stored
       : builtin?.group ?? classifyGroup(row.name, stored ?? undefined);
