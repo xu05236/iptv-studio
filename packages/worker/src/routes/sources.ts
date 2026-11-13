@@ -23,7 +23,20 @@ export const sourceRoutes = new Hono<AppEnv>();
 
 /** The merge channel must exist in D1 before a publish, otherwise its lines are hidden from the pool and never probed. */
 async function ensureMergedChannel(env: AppEnv['Bindings'], sourceId: string, name: string, group: string | null): Promise<void> {
-  await upsertChannelSeeds(env, [{ id: mergedChannelId(sourceId), name, group: group || '影视' }]);
+  const id = mergedChannelId(sourceId);
+  const wantedGroup = group || '影视';
+  await upsertChannelSeeds(env, [{ id, name, group: wantedGroup }]);
+  // upsertChannelSeeds only fills an empty group; a user editing the category
+  // must win even when the channel already had one.
+  const { results } = await env.DB.prepare('SELECT name, group_title FROM channels WHERE id = ?')
+    .bind(id)
+    .all<{ name: string; group_title: string | null }>();
+  const current = results[0];
+  if (current && (current.name !== name || current.group_title !== wantedGroup)) {
+    await env.DB.prepare("UPDATE channels SET name = ?, group_title = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(name, wantedGroup, id)
+      .run();
+  }
 }
 
 /** refresh_hours: -1 = follow tiers, 0 = never, N = custom hours (24 = daily). */
