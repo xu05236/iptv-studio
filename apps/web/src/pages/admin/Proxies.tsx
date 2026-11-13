@@ -42,8 +42,6 @@ const UA_PRESETS = [
 const UDP_PROTOCOLS = new Set(['hysteria', 'hysteria2', 'tuic']);
 
 function statusOf(node: ProxyNode): { label: string; tone: 'green' | 'orange' | 'default' | 'blue' } {
-  if (UDP_PROTOCOLS.has(node.protocol)) return { label: 'UDP 不可测', tone: 'orange' };
-  if (node.kernelOnly) return { label: '需内核', tone: 'default' };
   if (node.lastOkAt) return { label: '可用', tone: 'green' };
   if (node.lastCheckedAt) return { label: '失败', tone: 'orange' };
   return { label: '未测活', tone: 'default' };
@@ -65,7 +63,7 @@ export function Proxies() {
   const [importUrl, setImportUrl] = useState('');
   const [importUa, setImportUa] = useState('');
   const [importHeaders, setImportHeaders] = useState('');
-  const [sort, setSort] = useState<ProxySort>('default');
+  const [sort, setSort] = useState<ProxySort>('latency');
   const [importResult, setImportResult] = useState<{ added: number; updated?: number; merged?: number; disabled?: number; skipped: number; kernelOnly: number; deduped?: number; parsedTotal?: number; warnings: string[] } | null>(null);
   const [importMode, setImportMode] = useState<'paste' | 'file' | 'subscribe'>('paste');
   const [importFileName, setImportFileName] = useState('');
@@ -301,8 +299,9 @@ export function Proxies() {
   });
 
   const items = proxies.data?.items ?? [];
-  const enabledCount = items.filter((item) => item.enabled && !item.kernelOnly).length;
+  const enabledCount = items.filter((item) => item.enabled).length;
   const kernelCount = items.filter((item) => item.kernelOnly).length;
+  const subscriptionNames = new Map((subscriptions.data?.items ?? []).map((item) => [item.id, item.name]));
 
   const settingsReady = Boolean(settings);
   const mode = settings?.proxyTestMode ?? 'interval';
@@ -548,35 +547,40 @@ export function Proxies() {
               {items.map((node, index) => {
                 const status = statusOf(node);
                 return (
-                  <tr key={node.id} style={node.kernelOnly ? { opacity: 0.55 } : undefined}>
-                    <td>
+                  <tr key={node.id}>
+                    <td data-label="名称">
                       <div className="row" style={{ gap: 8, alignItems: 'center' }}>
                         {node.id === proxies.data?.currentId ? <Badge tone="blue">当前</Badge> : null}
                         <span>{node.name}</span>
                       </div>
+                      <div className="caption truncate" style={{ maxWidth: 220 }}>
+                        {node.subscriptionId ? (subscriptionNames.get(node.subscriptionId) ?? '订阅已删除') : '手动'}
+                      </div>
                     </td>
-                    <td><span className="mono">{node.protocol}</span></td>
-                    <td className="mono">{node.host}:{node.port}{node.username ? ` · ${node.username}` : ''}{node.hasPassword ? ' · 有密码' : ''}{node.hasConfig ? ' · 配置已存' : ''}</td>
-                    <td>{[node.region, node.isp].filter(Boolean).join(' / ') || '—'}</td>
-                    <td>
+                    <td data-label="协议">
+                      <span className="mono">{node.protocol}</span>
+                      {node.kernelOnly ? <div className="caption">内核</div> : null}
+                    </td>
+                    <td data-label="地址" className="mono">{node.host}:{node.port}{node.username ? ` · ${node.username}` : ''}{node.hasPassword ? ' · 有密码' : ''}{node.hasConfig ? ' · 配置已存' : ''}</td>
+                    <td data-label="地区">{[node.region, node.isp].filter(Boolean).join(' / ') || '—'}</td>
+                    <td data-label="状态">
                       <Badge tone={status.tone}>{status.label}</Badge>
                       {node.lastError ? <div className="caption" style={{ marginTop: 2 }}>{node.lastError}</div> : null}
                     </td>
-                    <td>{node.lastLatencyMs != null ? `${node.lastLatencyMs} ms` : '—'}</td>
-                    <td>{successRate(node)}</td>
-                    <td className="caption">{node.lastCheckedAt ? timeAgo(node.lastCheckedAt) : '—'}</td>
-                    <td>
-                      <div className="row" style={{ gap: 4 }}>
+                    <td data-label="延迟">{node.lastLatencyMs != null ? `${node.lastLatencyMs} ms` : '—'}</td>
+                    <td data-label="成功率">{successRate(node)}</td>
+                    <td data-label="最近检测" className="caption">{node.lastCheckedAt ? timeAgo(node.lastCheckedAt) : '—'}</td>
+                    <td data-label="操作">
+                      <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
                         <Switch
                           checked={node.enabled}
-                          disabled={node.kernelOnly}
                           onChange={(value) => patchProxy.mutate({ id: node.id, patch: { enabled: value } })}
                         />
-                        <Button variant="ghost" size="sm" title="测活" disabled={node.kernelOnly} onClick={() => checkProxies.mutate(node.id)}><RefreshCw size={13} /></Button>
+                        <Button variant="ghost" size="sm" title="测活" onClick={() => checkProxies.mutate(node.id)}><RefreshCw size={13} /></Button>
                         <Button
                           variant="ghost"
                           size="sm"
-                          title={proxies.data?.currentId === node.id ? '当前补测节点' : '设为当前补测节点'}
+                          title={node.kernelOnly ? '内核节点不能作为补测中转' : proxies.data?.currentId === node.id ? '当前补测节点' : '设为当前补测节点'}
                           disabled={proxies.data?.currentId === node.id || node.kernelOnly || !node.enabled}
                           onClick={() => setCurrentProxy.mutate(node.id)}
                         >
