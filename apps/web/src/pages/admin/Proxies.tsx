@@ -562,11 +562,11 @@ export function Proxies() {
                       <span className="mono">{node.protocol}</span>
                       {node.kernelOnly ? <div className="caption">内核</div> : null}
                     </td>
-                    <td data-label="地址" className="mono">{node.host}:{node.port}{node.username ? ` · ${node.username}` : ''}{node.hasPassword ? ' · 有密码' : ''}{node.hasConfig ? ' · 配置已存' : ''}</td>
+                    <td data-label="地址" className="mono"><div className="proxies-address">{node.host}:{node.port}{node.username ? ` · ${node.username}` : ''}{node.hasPassword ? ' · 有密码' : ''}{node.hasConfig ? ' · 配置已存' : ''}</div></td>
                     <td data-label="地区">{[node.region, node.isp].filter(Boolean).join(' / ') || '—'}</td>
                     <td data-label="状态">
                       <Badge tone={status.tone}>{status.label}</Badge>
-                      {node.lastError ? <div className="caption" style={{ marginTop: 2 }}>{node.lastError}</div> : null}
+                      {node.lastError ? <div className="caption proxies-error" title={node.lastError}>{node.lastError}</div> : null}
                     </td>
                     <td data-label="延迟">{node.lastLatencyMs != null ? `${node.lastLatencyMs} ms` : '—'}</td>
                     <td data-label="成功率">{successRate(node)}</td>

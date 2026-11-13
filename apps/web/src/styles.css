@@ -1444,8 +1444,23 @@ button {
 
 .proxies-table tbody td[data-label="地址"] {
   white-space: normal;
+}
+
+.proxies-table .proxies-address {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   word-break: break-all;
   line-height: 1.45;
+}
+
+.proxies-table .proxies-error {
+  margin-top: 2px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .proxies-table th:nth-child(1) { width: 17%; }
