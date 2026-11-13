@@ -1416,10 +1416,11 @@ button {
 .pool-table th:nth-child(8) { width: 104px; }
 .pool-table th:nth-child(9) { width: 120px; }
 
-/* 国内代理列表：与线路池同一套表头与列宽规则 */
+/* 国内代理列表：与线路池同一套表头，百分比列宽保证整表不溢出 */
 .page--admin .proxies-table {
   table-layout: fixed;
-  min-width: 1300px;
+  width: 100%;
+  min-width: 1180px;
 }
 
 .page--admin .proxies-table thead th {
@@ -1438,19 +1439,24 @@ button {
 
 .proxies-table tbody td {
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
-.proxies-table th:nth-child(1) { width: 200px; }
-.proxies-table th:nth-child(2) { width: 80px; }
-.proxies-table th:nth-child(3) { width: 270px; }
-.proxies-table th:nth-child(4) { width: 100px; }
-.proxies-table th:nth-child(5) { width: 120px; }
-.proxies-table th:nth-child(6) { width: 90px; }
-.proxies-table th:nth-child(7) { width: 80px; }
-.proxies-table th:nth-child(8) { width: 100px; }
-.proxies-table th:nth-child(9) { width: 260px; }
+.proxies-table tbody td[data-label="地址"] {
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.45;
+}
+
+.proxies-table th:nth-child(1) { width: 17%; }
+.proxies-table th:nth-child(2) { width: 6%; }
+.proxies-table th:nth-child(3) { width: 20%; }
+.proxies-table th:nth-child(4) { width: 8%; }
+.proxies-table th:nth-child(5) { width: 9%; }
+.proxies-table th:nth-child(6) { width: 7%; }
+.proxies-table th:nth-child(7) { width: 6%; }
+.proxies-table th:nth-child(8) { width: 7%; }
+.proxies-table th:nth-child(9) { width: 20%; }
 
 .pool-table tbody td {
   padding: 11px 12px;
