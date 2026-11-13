@@ -39,6 +39,9 @@ on:
       sub_url:
         description: '代理拉取订阅的地址（内部使用）'
         default: ''
+      sub_id:
+        description: '代理订阅 id（内部使用，刷新时回写节点归属）'
+        default: ''
       user_agent:
         description: '代理拉取订阅时的 UA（内部使用）'
         default: ''
@@ -130,6 +133,7 @@ jobs:
           PROBE_PHASE: ${{ github.event.inputs.phase || '' }}
           PROXY_ID: ${{ github.event.inputs.proxy_id || '' }}
           SUB_URL: ${{ github.event.inputs.sub_url || '' }}
+          SUB_ID: ${{ github.event.inputs.sub_id || '' }}
           USER_AGENT: ${{ github.event.inputs.user_agent || '' }}
           FETCH_MODE: ${{ github.event.inputs.fetch_mode || 'proxy' }}
           MIHOMO_DIR: .tmp/mihomo

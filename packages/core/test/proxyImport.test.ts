@@ -92,3 +92,39 @@ describe('parseProxyText', () => {
     expect(node?.config).toBe(raw);
   });
 });
+
+describe('client line formats (Quantumult X / Surge / Loon)', () => {
+  it('parses a Quantumult X shadowsocks line', () => {
+    const result = parseProxyText('shadowsocks=1.2.3.4:8388, method=aes-256-gcm, password=pass123, tag=香港');
+    expect(result.nodes).toHaveLength(1);
+    const node = result.nodes[0]!;
+    expect(node).toMatchObject({ protocol: 'ss', host: '1.2.3.4', port: 8388, password: 'pass123', name: '香港', kernelOnly: true });
+    expect(JSON.parse(node.config!)).toMatchObject({
+      type: 'ss', server: '1.2.3.4', port: 8388, cipher: 'aes-256-gcm', password: 'pass123',
+    });
+  });
+
+  it('parses a Surge vmess line into a mihomo JSON config', () => {
+    const result = parseProxyText('东京 = vmess, 5.6.7.8, 443, username=uuid-1234, tls=true, ws=true, ws-path=/ws');
+    expect(result.nodes).toHaveLength(1);
+    const node = result.nodes[0]!;
+    expect(node).toMatchObject({ protocol: 'vmess', host: '5.6.7.8', port: 443, username: 'uuid-1234', name: '东京', kernelOnly: true });
+    expect(JSON.parse(node.config!)).toMatchObject({
+      type: 'vmess', server: '5.6.7.8', port: 443, uuid: 'uuid-1234', tls: true, network: 'ws',
+    });
+  });
+
+  it('parses a Loon positional shadowsocks line', () => {
+    const result = parseProxyText('香港 = Shadowsocks, 9.9.9.9, 8388, aes-128-gcm, "pw"');
+    expect(result.nodes).toHaveLength(1);
+    const node = result.nodes[0]!;
+    expect(node).toMatchObject({ protocol: 'ss', host: '9.9.9.9', port: 8388, password: 'pw' });
+    expect(JSON.parse(node.config!)).toMatchObject({ type: 'ss', cipher: 'aes-128-gcm', password: 'pw' });
+  });
+
+  it('parses a Surge http proxy without kernel framing', () => {
+    const result = parseProxyText('公司 = http, 10.0.0.5, 8080, user=alice, password=secret');
+    expect(result.nodes[0]).toMatchObject({ protocol: 'http', host: '10.0.0.5', port: 8080, username: 'alice', password: 'secret', kernelOnly: false });
+    expect(result.nodes[0]!.config).toBeUndefined();
+  });
+});

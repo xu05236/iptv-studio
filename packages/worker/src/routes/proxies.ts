@@ -3,7 +3,7 @@ import { dedupeParsedProxies, parseProxyText, type ProxyCheckResult, type ProxyN
 import type { AppEnv } from '../env.js';
 import { audit } from '../db.js';
 import { fail, ok, readJson } from '../lib/http.js';
-import { deleteProxyNode, getProxyNode, insertProxyNode, listProxyNodes, recordProxyCheck, updateProxyNode } from '../lib/proxyDb.js';
+import { deleteProxyNode, disableMissingSubscriptionNodes, finishProxySubscription, getProxyNode, getProxySubscription, insertProxyNode, insertProxySubscription, listProxyNodes, listProxySubscriptions, proxyNodeKey, recordProxyCheck, updateProxyNode, updateProxySubscription, deleteProxySubscription } from '../lib/proxyDb.js';
 import { decryptProxyPassword, encryptProxyPassword } from '../lib/proxyCrypto.js';
 import { createTask, dispatchNext } from '../lib/tasks.js';
 
@@ -84,17 +84,27 @@ proxyRoutes.post('/', async (c) => {
   const name = cleanText(body.name, 80) || '未命名代理';
   const protocol = protocolOf(body.protocol);
   if (!protocol) return fail('协议只支持 http/https/socks5/socks5h，或 vmess 等需内核协议');
-  const host = protocol && KERNEL.has(protocol) ? cleanText(body.host, 200) : validHost(body.host);
-  const port = validPort(body.port);
-  if (!host || !port) return fail('请填写有效的服务器地址和端口');
-  const password = cleanText(body.password, 200);
+  let host = protocol && KERNEL.has(protocol) ? cleanText(body.host, 200) : validHost(body.host);
+  let port = validPort(body.port);
+  let username = cleanText(body.username, 120);
+  let password = cleanText(body.password, 200);
   const config = cleanText(body.config, 65_536);
+  if (KERNEL.has(protocol) && config && (!host || !port)) {
+    const parsed = parseProxyText(config).nodes[0];
+    if (parsed) {
+      host = parsed.host;
+      port = parsed.port;
+      username = username || parsed.username || '';
+      password = password || parsed.password || '';
+    }
+  }
+  if (!host || !port) return fail('请填写有效的服务器地址和端口，或粘贴可用配置');
   const node = await insertProxyNode(c.env, {
     name,
     protocol,
     host,
     port,
-    username: cleanText(body.username, 120),
+    username,
     passwordEnc: password ? await encryptProxyPassword(c.env, password) : '',
     region: cleanText(body.region, 40),
     isp: cleanText(body.isp, 40),
@@ -121,8 +131,9 @@ async function fetchSubscription(url: string, userAgent = 'iptv-studio/1.0', ext
 }
 
 proxyRoutes.post('/import', async (c) => {
-  const body = (await readJson<{ text?: string; url?: string; userAgent?: string; headers?: Record<string, string> }>(c)) ?? {};
+  const body = (await readJson<{ text?: string; url?: string; userAgent?: string; headers?: Record<string, string>; subscriptionId?: string }>(c)) ?? {};
   let text = typeof body.text === 'string' ? body.text : '';
+  const subscriptionId = cleanText(body.subscriptionId, 40);
   const userAgent = cleanText(body.userAgent, 300) || 'iptv-studio/1.0';
   const extraHeaders: Record<string, string> = {};
   if (body.headers && typeof body.headers === 'object') {
@@ -143,22 +154,45 @@ proxyRoutes.post('/import', async (c) => {
   const parsed = parseProxyText(text);
   const nodes = dedupeParsedProxies(parsed.nodes);
   if (!nodes.length) return fail(parsed.warnings[0] ?? '没有识别到可用节点');
-  const existing = new Set((await listProxyNodes(c.env)).map((node) => `${node.protocol}|${node.host.toLowerCase()}|${node.port}|${node.username}`));
+  const existingNodes = await listProxyNodes(c.env);
+  const existing = new Map(existingNodes.map((node) => [proxyNodeKey(node), node]));
   let added = 0;
+  let updated = 0;
   let skipped = 0;
   let kernelOnly = 0;
+  const keepKeys: string[] = [];
   for (const node of nodes) {
-    const key = `${node.protocol}|${node.host.toLowerCase()}|${node.port}|${node.username}`;
-    if (existing.has(key)) {
-      skipped += 1;
-      continue;
-    }
     if (!node.host || !node.port) {
       skipped += 1;
       continue;
     }
+    const key = proxyNodeKey(node);
+    keepKeys.push(key);
     const passwordEnc = node.password ? await encryptProxyPassword(c.env, node.password) : '';
     const configEnc = node.config ? await encryptProxyPassword(c.env, node.config) : '';
+    const previous = existing.get(key);
+    if (previous) {
+      skipped += 1;
+      if (subscriptionId) {
+        // A refresh must pick up rotated passwords/configs and re-enable nodes
+        // the provider brought back, so update instead of leaving stale copies.
+        await updateProxyNode(c.env, previous.id, {
+          name: node.name || previous.name,
+          enabled: true,
+          kernelOnly: node.kernelOnly,
+          engine: node.kernelOnly ? 'mihomo' : '',
+          subscriptionId,
+          ...(passwordEnc ? { passwordEnc } : {}),
+          ...(configEnc ? { configEnc } : {}),
+        });
+        updated += 1;
+      }
+      continue;
+    }
+    if (existing.has(key)) {
+      skipped += 1;
+      continue;
+    }
     await insertProxyNode(c.env, {
       name: node.name || `${node.protocol}-${node.host}`,
       protocol: node.protocol,
@@ -169,13 +203,99 @@ proxyRoutes.post('/import', async (c) => {
       kernelOnly: node.kernelOnly,
       engine: node.kernelOnly ? 'mihomo' : '',
       configEnc,
+      subscriptionId: subscriptionId || undefined,
     });
-    existing.add(key);
+    existing.set(key, { id: key } as never);
     added += 1;
     if (node.kernelOnly) kernelOnly += 1;
   }
-  await audit(c.env, c.get('actor'), 'proxy.import', 'bulk', { added, skipped, kernelOnly });
-  return ok({ added, skipped, kernelOnly, warnings: parsed.warnings.slice(0, 10) });
+  let disabled = 0;
+  if (subscriptionId) {
+    disabled = await disableMissingSubscriptionNodes(c.env, subscriptionId, keepKeys);
+    await finishProxySubscription(
+      c.env,
+      subscriptionId,
+      keepKeys.length,
+      `新增 ${added} · 更新 ${updated} · 停用 ${disabled}`,
+    );
+  }
+  await audit(c.env, c.get('actor'), 'proxy.import', subscriptionId || 'bulk', { added, updated, skipped, kernelOnly, disabled });
+  return ok({ added, updated, skipped, kernelOnly, disabled, warnings: parsed.warnings.slice(0, 10) });
+});
+
+proxyRoutes.get('/subscriptions', async (c) => ok({ items: await listProxySubscriptions(c.env) }));
+
+function headersOf(value: unknown): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    for (const [name, raw] of Object.entries(value).slice(0, 20)) {
+      const key = cleanText(name, 80);
+      const headerValue = cleanText(raw, 500);
+      if (key && headerValue && /^[a-z0-9-]+$/i.test(key) && !/^(host|content-length|connection)$/i.test(key)) headers[key] = headerValue;
+    }
+  }
+  return headers;
+}
+
+proxyRoutes.post('/subscriptions', async (c) => {
+  const body = (await readJson<{ name?: string; url?: string; userAgent?: string; headers?: Record<string, string> }>(c)) ?? {};
+  const url = cleanText(body.url, 500);
+  if (!/^https?:\/\//i.test(url)) return fail('请填写 http(s) 订阅地址');
+  const sub = await insertProxySubscription(c.env, {
+    name: cleanText(body.name, 80) || url,
+    url,
+    userAgent: cleanText(body.userAgent, 300) || 'clash-verge/v1.0',
+    headers: headersOf(body.headers),
+  });
+  await audit(c.env, c.get('actor'), 'proxy_subscription.create', sub.id, { url });
+  return ok({ subscription: sub });
+});
+
+proxyRoutes.patch('/subscriptions/:id', async (c) => {
+  const id = c.req.param('id');
+  const sub = await getProxySubscription(c.env, id);
+  if (!sub) return fail('订阅不存在', 404);
+  const body = (await readJson<{ name?: string; enabled?: boolean; userAgent?: string; headers?: Record<string, string> }>(c)) ?? {};
+  await updateProxySubscription(c.env, id, {
+    ...(body.name !== undefined ? { name: cleanText(body.name, 80) || sub.name } : {}),
+    ...(body.enabled !== undefined ? { enabled: Boolean(body.enabled) } : {}),
+    ...(body.userAgent !== undefined ? { userAgent: cleanText(body.userAgent, 300) } : {}),
+    ...(body.headers !== undefined ? { headers: headersOf(body.headers) } : {}),
+  });
+  await audit(c.env, c.get('actor'), 'proxy_subscription.update', id);
+  return ok({ subscription: await getProxySubscription(c.env, id) });
+});
+
+proxyRoutes.delete('/subscriptions/:id', async (c) => {
+  const id = c.req.param('id');
+  const sub = await getProxySubscription(c.env, id);
+  if (!sub) return fail('订阅不存在', 404);
+  await deleteProxySubscription(c.env, id);
+  await audit(c.env, c.get('actor'), 'proxy_subscription.delete', id, { nodes: 'disabled' });
+  return ok({ ok: true });
+});
+
+proxyRoutes.post('/subscriptions/:id/refresh', async (c) => {
+  const id = c.req.param('id');
+  const sub = await getProxySubscription(c.env, id);
+  if (!sub) return fail('订阅不存在', 404);
+  if (!sub.enabled) return fail('订阅已停用', 409);
+  const body = (await readJson<{ mode?: string }>(c)) ?? {};
+  const mode = body.mode === 'proxy' ? 'proxy' : 'actions';
+  if (mode === 'proxy') {
+    const nodes = await listProxyNodes(c.env);
+    if (!nodes.some((node) => node.enabled && !node.kernelOnly)) return fail('没有可用代理，请先测活至少一个', 409);
+  }
+  const task = await createTask(c.env, {
+    type: 'proxy-fetch-sub',
+    source: 'manual',
+    priority: 80,
+    payload: { sub_id: sub.id, sub_url: sub.url, user_agent: sub.userAgent, fetch_mode: mode },
+    message: `刷新代理订阅 · ${sub.name}`,
+  });
+  await dispatchNext(c.env);
+  await audit(c.env, c.get('actor'), 'proxy_subscription.refresh', sub.id, { taskId: task.id, mode });
+  return ok({ taskId: task.id });
 });
 
 proxyRoutes.post('/pull-subscription', async (c) => {

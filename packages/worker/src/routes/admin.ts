@@ -716,6 +716,7 @@ adminRoutes.put('/settings', async (c) => {
     'notifyTelegram', 'retentionDays', 'screenshots', 'relayEnabled', 'directPlayback', 'relayDailyRequests', 'relayDailyBytes',
     'proxyTestEnabled', 'proxyTestMode', 'proxyTestIntervalHours', 'proxyTestTimes',
     'cnProbeEnabled', 'cnProbeBatchSize', 'cnProbeConcurrency',
+    'proxySubRefreshEnabled', 'proxySubRefreshHours',
   ];
   const clean: Partial<AppSettings> = {};
   for (const key of allowed) {
@@ -807,9 +808,12 @@ adminRoutes.put('/settings', async (c) => {
   if (clean.cnProbeEnabled !== undefined) clean.cnProbeEnabled = Boolean(clean.cnProbeEnabled);
   if (clean.cnProbeBatchSize !== undefined) {
     clean.cnProbeBatchSize = Math.max(1, Math.min(1000, Math.floor(Number(clean.cnProbeBatchSize) || 200)));
-  }
-  if (clean.cnProbeConcurrency !== undefined) {
+  }  if (clean.cnProbeConcurrency !== undefined) {
     clean.cnProbeConcurrency = Math.max(1, Math.min(10, Math.floor(Number(clean.cnProbeConcurrency) || 5)));
+  }
+  if (clean.proxySubRefreshEnabled !== undefined) clean.proxySubRefreshEnabled = Boolean(clean.proxySubRefreshEnabled);
+  if (clean.proxySubRefreshHours !== undefined) {
+    clean.proxySubRefreshHours = Math.max(1, Math.min(168, Math.floor(Number(clean.proxySubRefreshHours) || 24)));
   }
   const settings = await saveSettings(c.env, clean);
   // Shortening the probe interval must take effect now, not after the old 8h

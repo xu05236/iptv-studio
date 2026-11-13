@@ -6,6 +6,7 @@ import { getJson } from './store.js';
 import { getRuntimeJson, putRuntimeJson } from './runtime-state.js';
 import { createSnapshot, recordSnapshotRun } from './snapshots.js';
 import { createTask, dispatchNext, loadTasks, mutateTask, recordFinishedTask, setProbeFinishedHook, type Task } from './tasks.js';
+import { listProxySubscriptions, markProxySubscriptionAttempt } from './proxyDb.js';
 
 // Event-driven follow-up: when a probe batch finishes, do not wait for the next
 // 5-minute tick to reconsider "publish after probe".
@@ -192,6 +193,7 @@ export async function runScheduler(env: Env): Promise<void> {
     if (await runFetchWatch(env, settings, at)) enqueued = true;
     if (await runProbeWatch(env, settings, at)) enqueued = true;
     if (await runProxyWatch(env, settings, at)) enqueued = true;
+    if (await runProxySubWatch(env, settings, at)) enqueued = true;
     if (await runSourceRecoveryWatch(env, settings, at)) enqueued = true;
     if (await runMonthlyReviveWatch(env, settings, at)) enqueued = true;
     await runAutoPublishAfterProbe(env, settings, at);
@@ -675,8 +677,33 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
   return true;
 }
 
-async function runProxyWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
-  if (!settings.proxyTestEnabled) return false;
+/** Refresh due proxy subscriptions one at a time; the attempt time is recorded so
+ * a failed refresh does not retry on every 5-minute tick. */
+async function runProxySubWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {
+  if (!settings.proxySubRefreshEnabled) return false;
+  const hours = Math.max(1, Number(settings.proxySubRefreshHours) || 24);
+  const tasks = await loadTasks(env);
+  if (tasks.some((task) => task.type === 'proxy-fetch-sub' && (task.status === 'queued' || task.status === 'running'))) return false;
+  const subscriptions = await listProxySubscriptions(env);
+  const due = subscriptions.find((sub) => {
+    if (!sub.enabled) return false;
+    if (!sub.lastFetchAt) return true;
+    const stamp = sub.lastFetchAt.includes('T') ? sub.lastFetchAt : `${sub.lastFetchAt.replace(' ', 'T')}Z`;
+    return now - Date.parse(stamp) >= hours * 3_600_000;
+  });
+  if (!due) return false;
+  const task = await createTask(env, {
+    type: 'proxy-fetch-sub',
+    source: 'schedule',
+    priority: 60,
+    payload: { sub_id: due.id, sub_url: due.url, user_agent: due.userAgent, fetch_mode: 'actions' },
+  });
+  await markProxySubscriptionAttempt(env, due.id);
+  await audit(env, 'scheduler', 'schedule.proxy-sub-refresh', task.id);
+  return true;
+}
+
+async function runProxyWatch(env: Env, settings: AppSettings, now: number): Promise<boolean> {  if (!settings.proxyTestEnabled) return false;
   const mode = settings.proxyTestMode === 'times' ? 'times' : 'interval';
   const intervalMs = Math.max(1, Number(settings.proxyTestIntervalHours) || 6) * 3_600_000;
   const times = mode === 'times' ? parseCollectTimes(settings.proxyTestTimes) : [];

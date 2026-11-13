@@ -395,6 +395,10 @@ export interface AppSettings {
   cnProbeBatchSize: number;
   /** 补测并发（默认 5）。 */
   cnProbeConcurrency: number;
+  /** 代理订阅定时自动刷新。 */
+  proxySubRefreshEnabled: boolean;
+  /** 自动刷新检查间隔（小时，默认 24）。 */
+  proxySubRefreshHours: number;
 }
 
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h';
@@ -417,6 +421,8 @@ export interface ProxyNode {
   engine?: string;
   /** Whether an encrypted node config is stored (config itself never leaves the Worker). */
   hasConfig?: boolean;
+  /** Set when the node came from a refreshable proxy subscription. */
+  subscriptionId?: string;
   sortScore: number;
   lastOkAt: string | null;
   lastCheckedAt: string | null;
@@ -522,6 +528,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cnProbeEnabled: true,
   cnProbeBatchSize: 200,
   cnProbeConcurrency: 5,
+  proxySubRefreshEnabled: true,
+  proxySubRefreshHours: 24,
   probePhaseOrder: 'pending,quarantine',
   probePausedPhases: '',
   autoFetchEnabled: true,

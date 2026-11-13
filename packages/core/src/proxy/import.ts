@@ -104,8 +104,7 @@ function nodeFromRecord(record: Record<string, unknown>, fallbackName: string): 
   return node;
 }
 
-function parseJson(text: string): ProxyParseResult | null {
-  try {
+function parseJson(text: string): ProxyParseResult | null {  try {
     const parsed = JSON.parse(text) as unknown;
     const list = Array.isArray(parsed)
       ? parsed
@@ -187,6 +186,162 @@ function parseClashYaml(text: string): ProxyParseResult | null {
   return { nodes, warnings };
 }
 
+const CLIENT_TYPE_ALIASES: Record<string, string> = {
+  shadowsocks: 'ss', ss: 'ss', vmess: 'vmess', vless: 'vless', trojan: 'trojan',
+  hysteria2: 'hysteria2', hy2: 'hysteria2', tuic: 'tuic',
+  http: 'http', https: 'http', socks5: 'socks5', socks: 'socks5', socks5h: 'socks5',
+};
+
+function clampPort(value: unknown): number {
+  const port = Number(value);
+  return Number.isFinite(port) && port > 0 && port <= 65_535 ? Math.floor(port) : 0;
+}
+
+function splitHostPort(value: string): { host: string; port: number } | null {
+  const text = value.trim();
+  const ipv6 = text.match(/^\[([^\]]+)\]:(\d+)$/);
+  if (ipv6) return { host: ipv6[1] ?? '', port: clampPort(ipv6[2]) };
+  const index = text.lastIndexOf(':');
+  if (index <= 0) return null;
+  const host = text.slice(0, index).trim();
+  const port = clampPort(text.slice(index + 1));
+  return host && port ? { host, port } : null;
+}
+
+function splitTopLevel(value: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let quote = '';
+  for (const char of value) {
+    if (quote) {
+      current += char;
+      if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === ',') {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+function paramsOf(parts: string[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const part of parts) {
+    const index = part.indexOf('=');
+    if (index <= 0) continue;
+    map[part.slice(0, index).trim().toLowerCase()] = unquote(part.slice(index + 1));
+  }
+  return map;
+}
+
+/** Build a mihomo-compatible JSON record so kernel bridges can run the node. */
+function clashRecord(node: ParsedProxy, params: Record<string, string>, type: string): Record<string, unknown> {
+  const tls = params.tls === 'true' || params['over-tls'] === 'true' || params.obfs === 'wss';
+  const ws = params.obfs === 'ws' || params.obfs === 'wss' || params.ws === 'true';
+  const sni = params.sni || params['tls-host'] || params['obfs-host'] || '';
+  const record: Record<string, unknown> = { name: node.name, type, server: node.host, port: node.port };
+  if (type === 'ss') {
+    record.cipher = params.method || params['encrypt-method'] || 'aes-128-gcm';
+    record.password = node.password;
+  } else if (type === 'vmess') {
+    record.uuid = node.username || node.password;
+    record.alterId = Number(params.alterid ?? params['alter-id'] ?? 0) || 0;
+    record.cipher = 'auto';
+  } else if (type === 'vless') {
+    record.uuid = node.username || node.password;
+    if (params.flow) record.flow = params.flow;
+  } else if (type === 'trojan') {
+    record.password = node.password;
+  } else if (type === 'hysteria2') {
+    record.password = node.password;
+    if (params.obfs) record.obfs = params.obfs;
+    if (params['obfs-password']) record['obfs-password'] = params['obfs-password'];
+  } else if (type === 'tuic') {
+    record.uuid = node.username || node.password;
+    if (node.username && node.password) record.password = node.password;
+  }
+  if (tls && type !== 'trojan') record.tls = true;
+  if (sni) record.servername = sni;
+  if (tls && (params['skip-cert-verify'] === 'true' || params['skip-cert-verify'] === '1')) record['skip-cert-verify'] = true;
+  if (ws) {
+    record.network = 'ws';
+    record['ws-opts'] = {
+      path: params['obfs-uri'] || params['ws-path'] || params.path || '/',
+      headers: params['obfs-host'] ? { Host: params['obfs-host'] } : {},
+    };
+  }
+  return record;
+}
+
+/** Quantumult X / Surge / Loon one-line node formats. */
+function clientNode(raw: string): ParsedProxy | null {
+  const text = raw.trim();
+  if (!text || !text.includes('=')) return null;
+  let name = '';
+  let typeToken = '';
+  let body = '';
+  const qx = text.match(/^([A-Za-z0-9_-]+)\s*=\s*(.+)$/);
+  if (qx && CLIENT_TYPE_ALIASES[qx[1]!.toLowerCase()]) {
+    typeToken = qx[1]!;
+    body = qx[2]!;
+  } else {
+    const named = text.match(/^(.+?)\s*=\s*([A-Za-z0-9_-]+)\s*,\s*(.+)$/);
+    if (!named || !CLIENT_TYPE_ALIASES[named[2]!.toLowerCase()]) return null;
+    name = named[1]!.trim();
+    typeToken = named[2]!;
+    body = named[3]!;
+  }
+  const protocol = normalizeProtocol(CLIENT_TYPE_ALIASES[typeToken.toLowerCase()]!);
+  if (!protocol) return null;
+  const parts = splitTopLevel(body);
+  const node = emptyNode(protocol, name || typeToken);
+  let host = '';
+  let port = 0;
+  const params: Record<string, string> = {};
+  const first = splitHostPort(parts[0] ?? '');
+  if (first) {
+    host = first.host;
+    port = first.port;
+    Object.assign(params, paramsOf(parts.slice(1)));
+  } else {
+    host = (parts[0] ?? '').trim();
+    port = clampPort(parts[1] ?? '');
+    Object.assign(params, paramsOf(parts.slice(2)));
+    if (!params.method && !params.password) {
+      // Older Loon positional form: Type,host,port,method,password
+      if (protocol === 'ss') {
+        params.method = parts[2] ?? '';
+        params.password = unquote(parts[3] ?? '');
+      } else {
+        params.password = unquote(parts[2] ?? '');
+      }
+    }
+  }
+  node.host = host;
+  node.port = port;
+  node.username = params.username || params.user || params.uuid || '';
+  node.password = params.password || params.pass || '';
+  if (params.tag) node.name = params.tag;
+  else if (name) node.name = name;
+  if (!node.host || !node.port) return null;
+  if (node.kernelOnly) {
+    const record = clashRecord(node, params, protocol);
+    if (!record.uuid && !record.password) return null;
+    node.config = JSON.stringify(record);
+  }
+  return node;
+}
+
 function decodeBase64(text: string): string | null {
   const compact = text.replace(/\s+/g, '');
   if (compact.length < 16 || !/^[A-Za-z0-9+/=]+$/.test(compact)) return null;
@@ -212,7 +367,7 @@ export function parseProxyText(text: string): ProxyParseResult {
   for (const line of trimmed.split(/\r?\n/)) {
     const raw = line.trim();
     if (!raw || raw.startsWith('#')) continue;
-    const node = parseProxyUri(raw) ?? parseHostPortLine(raw);
+    const node = parseProxyUri(raw) ?? clientNode(raw) ?? parseHostPortLine(raw);
     if (node) nodes.push(node);
     else warnings.push(`无法识别：${raw.slice(0, 60)}`);
   }

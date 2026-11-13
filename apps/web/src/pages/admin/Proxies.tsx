@@ -12,9 +12,21 @@ interface ProxyList {
   currentId?: string | null;
 }
 
+interface ProxySubscriptionItem {
+  id: string;
+  name: string;
+  url: string;
+  nodeCount: number;
+  enabled: boolean;
+  lastFetchAt: string | null;
+  lastStatus: string;
+  createdAt: string;
+}
+
 type ProxySort = 'default' | 'latency' | 'success' | 'recent' | 'name';
 
 const PROTOCOLS = ['http', 'https', 'socks5', 'socks5h', 'vmess', 'vless', 'trojan', 'hysteria2', 'ss', 'anytls', 'tuic'];
+const KERNEL_PROTOCOLS = new Set(['vmess', 'vless', 'trojan', 'hysteria2', 'ss', 'anytls', 'tuic']);
 
 // Frequently seen client UAs; some subscription servers only answer known apps.
 const UA_PRESETS = [
@@ -44,14 +56,17 @@ export function Proxies() {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', protocol: 'http', host: '', port: '', username: '', password: '', region: '', isp: '' });
+  const [form, setForm] = useState({ name: '', protocol: 'http', host: '', port: '', username: '', password: '', config: '', region: '', isp: '' });
   const [importText, setImportText] = useState('');
   const [importUrl, setImportUrl] = useState('');
   const [importUa, setImportUa] = useState('');
   const [importHeaders, setImportHeaders] = useState('');
   const [sort, setSort] = useState<ProxySort>('default');
-  const [importResult, setImportResult] = useState<{ added: number; skipped: number; kernelOnly: number; warnings: string[] } | null>(null);
+  const [importResult, setImportResult] = useState<{ added: number; updated?: number; disabled?: number; skipped: number; kernelOnly: number; warnings: string[] } | null>(null);
+  const [importMode, setImportMode] = useState<'paste' | 'file' | 'subscribe'>('paste');
+  const [importFileName, setImportFileName] = useState('');
   const [pullTaskId, setPullTaskId] = useState<string | null>(null);
+  const [subName, setSubName] = useState('');
 
   const proxies = useQuery({
     queryKey: ['admin', 'proxies', sort],
@@ -61,6 +76,22 @@ export function Proxies() {
     queryKey: ['admin', 'settings'],
     queryFn: () => api.get<{ settings: AppSettings }>('/api/admin/settings'),
   });
+  const subscriptions = useQuery({
+    queryKey: ['admin', 'proxy-subs'],
+    queryFn: () => api.get<{ items: ProxySubscriptionItem[] }>('/api/admin/proxies/subscriptions'),
+  });
+
+  const headersObject = () => {
+    const headers: Record<string, string> = {};
+    for (const line of importHeaders.split(/\r?\n/)) {
+      const index = line.indexOf(':');
+      if (index <= 0) continue;
+      const key = line.slice(0, index).trim();
+      const value = line.slice(index + 1).trim();
+      if (key && value) headers[key] = value;
+    }
+    return headers;
+  };
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   useEffect(() => {
@@ -84,7 +115,7 @@ export function Proxies() {
     }),
     onSuccess: () => {
       setAddOpen(false);
-      setForm({ name: '', protocol: 'http', host: '', port: '', username: '', password: '', region: '', isp: '' });
+      setForm({ name: '', protocol: 'http', host: '', port: '', username: '', password: '', config: '', region: '', isp: '' });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'proxies'] });
       show('代理已添加');
     },
@@ -92,28 +123,58 @@ export function Proxies() {
   });
 
   const importProxies = useMutation({
-    mutationFn: () => {
-      const headers: Record<string, string> = {};
-      for (const line of importHeaders.split(/\r?\n/)) {
-        const index = line.indexOf(':');
-        if (index <= 0) continue;
-        const key = line.slice(0, index).trim();
-        const value = line.slice(index + 1).trim();
-        if (key && value) headers[key] = value;
-      }
-      return api.post<{ added: number; skipped: number; kernelOnly: number; warnings: string[] }>('/api/admin/proxies/import', {
+    mutationFn: () =>
+      api.post<{ added: number; updated?: number; disabled?: number; skipped: number; kernelOnly: number; warnings: string[] }>('/api/admin/proxies/import', {
         text: importText,
         url: importUrl,
         userAgent: importUa.trim(),
-        headers,
-      });
-    },
+        headers: headersObject(),
+      }),
     onSuccess: (data) => {
       setImportResult(data);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'proxies'] });
       show(`导入完成：新增 ${data.added}，跳过 ${data.skipped}`);
     },
     onError: (error) => show(error instanceof Error ? error.message : '导入失败', 'error'),
+  });
+
+  const addSubscription = useMutation({
+    mutationFn: () =>
+      api.post<{ subscription: { id: string } }>('/api/admin/proxies/subscriptions', {
+        name: subName.trim() || importUrl.trim(),
+        url: importUrl.trim(),
+        userAgent: importUa.trim(),
+        headers: headersObject(),
+      }),
+    onSuccess: async (data) => {
+      setSubName('');
+      await refreshSubscription.mutateAsync(data.subscription.id).catch(() => undefined);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'proxy-subs'] });
+    },
+    onError: (error) => show(error instanceof Error ? error.message : '添加订阅源失败', 'error'),
+  });
+
+  const refreshSubscription = useMutation({
+    mutationFn: (id: string) =>
+      api.post<{ taskId: string }>(`/api/admin/proxies/subscriptions/${id}/refresh`, { mode: 'actions' }),
+    onSuccess: () => {
+      show('已派发订阅刷新，完成后自动同步');
+      window.setTimeout(() => {
+        void queryClient.invalidateQueries({ queryKey: ['admin', 'proxy-subs'] });
+        void queryClient.invalidateQueries({ queryKey: ['admin', 'proxies'] });
+      }, 8000);
+    },
+    onError: (error) => show(error instanceof Error ? error.message : '刷新失败', 'error'),
+  });
+
+  const deleteSubscription = useMutation({
+    mutationFn: (id: string) => api.del<{ ok: boolean }>(`/api/admin/proxies/subscriptions/${id}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'proxy-subs'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'proxies'] });
+      show('订阅源已删除，节点已停用');
+    },
+    onError: (error) => show(error instanceof Error ? error.message : '删除失败', 'error'),
   });
 
   const patchProxy = useMutation({
@@ -219,6 +280,75 @@ export function Proxies() {
           </>
         }
       />
+
+      <div className="card">
+        <div className="card__header">
+          <div>
+            <div className="title-3">代理订阅</div>
+            <div className="caption">订阅会反复抓取：刷新时更新节点、重新启用回归的节点，并停用上游已删除的节点；文件导入的节点不受影响。</div>
+          </div>
+          <div className="caption">{subscriptions.data?.items.length ?? 0} 个</div>
+        </div>
+        <div className="stack card__body" style={{ gap: 12 }}>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, paddingBottom: 12, borderBottom: '1px solid var(--sep)' }}>
+            <div>
+              <strong>定时自动刷新</strong>
+              <div className="caption">开启后，到期的订阅会自动刷新；只处理启用中的订阅。</div>
+            </div>
+            <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+              <Switch
+                checked={Boolean(settings?.proxySubRefreshEnabled)}
+                onChange={(value) => {
+                  setSettings((current) => (current ? { ...current, proxySubRefreshEnabled: value } : current));
+                  saveSettings.mutate({ proxySubRefreshEnabled: value });
+                }}
+              />
+              {settings?.proxySubRefreshEnabled !== false ? (
+                <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                  <input
+                    className="input"
+                    type="number"
+                    min={1}
+                    max={168}
+                    style={{ width: 88 }}
+                    value={settings?.proxySubRefreshHours ?? 24}
+                    onChange={(event) => setSettings((current) => (current ? { ...current, proxySubRefreshHours: Number(event.target.value) } : current))}
+                    onBlur={() => saveSettings.mutate({ proxySubRefreshHours: settings?.proxySubRefreshHours ?? 24 })}
+                  />
+                  <span className="caption">小时</span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+          {subscriptions.data?.items.length ? (
+            subscriptions.data.items.map((sub) => (
+              <div key={sub.id} className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                    <strong className="truncate" style={{ maxWidth: 320 }}>{sub.name}</strong>
+                    {sub.enabled ? null : <Badge>已停用</Badge>}
+                  </div>
+                  <div className="caption truncate" style={{ maxWidth: 520 }}>{sub.url}</div>
+                  <div className="caption">
+                    {sub.nodeCount} 个节点 · {sub.lastFetchAt ? `上次 ${timeAgo(sub.lastFetchAt)}` : '尚未刷新'}
+                    {sub.lastStatus ? ` · ${sub.lastStatus}` : ''}
+                  </div>
+                </div>
+                <div className="row" style={{ gap: 8 }}>
+                  <Button variant="ghost" loading={refreshSubscription.isPending} onClick={() => refreshSubscription.mutate(sub.id)}>
+                    <RefreshCw size={14} /> 刷新
+                  </Button>
+                  <Button variant="ghost" onClick={() => deleteSubscription.mutate(sub.id)}>
+                    <Trash2 size={14} /> 删除
+                  </Button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="caption">还没有订阅源。在「批量导入 → 订阅链接」里填写地址后点「保存为订阅源」。</div>
+          )}
+        </div>
+      </div>
 
       <div className="card">
         <div className="card__header">
@@ -424,7 +554,7 @@ export function Proxies() {
         />
       )}
 
-      <Sheet open={addOpen} onClose={() => setAddOpen(false)} title="添加代理" subtitle="一期支持 http/https/socks5；vmess 等会标记需内核">
+      <Sheet open={addOpen} onClose={() => setAddOpen(false)} title="添加代理" subtitle="http/socks5 直接填地址；ss/vmess 等需内核协议请粘贴配置">
         <div className="stack">
           <Field label="名称"><input className="input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="深圳电信" /></Field>
           <div className="row" style={{ gap: 10 }}>
@@ -433,13 +563,23 @@ export function Proxies() {
                 {PROTOCOLS.map((protocol) => <option key={protocol} value={protocol}>{protocol}</option>)}
               </select>
             </Field>
-            <Field label="服务器"><input className="input" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} placeholder="1.2.3.4" /></Field>
-            <Field label="端口"><input className="input" type="number" value={form.port} onChange={(event) => setForm({ ...form, port: event.target.value })} placeholder="8080" /></Field>
+            {KERNEL_PROTOCOLS.has(form.protocol) ? null : (
+              <>
+                <Field label="服务器"><input className="input" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} placeholder="1.2.3.4" /></Field>
+                <Field label="端口"><input className="input" type="number" value={form.port} onChange={(event) => setForm({ ...form, port: event.target.value })} placeholder="8080" /></Field>
+              </>
+            )}
           </div>
-          <div className="row" style={{ gap: 10 }}>
-            <Field label="用户名（可选）"><input className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></Field>
-            <Field label="密码（可选）"><input className="input" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></Field>
-          </div>
+          {KERNEL_PROTOCOLS.has(form.protocol) ? (
+            <Field label="节点配置（URI / JSON / YAML）">
+              <textarea className="input" rows={5} value={form.config} onChange={(event) => setForm({ ...form, config: event.target.value })} placeholder={'ss://...\nvmess://...\n或 sing-box JSON / Clash YAML 单节点'} />
+            </Field>
+          ) : (
+            <div className="row" style={{ gap: 10 }}>
+              <Field label="用户名（可选）"><input className="input" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></Field>
+              <Field label="密码（可选）"><input className="input" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></Field>
+            </div>
+          )}
           <div className="row" style={{ gap: 10 }}>
             <Field label="地区"><input className="input" value={form.region} onChange={(event) => setForm({ ...form, region: event.target.value })} placeholder="深圳" /></Field>
             <Field label="运营商"><input className="input" value={form.isp} onChange={(event) => setForm({ ...form, isp: event.target.value })} placeholder="电信" /></Field>
@@ -450,8 +590,17 @@ export function Proxies() {
 
       <Sheet open={importOpen} onClose={() => { setImportOpen(false); setImportResult(null); }} title="批量导入" subtitle="粘贴节点内容，或填订阅地址；自动去重">
         <div className="stack">
-          <Field label="订阅地址（可选）">
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <Button variant={importMode === 'paste' ? 'default' : 'ghost'} onClick={() => setImportMode('paste')}>粘贴文本</Button>
+            <Button variant={importMode === 'file' ? 'default' : 'ghost'} onClick={() => setImportMode('file')}>上传文件</Button>
+            <Button variant={importMode === 'subscribe' ? 'default' : 'ghost'} onClick={() => setImportMode('subscribe')}>订阅链接</Button>
+          </div>
+          {importMode === 'subscribe' ? (<>
+          <Field label="订阅地址">
             <input className="input" value={importUrl} onChange={(event) => setImportUrl(event.target.value)} placeholder="https://example.com/sub" />
+          </Field>
+          <Field label="订阅名称（保存为订阅源时用）">
+            <input className="input" value={subName} onChange={(event) => setSubName(event.target.value)} placeholder="例如 机场A" />
           </Field>
           <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div className="caption">直连被 403 时：可让已有代理去拉，或让 Actions 用它的出口去拉。</div>
@@ -461,6 +610,9 @@ export function Proxies() {
               </Button>
               <Button variant="ghost" loading={pullSubscription.isPending} disabled={!importUrl.trim()} onClick={() => pullSubscription.mutate('actions')}>
                 <RefreshCw size={14} /> Actions 直连拉取
+              </Button>
+              <Button variant="ghost" loading={addSubscription.isPending} disabled={!importUrl.trim()} onClick={() => addSubscription.mutate()}>
+                <Save size={14} /> 保存为订阅源
               </Button>
             </div>
           </div>
@@ -486,13 +638,61 @@ export function Proxies() {
           <Field label="附加请求头（可选，每行 Key: Value）">
             <textarea className="input" rows={2} value={importHeaders} onChange={(event) => setImportHeaders(event.target.value)} placeholder="Accept: */*" />
           </Field>
-          <Field label="节点内容">
-            <textarea className="input" rows={8} value={importText} onChange={(event) => setImportText(event.target.value)} placeholder={'http://user:pass@1.2.3.4:8080#深圳电信\nsocks5://5.6.7.8:1080\n或 Clash YAML / Base64 / JSON'} />
-          </Field>
+          </>) : null}
+          {importMode === 'file' ? (
+            <Field label="选择文件（.yaml / .yml / .json / .txt / .conf）">
+              <input
+                className="input"
+                type="file"
+                accept=".yaml,.yml,.json,.txt,.conf,.ini,.list"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  void file.text().then((text) => {
+                    setImportText(text);
+                    setImportFileName(`${file.name} · ${(file.size / 1024).toFixed(1)} KB`);
+                  });
+                }}
+              />
+            </Field>
+          ) : null}
+          {importMode === 'file' && importFileName ? <div className="caption">已读取：{importFileName}</div> : null}
+          {importMode !== 'subscribe' ? (
+            <Field label={importMode === 'file' ? '文件内容（可再编辑）' : '节点内容'}>
+              <div className="stack stack--tight">
+                <div className="row" style={{ justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      void (async () => {
+                        try {
+                          const text = await navigator.clipboard.readText();
+                          if (!text.trim()) {
+                            show('剪贴板是空的', 'error');
+                            return;
+                          }
+                          setImportText(text);
+                          show('已从剪贴板读取');
+                        } catch {
+                          show('读取剪贴板失败，请手动粘贴', 'error');
+                        }
+                      })();
+                    }}
+                  >
+                    从剪贴板读取
+                  </Button>
+                </div>
+                <textarea className="input" rows={8} value={importText} onChange={(event) => setImportText(event.target.value)} placeholder={'http://user:pass@1.2.3.4:8080#深圳电信\nsocks5://5.6.7.8:1080\nss://... / vmess://...\n或 Clash YAML / sing-box JSON / Base64'} />
+              </div>
+            </Field>
+          ) : null}
+          <div className="caption">
+            支持：URI 行（http/https/socks5/ss/vmess/vless/trojan/hysteria2/tuic）、host:port[:user:pass]、Clash YAML、sing-box JSON、Base64；自动去重，需内核节点会灰显。
+          </div>
           <Button loading={importProxies.isPending} onClick={() => importProxies.mutate()}><Upload size={14} /> 导入</Button>
           {importResult ? (
             <div className="caption">
-              新增 {importResult.added} 个 · 跳过 {importResult.skipped} 个{importResult.kernelOnly ? ` · 需内核 ${importResult.kernelOnly} 个` : ''}
+              新增 {importResult.added} 个{importResult.updated ? ` · 更新 ${importResult.updated} 个` : ''}{importResult.disabled ? ` · 停用 ${importResult.disabled} 个` : ''} · 跳过 {importResult.skipped} 个{importResult.kernelOnly ? ` · 需内核 ${importResult.kernelOnly} 个` : ''}
               {importResult.warnings.length ? <div style={{ marginTop: 6 }}>{importResult.warnings.join('；')}</div> : null}
             </div>
           ) : null}

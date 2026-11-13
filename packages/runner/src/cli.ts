@@ -1175,6 +1175,7 @@ async function runProxyFetchSub(): Promise<void> {
   const url = (process.env.SUB_URL ?? '').trim();
   const userAgent = (process.env.USER_AGENT ?? '').trim();
   const proxyId = (process.env.PROXY_ID ?? '').trim();
+  const subId = (process.env.SUB_ID ?? '').trim();
   const mode = (process.env.FETCH_MODE ?? 'proxy').trim() === 'actions' ? 'actions' : 'proxy';
   try {
     if (!/^https?:\/\//i.test(url)) throw new Error('缺少订阅地址');
@@ -1233,9 +1234,10 @@ async function runProxyFetchSub(): Promise<void> {
       if (!text.trim()) throw new Error(`没有代理能拉取订阅：${lastError}`);
     }
     await reportTaskProgress(api, 0, 1, `${used} · 已获取内容，正在导入`, true);
-    const result = await api.post<{ added: number; skipped: number; kernelOnly: number }>('/api/admin/proxies/import', { text, userAgent });
-    logger.info('订阅拉取完成', { used, added: result.added, skipped: result.skipped });
-    await reportTaskProgress(api, 1, 1, `订阅拉取完成 · ${used} · 新增 ${result.added} · 跳过 ${result.skipped}`, true);
+    const result = await api.post<{ added: number; updated?: number; disabled?: number; skipped: number; kernelOnly: number }>('/api/admin/proxies/import', { text, userAgent, subscriptionId: subId || undefined });
+    logger.info('订阅拉取完成', { used, added: result.added, updated: result.updated ?? 0, disabled: result.disabled ?? 0, skipped: result.skipped });
+    const extra = result.updated || result.disabled ? ` · 更新 ${result.updated ?? 0} · 停用 ${result.disabled ?? 0}` : '';
+    await reportTaskProgress(api, 1, 1, `订阅拉取完成 · ${used} · 新增 ${result.added}${extra} · 跳过 ${result.skipped}`, true);
     await finishRun(api, {
       id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
       sources: 0, channels: 0, lines: 0, alive: result.added, dead: result.skipped, probed: result.added + result.skipped, bytes: text.length,
