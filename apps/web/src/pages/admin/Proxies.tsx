@@ -529,7 +529,8 @@ export function Proxies() {
               <option value="name">名称</option>
             </select>
           </div>
-          <table className="table">
+          <div className="table-wrap" style={{ border: 0 }}>
+            <table className="table table--cards proxies-table">
             <thead>
               <tr>
                 <th>名称</th>
@@ -586,8 +587,8 @@ export function Proxies() {
                         >
                           <Star size={13} />
                         </Button>
-                        <Button variant="ghost" size="sm" title={sort === 'default' ? '上移' : '仅默认顺序可上移'} disabled={sort !== 'default' || index === 0} onClick={() => moveProxy.mutate({ id: node.id, direction: 'up' })}><ArrowUp size={13} /></Button>
-                        <Button variant="ghost" size="sm" title={sort === 'default' ? '下移' : '仅默认顺序可下移'} disabled={sort !== 'default' || index === items.length - 1} onClick={() => moveProxy.mutate({ id: node.id, direction: 'down' })}><ArrowDown size={13} /></Button>
+                        <Button variant="ghost" size="sm" title={sort === 'default' ? '上移' : '上移（会切回默认顺序）'} disabled={sort === 'default' && index === 0} onClick={() => { moveProxy.mutate({ id: node.id, direction: 'up' }); if (sort !== 'default') setSort('default'); }}><ArrowUp size={13} /></Button>
+                        <Button variant="ghost" size="sm" title={sort === 'default' ? '下移' : '下移（会切回默认顺序）'} disabled={sort === 'default' && index === items.length - 1} onClick={() => { moveProxy.mutate({ id: node.id, direction: 'down' }); if (sort !== 'default') setSort('default'); }}><ArrowDown size={13} /></Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -604,6 +605,7 @@ export function Proxies() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       ) : (
         <EmptyState
