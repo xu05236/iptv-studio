@@ -1221,8 +1221,21 @@ adminRoutes.post('/probe', async (c) => {
 adminRoutes.post('/sync/channels', async (c) => {
   const body = await readJson<{ channels?: Array<{ id: string; name: string; group: string; tvgId?: string; logo?: string; aliases?: string[] }> }>(c);
   if (!Array.isArray(body?.channels)) return fail('缺少 channels');
-  const count = await upsertChannelSeeds(c.env, body.channels.slice(0, 5000));
-  return ok({ synced: count });
+  const seeds = body.channels.slice(0, 5000);
+  // Publishing sends the same channel list every run. Hash it first so an
+  // unchanged payload costs one small runtime_state read instead of thousands
+  // of D1 reads/writes.
+  const canonical = [...seeds]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((seed) => [seed.id, seed.name, seed.group, seed.tvgId ?? '', seed.logo ?? '', (seed.aliases ?? []).join('|')].join('\u0001'))
+    .join('\n');
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+  const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  const previous = await getRuntimeJson<{ hash?: string }>(c.env, 'state/channel-sync.json');
+  if (previous?.hash === hash) return ok({ synced: 0, skipped: true });
+  const count = await upsertChannelSeeds(c.env, seeds);
+  await putRuntimeJson(c.env, 'state/channel-sync.json', { hash, at: new Date().toISOString(), channels: seeds.length, written: count });
+  return ok({ synced: count, skipped: false });
 });
 
 /** Runner -> D1: per-source fetch/probe stats, reputation and ETag. */

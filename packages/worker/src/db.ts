@@ -304,6 +304,7 @@ export async function upsertChannelSeeds(
   }
 
   const statements: D1PreparedStatement[] = [];
+  const aliasSeen = new Set<string>();
   let changed = 0;
   for (const seed of seeds) {
     const row = existing.get(seed.id);
@@ -329,7 +330,12 @@ export async function upsertChannelSeeds(
            updated_at = datetime('now')`,
       ).bind(seed.id, seed.name, seed.tvgId ?? null, seed.group, seed.logo ?? null, JSON.stringify(seed.aliases ?? [])),
     );
+    // Aliases never change for an existing row; inserting them on every sync
+    // was pure write quota. New rows get their aliases once, deduplicated.
+    if (row) continue;
     for (const alias of [seed.name, seed.tvgId, ...(seed.aliases ?? [])].filter(Boolean) as string[]) {
+      if (aliasSeen.has(alias)) continue;
+      aliasSeen.add(alias);
       statements.push(env.DB.prepare('INSERT OR IGNORE INTO aliases (alias, channel_id) VALUES (?, ?)').bind(alias, seed.id));
     }
   }
