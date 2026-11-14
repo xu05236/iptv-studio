@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { classifyGroup, displayName, normalizeChannelName } from '@iptv/core';
+import { classifyGroup, displayName, normalizeChannelName, planChannelMerges } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import { loadTasks } from '../lib/tasks.js';
 import {
@@ -11,6 +11,7 @@ import {
   listChannelMerges,
   listSources,
   mergeChannels,
+  mergeDuplicateChannels,
   removeAlias,
   undoChannelMerge,
   updateChannel,
@@ -499,4 +500,42 @@ channelRoutes.post('/merge', async (c) => {
   const merged = await mergeChannels(c.env, body.from, body.into);
   await audit(c.env, c.get('actor'), 'channel.merge', body.into, { from: body.from, merged });
   return ok({ merged });
+});
+
+/**
+ * Merge every duplicate channel whose name only differs by speed/quality
+ * suffixes. Reads and writes the sharded line state once for the whole batch.
+ */
+channelRoutes.post('/merge-duplicates', async (c) => {
+  const body = (await readJson<{ dryRun?: boolean }>(c)) ?? {};
+  // A running fetch or publish would race with the line-state rewrite.
+  const running = (await loadTasks(c.env)).filter((task) => task.status === 'running');
+  if (running.length) {
+    const types = [...new Set(running.map((task) => task.type))].join('、');
+    return fail(`有任务正在运行（${types}），请等任务结束后再合并频道`, 409);
+  }
+  const [rows, index] = await Promise.all([listChannels(c.env), loadIndex(c.env)]);
+  const stats = new Map((index?.channels ?? []).map((channel) => [channel.id, { lines: channel.lines ?? 0, alive: channel.alive ?? 0 }]));
+  const items = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    group: row.group_title,
+    tvgId: row.tvg_id,
+    enabled: row.enabled !== 0,
+    lines: stats.get(row.id)?.lines ?? 0,
+    alive: stats.get(row.id)?.alive ?? 0,
+  }));
+  const { plans, skippedAmbiguous } = planChannelMerges(items);
+  const inputs = plans.map((plan) => ({ intoId: plan.into.id, fromIds: plan.from.map((item) => item.id) }));
+  const dryRun = body.dryRun !== false;
+  const result = await mergeDuplicateChannels(c.env, inputs, dryRun);
+  if (!dryRun) await audit(c.env, c.get('actor'), 'channel.merge_duplicates', 'bulk', result);
+  return ok({
+    ...result,
+    plannedGroups: plans.length,
+    plannedChannels: inputs.reduce((sum, plan) => sum + plan.fromIds.length, 0),
+    plannedLines: plans.reduce((sum, plan) => sum + plan.lines, 0),
+    plannedAlive: plans.reduce((sum, plan) => sum + plan.alive, 0),
+    skippedAmbiguous,
+  });
 });

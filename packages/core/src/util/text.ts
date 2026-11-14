@@ -118,6 +118,19 @@ export function normalizeChannelName(raw: string): string {
   return s;
 }
 
+/**
+ * Key used to fold duplicate channels created from noisy source names.
+ * Strips trailing speed tags such as `(0.001 MB/s)` before the normal
+ * quality/punctuation normalisation, so `安徽卫视 (0.001 MB/s)` and
+ * `安徽卫视` share one identity.
+ */
+export function channelIdentityKey(raw: string): string {
+  const speed = /[（(]\s*\d+(?:\.\d+)?\s*(?:MB|KB)\s*[/／]\s*s\s*[)）]\s*$/i;
+  let s = cleanLabel(raw).replace(speed, '').trim();
+  s = s.replace(/[\s\-—–_|·]+$/g, '');
+  return normalizeChannelName(s);
+}
+
 /** Chinese numerals -> arabic, for single/double digit channel numbers. */
 const CN_NUM: Record<string, number> = {
   一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10,

@@ -1,5 +1,5 @@
 import type { AppSettings, RunReport, SourceRunStats } from '@iptv/core';
-import { computeParseDrop, DEFAULT_SETTINGS } from '@iptv/core';
+import { computeParseDrop, DEFAULT_SETTINGS, remapLineChannels } from '@iptv/core';
 import type { Env } from './env.js';
 import { parseJsonField } from './lib/http.js';
 import { loadLines, saveLines } from './lib/linesState.js';
@@ -573,6 +573,84 @@ export async function mergeChannels(env: Env, fromIds: string[], intoId: string)
     merged++;
   }
   return merged;
+}
+
+export interface ChannelMergePlanInput {
+  intoId: string;
+  fromIds: string[];
+}
+
+export interface MergeDuplicatesResult {
+  dryRun: boolean;
+  groups: number;
+  channels: number;
+  movedLines: number;
+  movedProbe: number;
+}
+
+/**
+ * Apply many channel merges in one pass: load the sharded line state once,
+ * remap every affected channel id in memory, then write once. Merging group by
+ * group with `mergeChannels` would rewrite the whole state for each group.
+ */
+export async function mergeDuplicateChannels(
+  env: Env,
+  plans: ChannelMergePlanInput[],
+  dryRun = true,
+): Promise<MergeDuplicatesResult> {
+  const fromTo = new Map<string, string>();
+  const intoIds = new Set(plans.map((plan) => plan.intoId));
+  for (const plan of plans) {
+    for (const from of plan.fromIds) {
+      if (from === plan.intoId) continue;
+      if (intoIds.has(from)) throw new Error(`合并目标不能同时作为来源：${from}`);
+      fromTo.set(from, plan.intoId);
+    }
+  }
+  if (!fromTo.size) return { dryRun, groups: plans.length, channels: 0, movedLines: 0, movedProbe: 0 };
+
+  const linesState = await loadLines(env);
+  const probeState = await env.KV.get<{ items: Array<{ channelId?: string; key?: string; lineKey?: string }> }>('state/probe.json', 'json');
+  const remap = linesState?.lines
+    ? remapLineChannels(linesState.lines, fromTo)
+    : { changed: 0, movedKeys: new Map<string, string[]>() };
+  let movedProbe = 0;
+  if (probeState?.items) {
+    for (const item of probeState.items) {
+      const into = item.channelId ? fromTo.get(item.channelId) : undefined;
+      if (!into) continue;
+      item.channelId = into;
+      movedProbe++;
+    }
+  }
+
+  const result: MergeDuplicatesResult = { dryRun, groups: plans.length, channels: fromTo.size, movedLines: remap.changed, movedProbe };
+  if (dryRun) return result;
+
+  // Persist state first: if this fails, no channel row has been deleted yet.
+  if (remap.changed && linesState?.lines) {
+    await saveLines(env, linesState.lines, linesState.generatedAt ?? new Date().toISOString());
+  }
+  if (movedProbe) await env.KV.put('state/probe.json', JSON.stringify(probeState));
+
+  for (const plan of plans) {
+    const target = await getChannel(env, plan.intoId);
+    if (!target) continue;
+    for (const id of plan.fromIds) {
+      if (id === plan.intoId) continue;
+      const source = await getChannel(env, id);
+      if (!source) continue;
+      const aliases = (await env.DB.prepare('SELECT alias FROM aliases WHERE channel_id = ?').bind(id).all<{ alias: string }>()).results.map((row) => row.alias);
+      await addAlias(env, plan.intoId, source.name);
+      if (source.tvg_id) await addAlias(env, plan.intoId, source.tvg_id);
+      await env.DB.prepare('UPDATE aliases SET channel_id = ? WHERE channel_id = ?').bind(plan.intoId, id).run();
+      await env.DB.prepare('DELETE FROM channels WHERE id = ?').bind(id).run();
+      await env.DB.prepare('INSERT INTO channel_merges (id, from_id, to_id, snapshot, line_keys) VALUES (?, ?, ?, ?, ?)')
+        .bind(`merge-${crypto.randomUUID()}`, id, plan.intoId, JSON.stringify({ channel: source, aliases }), JSON.stringify(remap.movedKeys.get(id) ?? []))
+        .run();
+    }
+  }
+  return result;
 }
 
 export interface ChannelMergeRow {
