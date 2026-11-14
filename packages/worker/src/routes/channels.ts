@@ -507,12 +507,31 @@ channelRoutes.post('/merge', async (c) => {
  * suffixes. Reads and writes the sharded line state once for the whole batch.
  */
 channelRoutes.post('/merge-duplicates', async (c) => {
-  const body = (await readJson<{ dryRun?: boolean }>(c)) ?? {};
+  const body = (await readJson<{ dryRun?: boolean; items?: Array<{ intoId?: string; fromIds?: string[]; fromId?: string }> }>(c)) ?? {};
   // A running fetch or publish would race with the line-state rewrite.
   const running = (await loadTasks(c.env)).filter((task) => task.status === 'running');
   if (running.length) {
     const types = [...new Set(running.map((task) => task.type))].join('、');
     return fail(`有任务正在运行（${types}），请等任务结束后再合并频道`, 409);
+  }
+  const dryRun = body.dryRun !== false;
+  // Explicit pairs are used to resolve "alias already belongs to another
+  // channel" conflicts: merge the duplicate into the alias owner.
+  if (Array.isArray(body.items) && body.items.length) {
+    const wanted = body.items.slice(0, 500).map((item) => ({
+      intoId: String(item?.intoId ?? '').trim(),
+      fromIds: (Array.isArray(item?.fromIds) ? item.fromIds : item?.fromId ? [item.fromId] : []).map((id) => String(id).trim()).filter(Boolean),
+    })).filter((plan) => plan.intoId && plan.fromIds.length);
+    if (!wanted.length) return fail('没有可合并的条目');
+    const rows = await listChannels(c.env);
+    const known = new Set(rows.map((row) => row.id));
+    const inputs = wanted
+      .map((plan) => ({ intoId: plan.intoId, fromIds: plan.fromIds.filter((id) => known.has(id) && id !== plan.intoId) }))
+      .filter((plan) => known.has(plan.intoId) && plan.fromIds.length);
+    if (!inputs.length) return fail('目标频道或来源频道不存在');
+    const result = await mergeDuplicateChannels(c.env, inputs, dryRun);
+    if (!dryRun) await audit(c.env, c.get('actor'), 'channel.merge_conflicts', 'bulk', result);
+    return ok({ ...result, explicit: true });
   }
   const [rows, index] = await Promise.all([listChannels(c.env), loadIndex(c.env)]);
   const stats = new Map((index?.channels ?? []).map((channel) => [channel.id, { lines: channel.lines ?? 0, alive: channel.alive ?? 0 }]));
@@ -527,7 +546,6 @@ channelRoutes.post('/merge-duplicates', async (c) => {
   }));
   const { plans, skippedAmbiguous } = planChannelMerges(items);
   const inputs = plans.map((plan) => ({ intoId: plan.into.id, fromIds: plan.from.map((item) => item.id) }));
-  const dryRun = body.dryRun !== false;
   const result = await mergeDuplicateChannels(c.env, inputs, dryRun);
   if (!dryRun) await audit(c.env, c.get('actor'), 'channel.merge_duplicates', 'bulk', result);
   return ok({
