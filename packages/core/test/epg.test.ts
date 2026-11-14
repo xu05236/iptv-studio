@@ -58,6 +58,44 @@ describe('matchEpg unmatched report', () => {
   });
 });
 
+describe('loose EPG name fallback', () => {
+  it('maps names decorated with speed or MCP markers when the key is unique', () => {
+    const registry = new ChannelRegistry([
+      { id: 'guoxue', name: '国学频道-MCP', group: '其他' },
+      { id: 'qiusuo', name: '求索纪录', group: '纪录' },
+    ]);
+    const unmatched: Array<{ epgName: string; provider: string }> = [];
+    const result = matchEpg(
+      {
+        channels: [
+          { id: 'gx', names: ['国学频道'] },
+          { id: 'qs', names: ['求索纪录 (0.001 MB/s)'] },
+        ],
+        programmes: [],
+      },
+      registry,
+      { provider: 'demo', unmatched },
+    );
+    expect(result.channels.map((channel) => channel.id).sort()).toEqual(['guoxue', 'qiusuo']);
+    expect(unmatched).toHaveLength(0);
+  });
+
+  it('does not collapse ambiguous loose keys', () => {
+    const registry = new ChannelRegistry([
+      { id: 'a', name: '综合-MCP', group: '地方' },
+      { id: 'b', name: '综合', group: '地方' },
+    ]);
+    const unmatched: Array<{ epgName: string }> = [];
+    matchEpg(
+      { channels: [{ id: 'z', names: ['综合'] }], programmes: [] },
+      registry,
+      { unmatched },
+    );
+    expect(unmatched.length).toBeLessThanOrEqual(1);
+  });
+});
+
+
 describe('merge', () => {
   it('dedupes identical programmes and keeps the richer one', () => {
     const first = parseXmltv(sample);

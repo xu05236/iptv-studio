@@ -664,21 +664,31 @@ export interface ChannelMergeRow {
 
 export async function listChannelMerges(env: Env, limit = 10): Promise<Array<{ id: string; fromId: string; toId: string; fromName: string | null; toName: string | null; lineCount: number; createdAt: string }>> {
   const { results } = await env.DB.prepare(
-    `SELECT m.id, m.from_id, m.to_id, m.line_keys, m.created_at, f.name AS from_name, t.name AS to_name
+    `SELECT m.id, m.from_id, m.to_id, m.line_keys, m.snapshot, m.created_at, f.name AS from_name, t.name AS to_name
      FROM channel_merges m
      LEFT JOIN channels f ON f.id = m.from_id
      LEFT JOIN channels t ON t.id = m.to_id
      ORDER BY m.created_at DESC LIMIT ?`,
-  ).bind(limit).all<{ id: string; from_id: string; to_id: string; line_keys: string; created_at: string; from_name: string | null; to_name: string | null }>();
-  return results.map((row) => ({
-    id: row.id,
-    fromId: row.from_id,
-    toId: row.to_id,
-    fromName: row.from_name,
-    toName: row.to_name,
-    lineCount: ((JSON.parse(row.line_keys) as string[]) || []).length,
-    createdAt: row.created_at,
-  }));
+  ).bind(limit).all<{ id: string; from_id: string; to_id: string; line_keys: string; snapshot: string; created_at: string; from_name: string | null; to_name: string | null }>();
+  return results.map((row) => {
+    let fromName = row.from_name;
+    if (!fromName) {
+      try {
+        fromName = (JSON.parse(row.snapshot) as { channel?: { name?: string } }).channel?.name ?? null;
+      } catch {
+        fromName = null;
+      }
+    }
+    return {
+      id: row.id,
+      fromId: row.from_id,
+      toId: row.to_id,
+      fromName,
+      toName: row.to_name,
+      lineCount: ((JSON.parse(row.line_keys) as string[]) || []).length,
+      createdAt: row.created_at,
+    };
+  });
 }
 
 export async function undoChannelMerge(env: Env, mergeId: string): Promise<{ restoredLines: number } | null> {

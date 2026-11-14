@@ -35,6 +35,7 @@ export function hasChannelNameNoise(name: string): boolean {
   const base = cleanLabel(name);
   if (!base) return false;
   if (SPEED_SUFFIX.test(base)) return true;
+  if (/^[\s*]+/.test(base) || /[-_\s]mcp\s*$/i.test(base)) return true;
   const lower = nfkc(base).toLowerCase();
   const stripped = stripNoise(lower).replace(/\s+/g, '');
   return stripped !== lower.replace(/\s+/g, '');

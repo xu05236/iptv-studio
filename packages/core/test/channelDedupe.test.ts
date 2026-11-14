@@ -14,6 +14,11 @@ describe('channelIdentityKey', () => {
     expect(channelIdentityKey('CCTV-5+ 体育赛事')).toBe(channelIdentityKey('CCTV5+ 体育赛事'));
     expect(channelIdentityKey('凤凰卫视资讯台')).not.toBe(channelIdentityKey('凤凰卫视中文台'));
   });
+
+  it('drops MCP and leading mirror markers', () => {
+    expect(channelIdentityKey('安徽卫视-MCP')).toBe(channelIdentityKey('安徽卫视'));
+    expect(channelIdentityKey('*CCTV3 (0.001 MB/s)')).toBe(channelIdentityKey('CCTV-3'));
+  });
 });
 
 describe('remapLineChannels', () => {
@@ -35,6 +40,8 @@ describe('hasChannelNameNoise', () => {
   it('detects speed and quality noise', () => {
     expect(hasChannelNameNoise('安徽卫视 (0.001 MB/s)')).toBe(true);
     expect(hasChannelNameNoise('湖南卫视高清')).toBe(true);
+    expect(hasChannelNameNoise('安徽卫视-MCP')).toBe(true);
+    expect(hasChannelNameNoise('*CCTV3')).toBe(true);
     expect(hasChannelNameNoise('湖南卫视')).toBe(false);
   });
 });
@@ -67,5 +74,15 @@ describe('planChannelMerges', () => {
       { id: 'h2', name: '周星星 (0.001 MB/s)', group: '虎牙频道' },
     ]);
     expect(result.plans).toHaveLength(0);
+  });
+
+  it('merges MCP mirrors into the clean channel', () => {
+    const result = planChannelMerges([
+      { id: 'anhui', name: '安徽卫视', group: '卫视', tvgId: '安徽卫视', lines: 20, alive: 14 },
+      { id: 'anhui-mcp', name: '安徽卫视-MCP', group: '卫视-MCP', lines: 2, alive: 1 },
+    ]);
+    expect(result.plans).toHaveLength(1);
+    expect(result.plans[0]!.into.id).toBe('anhui');
+    expect(result.plans[0]!.from[0]!.id).toBe('anhui-mcp');
   });
 });

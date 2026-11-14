@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeCoverage } from '../src/lib/epgCoverage.js';
+import { filterExcludedGroups, summarizeCoverage } from '../src/lib/epgCoverage.js';
 
 const now = new Date('2026-03-01T12:00:00Z').getTime();
 const at = (hours: number) => new Date(now + hours * 3_600_000).toISOString();
@@ -40,5 +40,21 @@ describe('EPG coverage', () => {
     const summary = summarizeCoverage(['a'], { channels: {} }, now);
     expect(summary.guideStale).toBe(true);
     expect(summary.covered).toBe(0);
+  });
+});
+
+describe('filterExcludedGroups', () => {
+  it('drops channels in excluded groups and keeps the rest', () => {
+    const channels = [
+      { id: 'a', group: '虎牙频道' },
+      { id: 'b', group: '地方' },
+      { id: 'c' },
+    ];
+    expect(filterExcludedGroups(channels, ['虎牙频道', '  ']).map((item) => item.id)).toEqual(['b', 'c']);
+  });
+
+  it('keeps every channel when the exclusion list is empty', () => {
+    const channels = [{ id: 'a', group: '地方' }];
+    expect(filterExcludedGroups(channels, [])).toHaveLength(1);
   });
 });

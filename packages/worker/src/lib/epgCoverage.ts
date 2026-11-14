@@ -18,6 +18,12 @@ export interface CoverageSummary {
 
 const STALE_AFTER_HOURS = 26;
 
+export function filterExcludedGroups<T extends { group?: string }>(channels: T[], excluded: Iterable<string>): T[] {
+  const set = new Set([...excluded].map((item) => item.trim()).filter(Boolean));
+  if (!set.size) return channels;
+  return channels.filter((channel) => !set.has((channel.group ?? '').trim()));
+}
+
 /**
  * Coverage must not count channels whose last programme already ended: an EPG
  * snapshot that stops updating otherwise reports 100% while players show

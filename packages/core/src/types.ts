@@ -363,6 +363,8 @@ export interface AppSettings {
   epgUrls: string[];
   /** EPG source priority: comma separated hostnames, highest first. */
   epgSourcePriority: string;
+  /** Groups that never have an EPG (live mirrors, replays, MV, cams); excluded from coverage. */
+  epgExcludedGroups: string[];
   regionSuffix: boolean;
   notifyTelegram: boolean;
   retentionDays: number;
@@ -473,6 +475,8 @@ export const DEFAULT_EPG_URLS = [
   'https://raw.githubusercontent.com/fanmingming/live/main/e.xml',
   // epg.pw: numeric ids but reliable display names; merged as a second source.
   'https://epg.pw/xmltv/epg_CN.xml',
+  // 112114: 500 channels with local/4K entries that the larger feeds miss.
+  'https://epg.112114.xyz/pp.xml',
   // 51zmt: covers several provincial channels (山西/陕西/三沙) missing above.
   'http://epg.51zmt.top:8000/e.xml',
   // gotonas: compact gz feed with 135 channels and day-long schedules.
@@ -481,6 +485,46 @@ export const DEFAULT_EPG_URLS = [
   'https://tv.ziyi.cc/playback.xml',
   // gdstu: 267 channels, full-day schedules, mirrored streams.
   'https://v.gdstu.fun/playback.xml',
+];
+
+export const DEFAULT_EPG_EXCLUDED_GROUPS = [
+  '成人',
+  '虎牙频道',
+  '斗鱼频道',
+  'YY频道',
+  '体育-昨天',
+  '体育-今天',
+  '体育-明天',
+  '🎸丨音乐MTV',
+  '🐼丨DJ音乐',
+  '💫|MTV怀旧',
+  '💫|MTV现代',
+  '🎵丨流行音乐',
+  '🎧音乐直播',
+  '🎵音乐频道',
+  '音乐频道',
+  '历年春晚',
+  '春晚频道',
+  '电影频道',
+  '电视剧频道',
+  '公告',
+  'B站',
+  '抖音',
+  'iPanda',
+  '吉林风景',
+  '河北景观',
+  '南京景观',
+  '央视景观',
+  '上海景观',
+  '青岛景观',
+  '📹景区直播',
+  '慢直播',
+  '山东',
+  'IPTV',
+  '📺 国内其他',
+  '外语频道',
+  '音乐',
+  '其他频道',
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -548,6 +592,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   snapshotScheduleTimes: '03:00',
   epgUrls: DEFAULT_EPG_URLS,
   epgSourcePriority: '',
+  epgExcludedGroups: [...DEFAULT_EPG_EXCLUDED_GROUPS],
   regionSuffix: true,
   notifyTelegram: false,
   retentionDays: 7,

@@ -1,5 +1,17 @@
 import type { EpgChannel, EpgData, EpgProgramme } from './xmltv.js';
 import { ChannelRegistry } from '../normalize/channels.js';
+import { nfkc } from '../util/text.js';
+
+/** Decorations that never change the underlying channel identity. */
+function looseEpgKey(raw: string): string {
+  return nfkc(String(raw ?? ''))
+    .toLowerCase()
+    .replace(/[（(]\s*\d+(?:\.\d+)?\s*(?:mb|kb)\s*[/／]\s*s\s*[)）]/g, '')
+    .replace(/^\s*\*+/, '')
+    .replace(/[-_\s]*mcp\s*$/i, '')
+    .replace(/[\s\-_.·・/\\|]/g, '')
+    .trim();
+}
 
 export interface MergeOptions {
   /** keep programmes that started up to this many hours ago (for catch-up display) */
@@ -40,6 +52,20 @@ export function matchEpg(data: EpgData, registry: ChannelRegistry, options: Matc
   const channels: EpgChannel[] = [];
   const seen = new Set<string>();
 
+  // Channels whose stored name still carries a speed/MCP decoration cannot be
+  // resolved strictly; build a loose index and only use it when the key is
+  // unique, so `求索纪录 (0.1 MB/s)` maps back to `求索纪录` but `综合` never
+  // collapses several different local stations.
+  const looseMap = new Map<string, string>();
+  const looseDupes = new Set<string>();
+  for (const seed of registry.list()) {
+    const key = looseEpgKey(seed.name);
+    if (!key) continue;
+    if (looseMap.has(key)) looseDupes.add(key);
+    else looseMap.set(key, seed.name);
+  }
+  for (const key of looseDupes) looseMap.delete(key);
+
   for (const channel of data.channels) {
     // Providers often expose multiple display names (Chinese + English +
     // abbreviations). Try all of them, plus an explicit provider id map, and
@@ -50,6 +76,17 @@ export function matchEpg(data: EpgData, registry: ChannelRegistry, options: Matc
       const next = registry.resolve(candidate, { tvgId: channel.id });
       if (resolved.created && !next.created) resolved = next;
       else if (resolved.created === next.created && next.confidence > resolved.confidence) resolved = next;
+    }
+    if (resolved.created) {
+      for (const candidate of candidates) {
+        const target = looseMap.get(looseEpgKey(candidate));
+        if (!target) continue;
+        const next = registry.resolve(target, { tvgId: channel.id });
+        if (!next.created) {
+          resolved = next;
+          break;
+        }
+      }
     }
     idMap.set(channel.id, resolved.id);
     if (resolved.id.startsWith('x-')) {

@@ -11,6 +11,7 @@ interface Coverage {
   covered: number;
   percent: number;
   stale: number;
+  excludedTotal?: number;
   guideGeneratedAt?: string | null;
   guideAgeHours?: number | null;
   guideStale?: boolean;
@@ -42,6 +43,7 @@ interface EpgSource {
 interface EpgSettings {
   epgUrls?: string[];
   epgSourcePriority?: string;
+  epgExcludedGroups?: string[];
   epgRefreshEnabled?: boolean;
   epgRefreshTimes?: string;
 }
@@ -56,6 +58,7 @@ export function Epg() {
   const [priority, setPriority] = useState('');
   const [epgEnabled, setEpgEnabled] = useState(true);
   const [epgTimes, setEpgTimes] = useState('00:10');
+  const [excludedText, setExcludedText] = useState('');
 
   const coverage = useQuery({
     queryKey: ['epg-coverage'],
@@ -81,6 +84,7 @@ export function Epg() {
     setPriority(value.epgSourcePriority ?? '');
     setEpgEnabled(value.epgRefreshEnabled ?? true);
     setEpgTimes(value.epgRefreshTimes ?? '00:10');
+    setExcludedText((value.epgExcludedGroups ?? []).join('\n'));
   }, [settings.data]);
 
   const saveEpgSettings = useMutation({
@@ -90,6 +94,7 @@ export function Epg() {
         epgSourcePriority: priority,
         epgRefreshEnabled: epgEnabled,
         epgRefreshTimes: epgTimes,
+        epgExcludedGroups: excludedText.split(/\n+/).map((line) => line.trim()).filter(Boolean),
       }),
     onSuccess: () => {
       show('EPG 设置已保存，下一轮抓取生效');
@@ -178,6 +183,7 @@ export function Epg() {
               <div className="caption">
                 {stats?.guideGeneratedAt ? `生成于 ${timeAgo(stats.guideGeneratedAt)}` : '还没有生成过'}
                 {stats?.guideStale ? ` · ${stats.guideAgeHours ?? '?'} 小时前，已过期` : ''}
+                {stats?.excludedTotal ? ` · 已排除 ${stats.excludedTotal} 个无节目单分组的频道` : ''}
               </div>
             </div>
             {stats?.guideStale ? <Badge tone="orange">已过期</Badge> : <Badge tone="green">正常</Badge>}
@@ -203,6 +209,9 @@ export function Epg() {
             </Field>
             <Field label="源优先级" hint="按 hostname 排序，逗号分隔；同频道同一时刻以靠前的源为准">
               <input className="input" value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="fanmingming.com,epg.pw,51zmt.top" />
+            </Field>
+            <Field label="不计入覆盖率的分组" hint="每行一个；虎牙/斗鱼/回放/音乐/点播/景观等本来就没有节目单的分组，剔除后覆盖率只统计真正该有节目单的频道">
+              <textarea className="input" rows={6} value={excludedText} onChange={(event) => setExcludedText(event.target.value)} placeholder="虎牙频道&#10;斗鱼频道&#10;YY频道&#10;体育-昨天" />
             </Field>
             <div className="list">
               <div className="list__row">

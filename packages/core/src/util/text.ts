@@ -127,6 +127,7 @@ export function normalizeChannelName(raw: string): string {
 export function channelIdentityKey(raw: string): string {
   const speed = /[（(]\s*\d+(?:\.\d+)?\s*(?:MB|KB)\s*[/／]\s*s\s*[)）]\s*$/i;
   let s = cleanLabel(raw).replace(speed, '').trim();
+  s = s.replace(/^[\s*]+/, '').replace(/[-_\s]*mcp\s*$/i, '').trim();
   s = s.replace(/[\s\-—–_|·]+$/g, '');
   return normalizeChannelName(s);
 }

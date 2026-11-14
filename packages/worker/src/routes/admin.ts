@@ -39,7 +39,7 @@ import { registerTelegramWebhook } from '../lib/telegram.js';
 import { loadCatalog, loadGuide, loadIndex } from '../lib/catalog.js';
 import { describeAfterProbeGate, nextAutoCollectAt, nextAutoLivenessAt, nextAutoPublishAt, nextDueFetchSlot, nextScheduledAt, parseCollectTimes } from '../lib/schedule.js';
 import { sourceMetaMap } from '../lib/source.js';
-import { summarizeCoverage, type GuideLike } from '../lib/epgCoverage.js';
+import { filterExcludedGroups, summarizeCoverage, type GuideLike } from '../lib/epgCoverage.js';
 import { MIGRATION_FILES } from '../lib/migrations.generated.js';
 
 export const adminRoutes = new Hono<AppEnv>();
@@ -91,10 +91,11 @@ adminRoutes.get('/db/migrations', async (c) => {
 });
 
 adminRoutes.get('/epg/coverage', async (c) => {
-  const [index, guide] = await Promise.all([loadIndex(c.env), loadGuide(c.env)]);
+  const [index, guide, settings] = await Promise.all([loadIndex(c.env), loadGuide(c.env), loadSettings(c.env)]);
   if (!index) return ok({ total: 0, covered: 0, percent: 0, missing: [], missingTotal: 0, filteredTotal: 0, offset: 0, limit: 100 });
-  const summary = summarizeCoverage(index.channels.map((channel) => channel.id), guide as GuideLike | null);
-  const channelById = new Map(index.channels.map((channel) => [channel.id, channel]));
+  const counted = filterExcludedGroups(index.channels, settings.epgExcludedGroups ?? []);
+  const summary = summarizeCoverage(counted.map((channel) => channel.id), guide as GuideLike | null);
+  const channelById = new Map(counted.map((channel) => [channel.id, channel]));
   const missing = summary.missingIds.map((id) => channelById.get(id)).filter((channel): channel is NonNullable<typeof channel> => Boolean(channel));
   const staleChannels = summary.staleIds.map((id) => channelById.get(id)).filter((channel): channel is NonNullable<typeof channel> => Boolean(channel));
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
@@ -121,6 +122,8 @@ adminRoutes.get('/epg/coverage', async (c) => {
     missingTotal: filtered.length,
     filteredTotal: filtered.length,
     allMissing: missing.length,
+    excludedTotal: index.channels.length - counted.length,
+    excludedGroups: settings.epgExcludedGroups ?? [],
     offset,
     limit,
   });
@@ -704,7 +707,7 @@ adminRoutes.put('/settings', async (c) => {
     'sourceDegradeThreshold', 'sourcePauseThreshold', 'sourceHalfOpenHours',
     'fetchTimes', 'monthlyReviveEnabled', 'monthlyReviveMinRemainingMinutes', 'monthlyReviveBatchSize',
     'probeBudget', 'concurrency', 'probeAliveHours', 'probePremiumHours', 'probePerChannel',
-    'ffprobeLimit', 'probePrefilterEnabled', 'probePrefilterBudget', 'lineRetentionDays', 'epgUrls', 'regionSuffix', 'epgSourcePriority',
+    'ffprobeLimit', 'probePrefilterEnabled', 'probePrefilterBudget', 'lineRetentionDays', 'epgUrls', 'regionSuffix', 'epgSourcePriority', 'epgExcludedGroups',
     'autoCollectEnabled', 'autoCollectTimes', 'autoLivenessEnabled', 'autoLivenessTimes',
     'autoProbeEnabled', 'probeBatchSize', 'autoProbeIntervalHours',
     'actionsRepoMode', 'privateProbeBatchSize', 'privateProbeIntervalHours', 'privateMaxDailyDispatches',
@@ -781,6 +784,10 @@ adminRoutes.put('/settings', async (c) => {
       .filter(Boolean)
       .slice(0, 20);
     clean.epgSourcePriority = [...new Set(list)].join(',');
+  }
+  if (clean.epgExcludedGroups !== undefined) {
+    const list = Array.isArray(clean.epgExcludedGroups) ? clean.epgExcludedGroups : [];
+    clean.epgExcludedGroups = [...new Set(list.map((item) => String(item).trim()).filter(Boolean))].slice(0, 100);
   }
   if (clean.sourceDegradeThreshold !== undefined) clean.sourceDegradeThreshold = Math.max(1, Math.min(10, Number(clean.sourceDegradeThreshold) || 3));
   if (clean.sourcePauseThreshold !== undefined) clean.sourcePauseThreshold = Math.max(2, Math.min(20, Number(clean.sourcePauseThreshold) || 5));
