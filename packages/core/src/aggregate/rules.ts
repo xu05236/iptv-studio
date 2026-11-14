@@ -63,23 +63,25 @@ export interface RuleApplication {
 
 /** Apply every matching rule; lines can be excluded, re-tagged or renamed. */
 export function applyRules(channel: ChannelConfig, lines: LineEntry[], rules: CompiledRule[]): RuleApplication {
-  let nextChannel: ChannelConfig = { ...channel };
+  const matched = new Map<string, CompiledRule>();
   const applied = new Set<string>();
   const kept: LineEntry[] = [];
 
   for (const line of lines) {
+    let lineChannel: ChannelConfig = { ...channel };
     let nextLine: LineEntry = { ...line, tags: [...(line.tags ?? [])] };
     let excluded = false;
 
     for (const compiled of rules) {
-      if (!compiled.matches({ channel: nextChannel, line: nextLine })) continue;
+      if (!compiled.matches({ channel: lineChannel, line: nextLine })) continue;
       applied.add(compiled.rule.id);
+      matched.set(compiled.rule.id, compiled);
       const actions = compiled.rule.actions ?? {};
       if (actions.exclude) {
         excluded = true;
         break;
       }
-      nextChannel = applyChannelActions(nextChannel, actions);
+      lineChannel = applyChannelActions(lineChannel, actions);
       if (actions.addTags?.length) {
         nextLine.tags = [...new Set([...(nextLine.tags ?? []), ...actions.addTags])];
       }
@@ -87,6 +89,18 @@ export function applyRules(channel: ChannelConfig, lines: LineEntry[], rules: Co
 
     if (!excluded) kept.push(nextLine);
   }
+
+  // Channel-level actions are resolved once per channel: lines from different
+  // sources must not race, so a channel can only end up in one group. Higher
+  // priority (larger number) wins; equal priority keeps a stable winner
+  // (lexicographically smaller rule id wins).
+  const winners = [...matched.values()].sort((a, b) => {
+    const byPriority = a.rule.priority - b.rule.priority;
+    if (byPriority !== 0) return byPriority;
+    return b.rule.id.localeCompare(a.rule.id);
+  });
+  let nextChannel: ChannelConfig = { ...channel };
+  for (const compiled of winners) nextChannel = applyChannelActions(nextChannel, compiled.rule.actions ?? {});
 
   return { channel: nextChannel, lines: kept, appliedRules: [...applied] };
 }
