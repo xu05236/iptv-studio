@@ -220,6 +220,16 @@ export function ChannelsAdmin() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const bulkEnabled = useMutation({
+    mutationFn: (enabled: boolean) =>
+      api.post<{ total: number; skipped: number; enabled: boolean }>('/api/admin/channels/bulk-enabled', group ? { group, enabled } : { ids: [...selected], enabled }),
+    onSuccess: (result, enabled) => {
+      show(`${enabled ? '已启用' : '已禁用'} ${result.total} 个频道${result.skipped ? `，跳过 ${result.skipped} 个` : ''}`);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'channels'] });
+    },
+    onError: (error: Error) => show(error.message, 'error'),
+  });
+
   const renameBatch = useMutation({
     mutationFn: () => api.post<{ updated: number }>('/api/admin/channels/rename-batch', { ids: [...selected], find: renameFind.trim(), replace: renameReplace }),
     onSuccess: (result) => {
@@ -386,6 +396,16 @@ export function ChannelsAdmin() {
                   {item.group} <span>{item.count}</span>
                 </button>
               ))}
+            </div>
+          </div>
+        ) : null}
+        {group ? (
+          <div className="channel-browse__row">
+            <span className="channel-browse__label">整组</span>
+            <div className="row row--wrap" style={{ gap: 8, alignItems: 'center' }}>
+              <Button variant="ghost" loading={bulkEnabled.isPending} onClick={() => bulkEnabled.mutate(false)}>禁用本组</Button>
+              <Button variant="ghost" loading={bulkEnabled.isPending} onClick={() => bulkEnabled.mutate(true)}>启用本组</Button>
+              <span className="caption">作用于「{group}」全部分组频道，发布后对前台/订阅生效。</span>
             </div>
           </div>
         ) : null}

@@ -421,6 +421,38 @@ channelRoutes.patch('/:id', async (c) => {
   return ok({ channel: await getChannel(c.env, id) });
 });
 
+/** Bulk enable/disable channels, used by cleanup batches and whole-group toggles. */
+channelRoutes.post('/bulk-enabled', async (c) => {
+  const body = (await readJson<{ ids?: string[]; group?: string; enabled?: boolean }>(c)) ?? {};
+  const enabled = body.enabled === false ? 0 : 1;
+  const group = typeof body.group === 'string' ? body.group.trim() : '';
+  let ids = (body.ids ?? []).filter((id): id is string => typeof id === 'string' && Boolean(id.trim())).slice(0, 5000);
+  if (!ids.length && group) {
+    const { results } = await c.env.DB.prepare(
+      'SELECT id FROM channels WHERE group_title = ? AND enabled != ? LIMIT 5000',
+    ).bind(group, enabled).all<{ id: string }>();
+    ids = results.map((row) => row.id);
+  }
+  if (!ids.length) return fail(group ? '该分组没有需要修改的频道' : '缺少频道 id');
+  const existing = new Map<string, number>();
+  for (let offset = 0; offset < ids.length; offset += 40) {
+    const chunk = ids.slice(offset, offset + 40);
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, enabled FROM channels WHERE id IN (${chunk.map(() => '?').join(', ')})`,
+    ).bind(...chunk).all<{ id: string; enabled: number }>();
+    for (const row of results) existing.set(row.id, row.enabled);
+  }
+  const changed = ids.filter((id) => existing.has(id) && existing.get(id) !== enabled);
+  const statements = changed.map((id) =>
+    c.env.DB.prepare("UPDATE channels SET enabled = ?, updated_at = datetime('now') WHERE id = ?").bind(enabled, id),
+  );
+  for (let offset = 0; offset < statements.length; offset += 50) {
+    await c.env.DB.batch(statements.slice(offset, offset + 50));
+  }
+  await audit(c.env, c.get('actor'), enabled ? 'channel.bulk_enable' : 'channel.bulk_disable', 'bulk', { total: changed.length, requested: ids.length, group: group || null });
+  return ok({ total: changed.length, skipped: ids.length - changed.length, enabled: enabled === 1 });
+});
+
 channelRoutes.post('/:id/toggle', async (c) => {
   const id = c.req.param('id');
   const channel = await getChannel(c.env, id);
