@@ -878,7 +878,10 @@ function describeTask(task: Task, sourceNames: Map<string, string>): string {
   const sourceName = sourceNames.get(sourceId);
   const phase = TASK_PHASE_LABEL[String(task.payload?.phase ?? '')];
   const keyCount = String(task.payload?.line_keys ?? '').split(',').filter(Boolean).length;
-  if (task.type === 'fetch') return `抓源 · ${sourceName ?? '全部启用源'}`;
+  if (task.type === 'fetch') {
+    const ids = String(task.payload?.source_ids ?? '').split(',').filter(Boolean);
+    return ids.length ? `抓源 · ${ids.length} 个新增源` : `抓源 · ${sourceName ?? '全部启用源'}`;
+  }
   if (task.type === 'probe-batch') return `分批探测 · ${phase ?? '自动阶段'}${sourceName ? ` · ${sourceName}` : ''}`;
   if (task.type === 'probe') return `完整测速 · ${sourceName ?? '全部源'}`;
   if (task.type === 'probe-lines') return `线路复测 · ${keyCount} 条`;

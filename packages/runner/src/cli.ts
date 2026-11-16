@@ -1015,13 +1015,15 @@ async function runFetchPhase(): Promise<void> {
     await syncSourceStats(api, remote, lines, collected, sourceId, batchIds);
 
     const alive = lines.filter((line) => line.status === 'alive').length;
+    const batchFailed = collected.filter((item) => item.error);
+    const batchEmpty = collected.filter((item) => !item.error && item.entries.length === 0);
+    const batchOk = collected.length - batchFailed.length - batchEmpty.length;
     if (batchIds.length) {
-      const failed = collected.filter((item) => item.error);
       const stored = lines.filter((line) => batchIds.includes(line.sourceId)).length;
-      const detail = failed.length
-        ? ` · 失败源：${failed.slice(0, 4).map((item) => `${item.source.name}(${item.error})`).join('、')}`
+      const detail = batchFailed.length
+        ? ` · 失败源：${batchFailed.slice(0, 4).map((item) => `${item.source.name}(${item.error})`).join('、')}`
         : '';
-      await reportTaskProgress(api, 1, 1, `批量抓取完成 · ${collected.length - failed.length}/${collected.length} 源 · 入库 ${stored} 条 · 可用 ${alive}${detail}`);
+      await reportTaskProgress(api, 1, 1, `批量抓取完成 · ${collected.length} 个源 · 成功 ${batchOk} · 失败 ${batchFailed.length} · 解析 0 条 ${batchEmpty.length} · 入库 ${stored} 条 · 可用 ${alive}${detail}`);
     } else if (sourceId) {
       const source = remote.sources.find((item) => item.id === sourceId);
       const result = collected.find((item) => item.source.id === sourceId);
@@ -1040,7 +1042,7 @@ async function runFetchPhase(): Promise<void> {
     const publishAfterFetch = (process.env.PUBLISH_AFTER_FETCH ?? '').trim() === 'true';
     if (publishAfterFetch) {
       await publishPhase(api, store, config, remote, lines, logger, runId, 'fetch');
-      await reportTaskProgress(api, 1, 1, `批量抓取完成 · 已发布 · 线路 ${lines.length} 条 · 可用 ${alive}`);
+      await reportTaskProgress(api, 1, 1, `批量抓取完成 · ${collected.length} 个源 · 成功 ${batchOk} · 失败 ${batchFailed.length} · 解析 0 条 ${batchEmpty.length} · 已发布 · 线路 ${lines.length} 条 · 可用 ${alive}`);
     }
     const logKey = await writeLog(store, runId, logger);
     report = {
