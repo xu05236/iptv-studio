@@ -12,6 +12,9 @@
 - **代理导入计数**：结果拆成「解析 / 新增 / 更新 / 去重 / 跨协议合并 / 跳过 / 需内核」。「去重」是同一节点在文件里重复出现；「跳过」是库里已有（http 与 socks5 同 host:port 视为同一节点）；所以「解析 18、实际 16」通常是去重或已存在，不是丢节点。
 - **数字显示**：后台所有计数改为完整数字（不再显示 12.7k）。
 - **低信誉源清理**：按 `alive_count = 0` 删除 11 个失效源，并清理 4,359 条孤儿线路；其余「误伤/证据不足」保留观察。
+- **孤儿清理**：判断改为「频道记录不存在 **或** 来源记录不存在」的非可用线路；**可用（alive）线路一律保留**。删除来源后自动排队一次 `cleanup-orphans`（已有排队/运行中的清理任务则去重），不再需要手动点按钮；设置页「维护 → 清理孤儿线路」走同一逻辑。任务消息：`已剔除孤儿线路 X 条（频道缺失 A · 来源缺失 B），保留可用 C 条`。`x-` 新频道在发布前仍豁免频道检查。
+- **线路状态代际写入**：分片 key 改为内容寻址 `state/lines-<i>-<hash>.json`；保存顺序为「写新分片 → 最后原子写 manifest → 删被替换的旧分片」，中途中断不会出现清单与分片对不上。新增 `POST /api/admin/pool/repair-lines-manifest`（默认 dryRun，审计 `pool.repair_lines_manifest`）按分片实际条数重写 manifest，只修清单、不动线路数据。
+- **Worker 清理阈值**：`/pool/orphans/cleanup` >500、`/cleanup/empty-channels` >1000、`/cleanup/adult-lines` >500、`/channels/merge-duplicates` >200 时返回 409，提示改走 Actions 或分批；重活不再交给 Worker 硬扛（免费版 10ms CPU）。
 - **批量添加采集站**：采集站页头「批量添加」→ 多行 `URL` 或 `名称,URL`；一次最多 100 个，同 URL（批内或已有）跳过；`POST /api/admin/sources/batch` 创建后只建 **一个** `fetch` 任务（payload `source_ids` + `publish=true`），在同一个 Actions 运行里抓取并发布一次，发布后照常生成一次快照。任务名「抓源 · N 个新增源」，完成消息「批量抓取完成 · N 个源 · 成功 X · 失败 Y · 解析 0 条 Z · 入库 … · 可用 …」；解析 0 条不算失败，网络/HTTP 错误才计入失败并附前 4 个源。
 - **频道清理接口**：`POST /api/admin/cleanup/empty-channels`（默认 dryRun）只清「没有任何线路引用、非成人分组、无 `tvgId`、别名表 ≤1」的频道，按 100 条分批删除；`POST /api/admin/cleanup/adult-lines`（默认 dryRun）清掉挂在「成人且禁用」频道下的线路；两者都写审计。判断空频道必须看全量线路状态，不能只看发布索引里的可用线路，否则会把有线路的频道误判为空。
 
