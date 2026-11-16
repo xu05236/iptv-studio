@@ -75,4 +75,44 @@ export async function saveLines(env: Env, lines: LineEntry[], generatedAt: strin
     manifest.legacyRemoved = true;
   }
   await putArtifact(env, LINES_MANIFEST_KEY, JSON.stringify(manifest), 'application/json; charset=utf-8');
+  // Commit happened: old shard keys (including fixed legacy keys) can now be
+  // removed. Doing this before the manifest write would have made a crash
+  // destructive.
+  const current = new Set(shards.map((shard) => shard.key));
+  for (const shard of previous?.shards ?? []) {
+    if (!current.has(shard.key)) await deleteArtifact(env, shard.key).catch(() => undefined);
+  }
+}
+
+export interface ManifestRepair {
+  changed: boolean;
+  written: boolean;
+  before: { total: number; shards: Array<{ key: string; count: number }> };
+  after: { total: number; shards: Array<{ key: string; count: number }> };
+}
+
+/**
+ * Rebuild the manifest from the shards that actually exist. Used after an
+ * interrupted write left manifest counts ahead of the shard contents; it never
+ * touches the line data itself.
+ */
+export async function repairLinesManifest(env: Env, options: { dryRun?: boolean } = {}): Promise<ManifestRepair> {
+  const manifest = await env.KV.get<LinesManifest>(LINES_MANIFEST_KEY, 'json');
+  if (!manifest?.shards?.length) throw new Error('没有分片清单，无法修复');
+  const shards: LinesManifest['shards'] = [];
+  let total = 0;
+  for (const shard of manifest.shards) {
+    const bytes = await env.KV.get(shard.key, 'arrayBuffer');
+    if (!bytes) throw new Error(`线路分片 ${shard.key} 读取失败，无法修复`);
+    const text = isGzipBytes(new Uint8Array(bytes)) ? await gunzipText(bytes) : new TextDecoder().decode(bytes);
+    const parsed = parseLinesBody(text);
+    total += parsed.length;
+    shards.push({ key: shard.key, count: parsed.length, bytes: shard.bytes, hash: shard.hash });
+  }
+  const before = { total: manifest.total, shards: manifest.shards.map(({ key, count }) => ({ key, count })) };
+  const changed = total !== manifest.total || shards.some((shard, index) => shard.count !== manifest.shards[index]?.count);
+  const after = { total, shards: shards.map(({ key, count }) => ({ key, count })) };
+  if (!changed || options.dryRun) return { changed, written: false, before, after };
+  await putArtifact(env, LINES_MANIFEST_KEY, JSON.stringify({ ...manifest, generatedAt: new Date().toISOString(), total, shards }), 'application/json; charset=utf-8');
+  return { changed, written: true, before, after };
 }

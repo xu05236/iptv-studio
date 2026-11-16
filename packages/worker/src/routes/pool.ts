@@ -28,7 +28,7 @@ import {
 } from '../db.js';
 import { fail, ok, parseJsonField, randomId, randomToken, readJson } from '../lib/http.js';
 import { getJson, putArtifact } from '../lib/store.js';
-import { loadLines, saveLines } from '../lib/linesState.js';
+import { loadLines, repairLinesManifest, saveLines } from '../lib/linesState.js';
 import { createTask, dispatchNext } from '../lib/tasks.js';
 import { countryOfGroup } from '../lib/channelCountry.js';
 import { loadIndex } from '../lib/catalog.js';
@@ -877,6 +877,14 @@ poolRoutes.get('/orphans', async (c) => {
   return ok({ total: items.reduce((sum, item) => sum + item.count, 0), aliveKept, items });
 });
 
+poolRoutes.post('/repair-lines-manifest', async (c) => {
+  const body = (await readJson<{ dryRun?: boolean }>(c)) ?? {};
+  const dryRun = body.dryRun !== false;
+  const repair = await repairLinesManifest(c.env, { dryRun });
+  if (!dryRun) await audit(c.env, c.get('actor'), 'pool.repair_lines_manifest', 'bulk', { total: repair.after.total, changed: repair.changed });
+  return ok(repair);
+});
+
 poolRoutes.post('/orphans/cleanup', async (c) => {
   const body = await readJson<{ sourceId?: string; includeAlive?: boolean }>(c);
   const [state, sources] = await Promise.all([
@@ -892,6 +900,9 @@ poolRoutes.post('/orphans/cleanup', async (c) => {
       .map((line) => line.key),
   );
   if (!keys.size) return ok({ removed: 0 });
+  if (keys.size > 500) {
+    return fail(`待清理 ${keys.size} 条，超过 Worker 安全阈值 500；请改用 Actions 的 cleanup-orphans`, 409);
+  }
   const removed = await removeLinesFromArtifacts(c.env, keys);
   await audit(c.env, c.get('actor'), 'pool.cleanup_orphans', body?.sourceId ?? 'all', { removed, sourceId: body?.sourceId ?? null });
   return ok({ removed });

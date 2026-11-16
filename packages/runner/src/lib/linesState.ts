@@ -75,4 +75,9 @@ export async function saveLinesState(store: ArtifactStore, lines: LineEntry[], g
     manifest.legacyRemoved = true;
   }
   await store.put(LINES_MANIFEST_KEY, JSON.stringify(manifest), 'application/json; charset=utf-8');
+  // Only delete replaced shards after the manifest commit.
+  const current = new Set(shards.map((shard) => shard.key));
+  for (const shard of previous?.shards ?? []) {
+    if (!current.has(shard.key)) await store.delete(shard.key).catch(() => undefined);
+  }
 }

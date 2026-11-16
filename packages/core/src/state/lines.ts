@@ -63,8 +63,11 @@ export function lineShardIndex(key: string, shardCount = LINES_SHARD_COUNT): num
   return (hash >>> 0) % shardCount;
 }
 
-export function lineShardKey(index: number): string {
-  return `state/lines-${index}.json`;
+export function lineShardKey(index: number, hash?: string): string {
+  // Content-addressed keys make writes crash-safe: new shards land on fresh
+  // keys and only the manifest switch publishes them. A request killed midway
+  // leaves the previous manifest (and its shards) untouched.
+  return hash ? `state/lines-${index}-${hash}.json` : `state/lines-${index}.json`;
 }
 
 /**
@@ -97,7 +100,8 @@ export function packLines(
     // save, so the writer's etag/hash skip never worked and 8 puts were spent
     // even when no line changed. The manifest keeps the timestamp instead.
     const body = JSON.stringify({ lines: bucket });
-    return { key: lineShardKey(index), body, count: bucket.length, bytes: encoder.encode(body).byteLength, hash: shardHash(body) };
+    const hash = shardHash(body);
+    return { key: lineShardKey(index, hash), body, count: bucket.length, bytes: encoder.encode(body).byteLength, hash };
   });
   const manifest: LinesManifest = {
     version: LINES_FORMAT_VERSION,

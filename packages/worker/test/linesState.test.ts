@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LINES_LEGACY_KEY, LINES_MANIFEST_KEY, type LineEntry } from '@iptv/core';
 import type { Env } from '../src/env.js';
-import { loadLines, saveLines } from '../src/lib/linesState.js';
+import { loadLines, repairLinesManifest, saveLines } from '../src/lib/linesState.js';
 
 function line(overrides: Partial<LineEntry> = {}): LineEntry {
   return {
@@ -110,5 +110,43 @@ describe('worker sharded lines', () => {
     await saveLines(envOf(kv), [], '2026-11-10T00:01:00Z', { allowEmpty: true });
     const loaded = await loadLines(envOf(kv));
     expect(loaded.lines).toEqual([]);
+  });
+
+  it('uses content-addressed shard keys and prunes replaced shards after commit', async () => {
+    const kv = new FakeKV();
+    await saveLines(envOf(kv), [line({ key: 'k1' })], '2026-11-10T00:00:00Z');
+    const first = JSON.parse(new TextDecoder().decode(kv.values.get(LINES_MANIFEST_KEY))) as { shards: Array<{ key: string }> };
+    const firstKeys = first.shards.map((shard) => shard.key);
+    expect(firstKeys.every((key) => /^state\/lines-\d+-[0-9a-f-]+\.json$/.test(key))).toBe(true);
+
+    await saveLines(envOf(kv), [line({ key: 'k2' })], '2026-11-10T00:01:00Z');
+    const second = JSON.parse(new TextDecoder().decode(kv.values.get(LINES_MANIFEST_KEY))) as { shards: Array<{ key: string }> };
+    const secondKeys = second.shards.map((shard) => shard.key);
+    for (const key of firstKeys) {
+      if (!secondKeys.includes(key)) expect(kv.values.has(key)).toBe(false);
+    }
+    expect((await loadLines(envOf(kv))).lines[0]!.key).toBe('k2');
+  });
+
+  it('repairs manifest counts after an interrupted write', async () => {
+    const kv = new FakeKV();
+    await saveLines(envOf(kv), [line()], '2026-11-10T00:00:00Z');
+    const manifest = JSON.parse(new TextDecoder().decode(kv.values.get(LINES_MANIFEST_KEY))) as {
+      total: number;
+      shards: Array<{ key: string; count: number }>;
+    };
+    manifest.total += 5;
+    for (const shard of manifest.shards) shard.count += 5;
+    await kv.put(LINES_MANIFEST_KEY, JSON.stringify(manifest));
+    await expect(loadLines(envOf(kv))).rejects.toThrow('条数不符');
+
+    const dry = await repairLinesManifest(envOf(kv), { dryRun: true });
+    expect(dry.changed).toBe(true);
+    expect(dry.written).toBe(false);
+
+    const repaired = await repairLinesManifest(envOf(kv));
+    expect(repaired.written).toBe(true);
+    const loaded = await loadLines(envOf(kv));
+    expect(loaded.lines).toHaveLength(1);
   });
 });

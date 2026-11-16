@@ -544,6 +544,9 @@ channelRoutes.post('/merge-duplicates', async (c) => {
       .map((plan) => ({ intoId: plan.intoId, fromIds: plan.fromIds.filter((id) => known.has(id) && id !== plan.intoId) }))
       .filter((plan) => known.has(plan.intoId) && plan.fromIds.length);
     if (!inputs.length) return fail('目标频道或来源频道不存在');
+    if (!dryRun && inputs.length > 200) {
+      return fail(`显式合并 ${inputs.length} 组，超过 Worker 安全阈值 200；请分批执行`, 409);
+    }
     const result = await mergeDuplicateChannels(c.env, inputs, dryRun);
     if (!dryRun) await audit(c.env, c.get('actor'), 'channel.merge_conflicts', 'bulk', result);
     return ok({ ...result, explicit: true });
@@ -560,6 +563,9 @@ channelRoutes.post('/merge-duplicates', async (c) => {
     alive: stats.get(row.id)?.alive ?? 0,
   }));
   const { plans, skippedAmbiguous } = planChannelMerges(items);
+  if (!dryRun && plans.length > 200) {
+    return fail(`待合并 ${plans.length} 组，超过 Worker 安全阈值 200；请分批执行`, 409);
+  }
   const inputs = plans.map((plan) => ({ intoId: plan.into.id, fromIds: plan.from.map((item) => item.id) }));
   const result = await mergeDuplicateChannels(c.env, inputs, dryRun);
   if (!dryRun) await audit(c.env, c.get('actor'), 'channel.merge_duplicates', 'bulk', result);

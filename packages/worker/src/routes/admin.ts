@@ -52,9 +52,13 @@ adminRoutes.use('/epg/coverage', adminCache());
 adminRoutes.use('/lines', adminCache());
 
 adminRoutes.get('/storage/sizes', async (c) => {
+  const manifest = await c.env.KV.get<{ shards?: Array<{ key: string }> }>('state/lines-manifest.json', 'json');
+  const shardKeys = manifest?.shards?.length
+    ? manifest.shards.map((shard) => shard.key)
+    : Array.from({ length: LINES_SHARD_COUNT }, (_, index) => lineShardKey(index));
   const keys = [
     'state/lines-manifest.json',
-    ...Array.from({ length: LINES_SHARD_COUNT }, (_, index) => lineShardKey(index)),
+    ...shardKeys,
     'state/lines-archive.json',
     'state/probe.json',
     'state/line-index.json',
@@ -1128,6 +1132,9 @@ adminRoutes.post('/cleanup/empty-channels', async (c) => {
       sample: candidates.slice(0, 20).map((channel) => ({ id: channel.id, name: channel.name, group: channel.group_title })),
     });
   }
+  if (candidates.length > 1000) {
+    return fail(`待删除 ${candidates.length} 个频道，超过 Worker 安全阈值 1000；请分批或改用 Actions`, 409);
+  }
   let deleted = 0;
   for (let index = 0; index < candidates.length; index += 100) {
     const chunk = candidates.slice(index, index + 100).map((channel) => channel.id);
@@ -1155,6 +1162,9 @@ adminRoutes.post('/cleanup/adult-lines', async (c) => {
   const alive = doomed.filter((line) => line.status === 'alive').length;
   if (dryRun) return ok({ dryRun: true, lines: doomed.length, alive });
   if (!doomed.length) return ok({ lines: 0, alive: 0 });
+  if (doomed.length > 500) {
+    return fail(`待删除 ${doomed.length} 条线路，超过 Worker 安全阈值 500；请改用 Actions`, 409);
+  }
   const kept = state.lines.filter((line) => !hidden.has(line.channelId));
   await saveLines(c.env, kept, new Date().toISOString());
   await audit(c.env, c.get('actor'), 'lines.cleanup_adult', 'bulk', { lines: doomed.length, alive });
