@@ -12,6 +12,8 @@ export interface ProbeSelectionOptions {
   now: number;
   perChannel: number;
   mergedPerChannel?: number;
+  /** Cap how many lines one source can take per batch, so a big source cannot starve the rest. */
+  perSource?: number;
   limit: number;
 }
 
@@ -65,6 +67,8 @@ export function selectProbeLines(lines: LineEntry[], options: ProbeSelectionOpti
 
   const cursors = buckets.map(() => 0);
   const picked: LineEntry[] = [];
+  const sourceLimit = Math.max(1, options.perSource ?? Number.MAX_SAFE_INTEGER);
+  const pickedPerSource = new Map<string, number>();
   while (picked.length < options.limit) {
     let progressed = false;
     for (let index = 0; index < buckets.length && picked.length < options.limit; index += 1) {
@@ -73,10 +77,12 @@ export function selectProbeLines(lines: LineEntry[], options: ProbeSelectionOpti
         const line = bucket.lines[cursors[index]!]!;
         cursors[index] = cursors[index]! + 1;
         if (line.official) continue;
+        if ((pickedPerSource.get(line.sourceId) ?? 0) >= sourceLimit) continue;
         const signature = lineSignature(line);
         if (options.takenSignatures.has(signature)) continue;
         if ((options.cooldown.get(signature) ?? 0) > options.now) continue;
         options.takenSignatures.add(signature);
+        pickedPerSource.set(line.sourceId, (pickedPerSource.get(line.sourceId) ?? 0) + 1);
         picked.push(line);
         progressed = true;
         break;

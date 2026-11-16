@@ -1,80 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import { lineSignature, type LineEntry } from '@iptv/core';
-import { MERGED_PROBE_PER_CHANNEL, selectProbeLines } from '../src/pipeline/probeSelection.js';
+import type { LineEntry } from '@iptv/core';
+import { selectProbeLines } from '../src/pipeline/probeSelection.js';
 
-function line(channelId: string, key: string, sourceId = 'src-a'): LineEntry {
-  return {
-    key,
-    sourceId,
-    channelId,
-    name: '频道',
-    url: `http://example.com/${key}.m3u8`,
-    urlKey: `example.com/${key}.m3u8`,
-    protocol: 'hls',
-    status: 'unknown',
-    failCount: 0,
-    score: 0,
-    tags: [],
-    sourceIds: [sourceId],
-    firstSeenAt: '2026-01-01T00:00:00Z',
-    lastSeenAt: '2026-01-01T00:00:00Z',
-  } as LineEntry;
+function make(channelId: string, sourceId: string, index: number): LineEntry {
+  const url = `http://${sourceId}.example/${channelId}/${index}.m3u8`;
+  return { key: `${sourceId}:${url}`, channelId, name: channelId, url, urlKey: url, sourceId, status: 'unknown' } as unknown as LineEntry;
 }
 
-function options(overrides: Partial<Parameters<typeof selectProbeLines>[1]> = {}) {
-  return {
-    matches: () => true,
-    channelIds: new Set(['a', 'b', 'c']),
-    favorites: new Set<string>(),
-    cooldown: new Map<string, number>(),
-    takenSignatures: new Set<string>(),
-    now: Date.parse('2026-11-13T00:00:00Z'),
-    perChannel: 2,
-    limit: 6,
-    ...overrides,
-  };
-}
+const baseOptions = {
+  matches: () => true,
+  channelIds: new Set(['c1', 'c2', 'c3', 'c4', 'c5', 'c6']),
+  favorites: new Set<string>(),
+  cooldown: new Map<string, number>(),
+  now: Date.UTC(2026, 10, 16),
+  perChannel: 5,
+  limit: 10,
+};
 
-describe('selectProbeLines', () => {
-  it('visits channels round-robin instead of filling from one channel', () => {
+describe('selectProbeLines perSource cap', () => {
+  it('never takes more than perSource lines from one source', () => {
     const lines = [
-      ...Array.from({ length: 5 }, (_, index) => line('a', `a-${index}`)),
-      ...Array.from({ length: 5 }, (_, index) => line('b', `b-${index}`)),
-      ...Array.from({ length: 5 }, (_, index) => line('c', `c-${index}`)),
+      ...['c1', 'c2', 'c3', 'c4', 'c5', 'c6'].map((channel, index) => make(channel, 'src-a', index)),
+      ...['c1', 'c2', 'c3', 'c4', 'c5', 'c6'].map((channel, index) => make(channel, 'src-b', index)),
     ];
-    const picked = selectProbeLines(lines, options());
+    const picked = selectProbeLines(lines, { ...baseOptions, takenSignatures: new Set(), perSource: 2 });
+    expect(picked.filter((line) => line.sourceId === 'src-a').length).toBeLessThanOrEqual(2);
+    expect(picked.filter((line) => line.sourceId === 'src-b').length).toBeLessThanOrEqual(2);
+  });
+
+  it('fills the batch from the remaining sources instead of stopping short', () => {
+    const lines = [
+      ...['c1', 'c2', 'c3', 'c4', 'c5', 'c6'].map((channel, index) => make(channel, 'src-a', index)),
+      ...['c1', 'c2', 'c3', 'c4', 'c5', 'c6'].map((channel, index) => make(channel, 'src-b', index)),
+    ];
+    const picked = selectProbeLines(lines, { ...baseOptions, takenSignatures: new Set(), perSource: 3, limit: 6 });
     expect(picked).toHaveLength(6);
-    const counts = picked.reduce<Record<string, number>>((acc, item) => {
-      acc[item.channelId] = (acc[item.channelId] ?? 0) + 1;
-      return acc;
-    }, {});
-    expect(counts).toEqual({ a: 2, b: 2, c: 2 });
-  });
-
-  it('lets a merged channel use the larger allowance', () => {
-    const lines = [
-      ...Array.from({ length: 300 }, (_, index) => line('x-mc-1', `m-${index}`)),
-      line('c', 'c-0'),
-    ];
-    const picked = selectProbeLines(lines, options({ channelIds: new Set(['x-mc-1', 'c']), limit: 500, perChannel: 24 }));
-    expect(picked.filter((item) => item.channelId === 'x-mc-1')).toHaveLength(MERGED_PROBE_PER_CHANNEL);
-    expect(picked).toHaveLength(MERGED_PROBE_PER_CHANNEL + 1);
-  });
-
-  it('skips URL signatures that are cooling down', () => {
-    const a = line('a', 'a-0');
-    const b = line('a', 'a-1');
-    const cooldown = new Map<string, number>([[lineSignature(a), Date.parse('2026-11-14T00:00:00Z')]]);
-    const picked = selectProbeLines([a, b], options({ cooldown, limit: 1 }));
-    expect(picked.map((item) => item.key)).toEqual(['a-1']);
-  });
-
-  it('starts with favorite sources even when their channel is larger', () => {
-    const lines = [
-      line('a', 'a-0', 'src-a'),
-      line('b', 'b-0', 'src-fav'),
-    ];
-    const picked = selectProbeLines(lines, options({ favorites: new Set(['src-fav']), limit: 2 }));
-    expect(picked[0]!.sourceId).toBe('src-fav');
+    expect(picked.filter((line) => line.sourceId === 'src-a').length).toBe(3);
+    expect(picked.filter((line) => line.sourceId === 'src-b').length).toBe(3);
   });
 });

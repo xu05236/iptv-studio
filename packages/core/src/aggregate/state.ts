@@ -70,7 +70,7 @@ export function shouldExport(
 
 export type ProbeTier = 'high' | 'normal' | 'low';
 
-const TIER_TTL_HOURS: Record<ProbeTier, number> = { high: 12, normal: 72, low: 168 };
+const TIER_TTL_HOURS: Record<ProbeTier, number> = { high: 12, normal: 72, low: 72 };
 
 export function isDueForProbe(
   line: Pick<LineEntry, 'status' | 'lastProbeAt'>,

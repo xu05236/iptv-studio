@@ -16,16 +16,21 @@ export interface ReputationInput {
  */
 export function nextReputation(input: ReputationInput): number {
   const tested = Math.max(0, input.total);
-  const availability = tested > 0 ? input.alive / tested : 0.5;
+  const previous = Number.isFinite(input.previous) ? input.previous : 50;
+  // Not enough fully-probed lines yet: keep the previous score. Pre-filter
+  // failures and never-probed lines are not evidence that a source is bad.
+  if (tested < 10) {
+    const next = input.fetchOk ? previous : Math.max(0, previous - 5);
+    return Math.round(Math.max(0, Math.min(100, next)) * 10) / 10;
+  }
+  const availability = input.alive / tested;
   const quality = Math.max(0, Math.min(1, input.avgScore / 100));
   let target = 100 * (0.75 * availability + 0.25 * quality);
-  if (!tested) target = 50;
   if (!input.fetchOk) target *= 0.45;
 
-  const previous = Number.isFinite(input.previous) ? input.previous : 50;
   let next = previous * 0.45 + target * 0.55;
   // Recover from a historically low score once there is enough evidence.
-  if (tested >= 20 && target > 40) next = Math.max(next, target * 0.8);
+  if (target > 40) next = Math.max(next, target * 0.8);
   if (input.consecutiveFailures > 0) next -= Math.min(20, input.consecutiveFailures * 5);
   return Math.round(Math.max(0, Math.min(100, next)) * 10) / 10;
 }
@@ -46,5 +51,5 @@ export function reputationLabel(reputation: number): string {
 
 /** Expected probe interval in hours, derived from tier. */
 export function probeIntervalHours(tier: SourceConfig['tier']): number {
-  return tier === 'high' ? 12 : tier === 'normal' ? 72 : 168;
+  return tier === 'high' ? 12 : 72;
 }

@@ -15,7 +15,7 @@ describe('nextReputation', () => {
     expect(score).toBeLessThanOrEqual(85);
   });
 
-  it('does not collapse when there are no tested lines yet', () => {
+  it('keeps the previous score when there are too few probed lines', () => {
     const score = nextReputation({
       previous: 15,
       alive: 0,
@@ -24,7 +24,19 @@ describe('nextReputation', () => {
       fetchOk: true,
       consecutiveFailures: 0,
     });
-    expect(score).toBeGreaterThan(20);
+    expect(score).toBe(15);
+  });
+
+  it('only applies a small fetch penalty without enough evidence', () => {
+    const score = nextReputation({
+      previous: 40,
+      alive: 0,
+      total: 5,
+      avgScore: 0,
+      fetchOk: false,
+      consecutiveFailures: 1,
+    });
+    expect(score).toBe(35);
   });
 
   it('penalises fetch failures', () => {

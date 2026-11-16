@@ -631,7 +631,7 @@ async function syncSourceStats(
   const stats = targets.flatMap((source) => {
     const sourceLines = lines.filter((line) => line.sourceId === source.id);
     const aliveLines = sourceLines.filter((line) => line.status === 'alive');
-    const testedLines = sourceLines.filter((line) => line.lastProbeAt && (line.status === 'alive' || line.status === 'dead' || line.status === 'suspect'));
+    const testedLines = sourceLines.filter((line) => line.lastProbeAt && (line.status === 'alive' || line.status === 'dead'));
     const item = collected.find((entry) => entry.source.id === source.id);
     // Interval-skipped sources have no fresh result: do not touch their health.
     if (!item || (!item.fetched && !item.error)) return [];
@@ -1497,6 +1497,7 @@ async function runBatchProbe(): Promise<void> {
         now,
         perChannel,
         mergedPerChannel: MERGED_PROBE_PER_CHANNEL,
+        perSource: Math.max(20, Math.floor(limit / 6)),
         limit,
       });
       for (const line of picked) {
@@ -1528,7 +1529,11 @@ async function runBatchProbe(): Promise<void> {
     const phaseLabel = `待测 ${chosenByPhase.pending} · 疑似 ${chosenByPhase.quarantine}`;
     logger.info('分批探测计划', { phases: chosenByPhase, batch: selected.length, batchSize, forced: Boolean(forcedPhase) });
 
-    const blocked = await prefilterLiveness(selected, settings, config.concurrency || settings.concurrency || 32, logger);
+    // Only never-probed lines go through the cheap liveness filter. Suspect
+    // lines that already failed it must get a real full probe, otherwise the
+    // prefilter becomes a permanent verdict and they never recover.
+    const prefilterInput = selected.filter((line) => line.status !== 'suspect');
+    const blocked = await prefilterLiveness(prefilterInput, settings, config.concurrency || settings.concurrency || 32, logger);
     if (blocked.size) {
       const nextCooldown = new Map(cooldown);
       const until = now + PREFILTER_COOLDOWN_MS;
