@@ -1081,6 +1081,68 @@ adminRoutes.post('/tasks/cleanup-failed', async (c) => {
   return ok({ removed });
 });
 
+// Remove channel shells that no line references any more. Keeps channels that
+// carry EPG identity (tvg_id), manual aliases, the disabled adult group, or any
+// subscription reference; dryRun defaults to true.
+adminRoutes.post('/cleanup/empty-channels', async (c) => {
+  const body = (await readJson<{ dryRun?: boolean; ids?: string[] }>(c)) ?? {};
+  const dryRun = body.dryRun !== false;
+  const [channels, state] = await Promise.all([listChannels(c.env), loadLines(c.env)]);
+  const referenced = new Set(state.lines.map((line) => line.channelId));
+  const wanted = body.ids?.length ? new Set(body.ids) : null;
+  const candidates = channels.filter((channel) => {
+    if (wanted && !wanted.has(channel.id)) return false;
+    if (referenced.has(channel.id)) return false;
+    if ((channel.group_title ?? '') === '成人') return false;
+    if (channel.tvg_id) return false;
+    let aliases: unknown = [];
+    try {
+      aliases = JSON.parse(channel.aliases || '[]');
+    } catch {
+      aliases = [];
+    }
+    return !Array.isArray(aliases) || aliases.length <= 1;
+  });
+  if (dryRun) {
+    return ok({
+      dryRun: true,
+      candidates: candidates.length,
+      sample: candidates.slice(0, 20).map((channel) => ({ id: channel.id, name: channel.name, group: channel.group_title })),
+    });
+  }
+  let deleted = 0;
+  for (let index = 0; index < candidates.length; index += 100) {
+    const chunk = candidates.slice(index, index + 100).map((channel) => channel.id);
+    const placeholders = chunk.map(() => '?').join(', ');
+    await c.env.DB.batch([
+      c.env.DB.prepare(`DELETE FROM aliases WHERE channel_id IN (${placeholders})`).bind(...chunk),
+      c.env.DB.prepare(`DELETE FROM channels WHERE id IN (${placeholders})`).bind(...chunk),
+    ]);
+    deleted += chunk.length;
+  }
+  await audit(c.env, c.get('actor'), 'channels.cleanup_empty', 'bulk', { deleted });
+  return ok({ deleted });
+});
+
+// Drop the lines that still hang under disabled adult channels; the channel
+// shells themselves stay (kept disabled).
+adminRoutes.post('/cleanup/adult-lines', async (c) => {
+  const body = (await readJson<{ dryRun?: boolean }>(c)) ?? {};
+  const dryRun = body.dryRun !== false;
+  const [channels, state] = await Promise.all([listChannels(c.env), loadLines(c.env)]);
+  const hidden = new Set(
+    channels.filter((channel) => (channel.group_title ?? '') === '成人' && !channel.enabled).map((channel) => channel.id),
+  );
+  const doomed = state.lines.filter((line) => hidden.has(line.channelId));
+  const alive = doomed.filter((line) => line.status === 'alive').length;
+  if (dryRun) return ok({ dryRun: true, lines: doomed.length, alive });
+  if (!doomed.length) return ok({ lines: 0, alive: 0 });
+  const kept = state.lines.filter((line) => !hidden.has(line.channelId));
+  await saveLines(c.env, kept, new Date().toISOString());
+  await audit(c.env, c.get('actor'), 'lines.cleanup_adult', 'bulk', { lines: doomed.length, alive });
+  return ok({ lines: doomed.length, alive });
+});
+
 adminRoutes.patch('/tasks/:id', async (c) => {
   const body = await readJson<{ action?: string }>(c);
   if (!body?.action) return fail('缺少 action');
