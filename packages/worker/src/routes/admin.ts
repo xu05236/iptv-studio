@@ -1087,26 +1087,34 @@ adminRoutes.post('/tasks/cleanup-failed', async (c) => {
 adminRoutes.post('/cleanup/empty-channels', async (c) => {
   const body = (await readJson<{ dryRun?: boolean; ids?: string[] }>(c)) ?? {};
   const dryRun = body.dryRun !== false;
-  const [channels, state] = await Promise.all([listChannels(c.env), loadLines(c.env)]);
+  const [channels, state, aliasRows] = await Promise.all([
+    listChannels(c.env),
+    loadLines(c.env),
+    c.env.DB.prepare('SELECT channel_id, COUNT(*) AS total FROM aliases GROUP BY channel_id').all<{
+      channel_id: string;
+      total: number;
+    }>(),
+  ]);
   const referenced = new Set(state.lines.map((line) => line.channelId));
+  const aliasCounts = new Map((aliasRows.results ?? []).map((row) => [row.channel_id, row.total]));
   const wanted = body.ids?.length ? new Set(body.ids) : null;
+  const protectedTvg = channels.filter((channel) => Boolean(channel.tvg_id)).length;
+  const protectedAlias = channels.filter((channel) => (aliasCounts.get(channel.id) ?? 0) > 1).length;
   const candidates = channels.filter((channel) => {
     if (wanted && !wanted.has(channel.id)) return false;
     if (referenced.has(channel.id)) return false;
     if ((channel.group_title ?? '') === '成人') return false;
     if (channel.tvg_id) return false;
-    let aliases: unknown = [];
-    try {
-      aliases = JSON.parse(channel.aliases || '[]');
-    } catch {
-      aliases = [];
-    }
-    return !Array.isArray(aliases) || aliases.length <= 1;
+    // A channel with more than one alias row carries a manual EPG binding or
+    // extra names; keep it even when it currently has no lines.
+    if ((aliasCounts.get(channel.id) ?? 0) > 1) return false;
+    return true;
   });
   if (dryRun) {
     return ok({
       dryRun: true,
       candidates: candidates.length,
+      breakdown: { total: channels.length, referenced: referenced.size, protectedTvg, protectedAlias },
       sample: candidates.slice(0, 20).map((channel) => ({ id: channel.id, name: channel.name, group: channel.group_title })),
     });
   }
