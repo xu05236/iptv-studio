@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { canonicalPoolUrl, channelLogo, compareLines, dedupePoolLines, lineSignature, pickDuplicateOwner, qualityOf, qualityRank, type LineEntry, type PoolSnapshot, type Quality } from '@iptv/core';
 import type { AppEnv, Env } from '../env.js';
+import { adminCache } from '../lib/adminCache.js';
 import {
   addCustomPoolLines,
   addLineTombstones,
@@ -33,6 +34,11 @@ import { countryOfGroup } from '../lib/channelCountry.js';
 import { loadIndex } from '../lib/catalog.js';
 
 export const poolRoutes = new Hono<AppEnv>();
+
+// Pool reads are the heaviest admin queries; 10s cache keeps repeat opens fast.
+poolRoutes.use('/tree', adminCache());
+poolRoutes.use('/lines', adminCache());
+poolRoutes.use('/pools', adminCache());
 
 /**
  * Remove lines from both the persisted state and the compact pool snapshot so

@@ -1,7 +1,7 @@
 import type { Context, Next } from 'hono';
 import type { AppEnv } from '../env.js';
 
-const DEFAULT_TTL_SECONDS = 10;
+const DEFAULT_TTL_SECONDS = 5;
 
 /**
  * Short-lived edge cache for read-only admin endpoints that the dashboard polls

@@ -49,6 +49,7 @@ export const adminRoutes = new Hono<AppEnv>();
 adminRoutes.use('/stats', adminCache());
 adminRoutes.use('/storage/sizes', adminCache());
 adminRoutes.use('/epg/coverage', adminCache());
+adminRoutes.use('/lines', adminCache());
 
 adminRoutes.get('/storage/sizes', async (c) => {
   const keys = [

@@ -34,7 +34,7 @@ describe('adminCache', () => {
     const second = await app.request('http://local/stats');
     expect(handler).toHaveBeenCalledTimes(1);
     expect(await first.json()).toEqual({ value: 1 });
-    expect(appendHeader(second.headers.get('cache-control'))).toContain('max-age=10');
+    expect(appendHeader(second.headers.get('cache-control'))).toContain('max-age=5');
   });
 
   it('does not cache non-200 responses', async () => {
@@ -47,6 +47,20 @@ describe('adminCache', () => {
     await app.request('http://local/stats');
     await app.request('http://local/stats');
     expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches a sub-app root mounted at a prefix', async () => {
+    installFakeCaches();
+    const sub = new Hono<AppEnv>();
+    sub.use('/', adminCache());
+    const handler = vi.fn((c) => c.json({ ok: 1 }));
+    sub.get('/', handler);
+    const app = new Hono<AppEnv>();
+    app.route('/api/admin/sources', sub);
+
+    await app.request('http://local/api/admin/sources');
+    await app.request('http://local/api/admin/sources');
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 });
 

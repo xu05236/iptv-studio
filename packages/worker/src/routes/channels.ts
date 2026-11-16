@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { classifyGroup, displayName, normalizeChannelName, planChannelMerges } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import { loadTasks } from '../lib/tasks.js';
+import { adminCache } from '../lib/adminCache.js';
 import {
   addAlias,
   channelAliases,
@@ -25,6 +26,10 @@ import { countryOfGroup, countryRank } from '../lib/channelCountry.js';
 import type { ChannelRow } from '../db.js';
 
 export const channelRoutes = new Hono<AppEnv>();
+
+// Paged channel list and the tree are read on every page open; cache them briefly.
+channelRoutes.use('/page', adminCache());
+channelRoutes.use('/meta/tree', adminCache());
 
 /** Recent merges, newest first; the merge sheet offers undo for these. */
 channelRoutes.get('/merges', async (c) => {
