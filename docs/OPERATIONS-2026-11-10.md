@@ -4,6 +4,15 @@
 管理令牌（`ADMIN_TOKEN`）轮换步骤见 [ADMIN-TOKEN-ROTATION.md](ADMIN-TOKEN-ROTATION.md)（中英文）。
 架构与部署见 [ARCHITECTURE.md](ARCHITECTURE.md)、[DEPLOY.md](DEPLOY.md)，历史交接见 [HANDOFF.md](HANDOFF.md)。
 
+## 2026-11-16 增量
+
+- **运营事件拆分**：前台报障与部署/CI 失败分开；CI 自动记录进「部署/CI」标签，默认「报障」列表不再混入 CI 记录；待处理报障计数也只统计非 CI。
+- **EPG 页面性能**：`/epg/unmatched` 不再返回全量频道列表（响应约 113KB）；绑定改为「绑定…」小窗 + `GET /api/admin/channels/search?q=&limit=` 搜索频道（最多 20 条），页面不再渲染每行全量下拉。
+- **探测信誉口径**：信誉只按「完整探测过」的 alive/dead 计算；完整探测样本少于 10 时保持旧分（抓取失败仅 −5），不再被预筛失败直接打穿。预筛只对待测线路，疑似线路强制走完整探测；低信誉源探测间隔统一 72 小时；每批单源数量上限约 `max(20, batch/6)`。
+- **代理导入计数**：结果拆成「解析 / 新增 / 更新 / 去重 / 跨协议合并 / 跳过 / 需内核」。「去重」是同一节点在文件里重复出现；「跳过」是库里已有（http 与 socks5 同 host:port 视为同一节点）；所以「解析 18、实际 16」通常是去重或已存在，不是丢节点。
+- **数字显示**：后台所有计数改为完整数字（不再显示 12.7k）。
+- **低信誉源清理**：按 `alive_count = 0` 删除 11 个失效源，并清理 4,359 条孤儿线路；其余「误伤/证据不足」保留观察。
+
 ## 任务中心
 
 - 任务状态：`scheduled → queued → running → done / failed / cancelled`，同一时间只跑一个 GitHub Actions run。
