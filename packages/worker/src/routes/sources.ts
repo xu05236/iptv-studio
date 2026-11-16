@@ -17,7 +17,7 @@ import { fetchSourceText } from '../lib/fetcher.js';
 import { getText, putText } from '../lib/r2.js';
 import { getJson } from '../lib/store.js';
 import { loadLines } from '../lib/linesState.js';
-import { createTask, dispatchNext } from '../lib/tasks.js';
+import { createTask, dispatchNext, loadTasks } from '../lib/tasks.js';
 import { deltaOf, listSourceProgress, PROGRESS_VERSION, saveSourceProgress, type SourceCounts } from '../lib/sourceProgress.js';
 
 export const sourceRoutes = new Hono<AppEnv>();
@@ -902,7 +902,31 @@ sourceRoutes.delete('/:id', async (c) => {
   if (source.r2_key) await c.env.KV.delete(source.r2_key);
   await deleteSource(c.env, id);
   await audit(c.env, c.get('actor'), 'source.delete', id);
-  return ok({ ok: true });
+
+  // Deleting a source can leave its lines behind (alive ones are intentionally
+  // kept). Cleaning them wants a full line-state read/write, which exceeds the
+  // Worker CPU budget, so hand it to the runner instead of doing it inline.
+  const tasks = await loadTasks(c.env);
+  const cleanupPending = tasks.some(
+    (task) => task.type === 'cleanup-orphans' && (task.status === 'queued' || task.status === 'running'),
+  );
+  let cleanupTaskId: string | null = null;
+  if (!cleanupPending) {
+    const task = await createTask(c.env, {
+      type: 'cleanup-orphans',
+      source: 'source',
+      priority: 30,
+      payload: {},
+      message: `删源后清理 ${id} 的非可用线路`,
+    });
+    cleanupTaskId = task.id;
+    await dispatchNext(c.env);
+  }
+  return ok({
+    ok: true,
+    cleanupTaskId,
+    message: cleanupTaskId ? '已删除源，并安排清理其非可用线路' : '已删除源，已有清理任务在排队',
+  });
 });
 
 /** Re-fetch a source, parse it and report what it currently contains. */

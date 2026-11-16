@@ -382,7 +382,7 @@ export function SettingsPage() {
           <div className="list__row">
             <div className="grow">
               <div className="list__title">清理孤儿线路</div>
-              <div className="caption">删除频道记录已不存在的线路，缩短 state 并纠正统计；会创建一条手动任务。</div>
+              <div className="caption">删除频道或来源已不存在的线路（可用线路自动保留）；会创建一条手动任务。</div>
             </div>
             <Button size="sm" loading={maintenance.isPending} onClick={() => maintenance.mutate('orphans')}>开始清理</Button>
           </div>

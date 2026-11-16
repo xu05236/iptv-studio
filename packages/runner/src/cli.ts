@@ -18,6 +18,7 @@ import {
   nextReputation,
   normalizeUrlForDedupe,
   probeLiveness,
+  pruneOrphanLines as pruneOrphansCore,
   splitUrlHeaders,
   tierFor,
   withinRetention,
@@ -557,13 +558,14 @@ function poolChannelGroup(id: string, fallback: string, mergedGroups: Map<string
 const LIVENESS_RETRY_MS = 6 * 3_600_000;
 const UNPROBEABLE_URL = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
 
-function pruneOrphanLines(remote: RemoteConfig, lines: LineEntry[]): { lines: LineEntry[]; removed: number } {
-  const channelIds = new Set(remote.channels.map((channel) => channel.id));
-  // Keep lines for brand-new channels (`x-…` ids created from source names):
-  // dropping them here means a source that only carries new channels can never
-  // publish one. Once the channel is published it is in `remote.channels`.
-  const kept = lines.filter((line) => channelIds.has(line.channelId) || line.channelId.startsWith('x-'));
-  return { lines: kept, removed: lines.length - kept.length };
+function pruneOrphanLines(remote: RemoteConfig, lines: LineEntry[]) {
+  return pruneOrphansCore(
+    {
+      channelIds: remote.channels.map((channel) => channel.id),
+      sourceIds: remote.sources.map((source) => source.id),
+    },
+    lines,
+  );
 }
 
 function livenessReady(line: LineEntry, now: number): boolean {
@@ -2005,7 +2007,14 @@ async function runCleanupOrphans(): Promise<void> {
     await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, generatedAt)), 'application/json');
     await writePoolStats(store, remote, lines);
   await syncSourceCounts(api, remote, lines);
-    logger.info('孤儿线路清理完成', { removed: pruned.removed, lines: lines.length });
+    const summary = `已剔除孤儿线路 ${pruned.removed} 条（频道缺失 ${pruned.missingChannel} · 来源缺失 ${pruned.missingSource}），保留可用 ${pruned.keptAlive} 条`;
+    logger.info('孤儿线路清理完成', {
+      removed: pruned.removed,
+      missingChannel: pruned.missingChannel,
+      missingSource: pruned.missingSource,
+      keptAlive: pruned.keptAlive,
+      lines: lines.length,
+    });
     const logKey = await writeLog(store, runId, logger);
     const alive = lines.filter((line) => line.status === 'alive').length;
     report = {
@@ -2018,7 +2027,8 @@ async function runCleanupOrphans(): Promise<void> {
       dead: lines.length - alive,
       durationMs: Date.now() - startedMs,
       logKey,
-      warnings: pruned.removed ? [`已剔除孤儿线路 ${pruned.removed} 条`] : [],
+      message: summary,
+      warnings: pruned.removed || pruned.keptAlive ? [summary] : [],
     };
     await finishRun(api, report);
   } catch (error) {
