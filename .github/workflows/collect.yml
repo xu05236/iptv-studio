@@ -27,6 +27,12 @@ on:
       source_id:
         description: '仅检测指定采集站 ID（留空=全部）'
         default: ''
+      source_ids:
+        description: '批量抓取：多个采集站 ID（逗号分隔，内部使用）'
+        default: ''
+      publish:
+        description: '抓取完成后发布一次（内部使用）'
+        default: ''
       line_keys:
         description: '仅探测指定线路 key（逗号分隔，检测中心勾选用）'
         default: ''
@@ -132,6 +138,8 @@ jobs:
           PROBE_FORCE: ${{ github.event.inputs.force || 'false' }}
           FETCH_FORCE: ${{ github.event.inputs.force_fetch || 'false' }}
           SOURCE_ID: ${{ github.event.inputs.source_id || '' }}
+          SOURCE_IDS: ${{ github.event.inputs.source_ids || '' }}
+          PUBLISH_AFTER_FETCH: ${{ github.event.inputs.publish || '' }}
           LINE_KEYS: ${{ github.event.inputs.line_keys || '' }}
           PROBE_PHASE: ${{ github.event.inputs.phase || '' }}
           PROXY_ID: ${{ github.event.inputs.proxy_id || '' }}

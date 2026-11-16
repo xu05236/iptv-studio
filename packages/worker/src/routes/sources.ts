@@ -384,6 +384,41 @@ async function summarizePreview(text: string, existing: Awaited<ReturnType<typeo
   });
 }
 
+sourceRoutes.post('/batch', async (c) => {
+  const body = (await readJson<{ items?: Array<{ url?: string; name?: string }>; fetch?: boolean }>(c)) ?? {};
+  const items = (body.items ?? []).filter((item) => typeof item.url === 'string');
+  if (!items.length) return fail('没有可添加的地址', 400);
+  if (items.length > 100) return fail('一次最多添加 100 个源', 400);
+  const existing = new Set((await listSources(c.env)).map((source) => (source.url ?? '').trim()).filter(Boolean));
+  const created: Array<{ id: string; name: string; url: string }> = [];
+  const skipped: Array<{ url: string; reason: string }> = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const url = String(item.url ?? '').trim();
+    if (!/^https?:\/\//i.test(url)) { skipped.push({ url, reason: '不是 http(s) 地址' }); continue; }
+    if (existing.has(url) || seen.has(url)) { skipped.push({ url, reason: '已存在' }); continue; }
+    seen.add(url);
+    const id = `src-${randomId(8)}`;
+    const name = (item.name ?? '').trim() || (() => { const parsed = new URL(url); return `${parsed.hostname}${parsed.port ? `:${parsed.port}` : ''}`; })();
+    await insertSource(c.env, { id, name, kind: 'auto', url, origin: 'remote', enabled: 1, priority: 100 });
+    created.push({ id, name, url });
+  }
+  let taskId: string | null = null;
+  if (created.length && body.fetch !== false) {
+    const task = await createTask(c.env, {
+      type: 'fetch',
+      source: 'source',
+      priority: 70,
+      payload: { source_ids: created.map((item) => item.id).join(','), publish: 'true', force: 'true' },
+      message: `批量抓取 · ${created.length} 个源`,
+    });
+    taskId = task.id;
+    await dispatchNext(c.env);
+  }
+  if (created.length) await audit(c.env, c.get('actor'), 'source.batch_create', 'bulk', { created: created.length, skipped: skipped.length, taskId });
+  return ok({ created, skipped, taskId }, created.length ? 201 : 200);
+});
+
 sourceRoutes.get('/:id', async (c) => {
   const source = await getSource(c.env, c.req.param('id'));
   if (!source) return fail('直播源不存在', 404);

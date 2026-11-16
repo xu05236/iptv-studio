@@ -157,6 +157,40 @@ export function Sources() {
   const [allowInsecureTls, setAllowInsecureTls] = useState(false);
   const [fetchTimeoutMs, setFetchTimeoutMs] = useState('45');
   const [fetchConcurrency, setFetchConcurrency] = useState('1');
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number; taskId: string | null } | null>(null);
+  const bulkParsed = useMemo(() => {
+    const rows = bulkText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const valid: Array<{ name: string; url: string }> = [];
+    const seen = new Set<string>();
+    let invalid = 0;
+    let duplicate = 0;
+    for (const row of rows) {
+      const comma = row.indexOf(',');
+      const url = (comma >= 0 ? row.slice(comma + 1) : row).trim();
+      const name = comma >= 0 ? row.slice(0, comma).trim() : '';
+      if (!/^https?:\/\//i.test(url)) { invalid++; continue; }
+      if (seen.has(url)) { duplicate++; continue; }
+      seen.add(url);
+      valid.push({ name, url });
+    }
+    return { valid, invalid, duplicate };
+  }, [bulkText]);
+  const bulkCreate = useMutation({
+    mutationFn: () =>
+      api.post<{ created: Array<{ id: string }>; skipped: Array<{ url: string; reason: string }>; taskId: string | null }>(
+        '/api/admin/sources/batch',
+        { items: bulkParsed.valid },
+      ),
+    onSuccess: (result) => {
+      setBulkResult({ created: result.created.length, skipped: result.skipped.length, taskId: result.taskId });
+      setBulkText('');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'sources'] });
+      show(`已添加 ${result.created.length} 个源${result.taskId ? '，抓取任务已排队' : ''}`);
+    },
+    onError: (error) => show(error instanceof Error ? error.message : '批量添加失败', 'error'),
+  });
   const [fetchDelayMs, setFetchDelayMs] = useState('0');
   const [mergeChannelName, setMergeChannelName] = useState('');
   const [mergeChannelGroup, setMergeChannelGroup] = useState('');
@@ -431,6 +465,7 @@ export function Sources() {
         actions={
           <div className="row" style={{ gap: 8 }}>
             <Button onClick={() => setOverlapOpen(true)}><GitCompare size={16} /> 重复线路</Button>
+            <Button onClick={() => { setBulkResult(null); setBulkOpen(true); }}><Upload size={16} /> 批量添加</Button>
             <Button variant="primary" onClick={() => setOpen(true)}><Plus size={16} /> 添加采集站</Button>
           </div>
         }
@@ -708,6 +743,42 @@ export function Sources() {
           );
         })}
       </div>
+
+      <Sheet
+        open={bulkOpen}
+        onClose={() => { setBulkOpen(false); setBulkText(''); }}
+        title="批量添加采集站"
+        subtitle="每行一个地址：URL，或「名称,URL」。添加后只创建一个抓取任务，抓完自动发布一次"
+        footer={
+          <div className="sheet-actions">
+            <Button onClick={() => setBulkOpen(false)}>关闭</Button>
+            <Button variant="primary" loading={bulkCreate.isPending} disabled={!bulkParsed.valid.length} onClick={() => bulkCreate.mutate()}>
+              创建并抓取
+            </Button>
+          </div>
+        }
+      >
+        <div className="stack">
+          <Field
+            label="地址列表"
+            hint={`已识别 ${bulkParsed.valid.length} 个地址${bulkParsed.duplicate ? ` · 批内重复 ${bulkParsed.duplicate}` : ''}${bulkParsed.invalid ? ` · 格式错误 ${bulkParsed.invalid}` : ''}；与现有源重复的会在创建时跳过`}
+          >
+            <textarea
+              className="input"
+              rows={9}
+              value={bulkText}
+              onChange={(event) => setBulkText(event.target.value)}
+              placeholder={'http://example.com/live.m3u\n央视频道,http://example.com/cctv.m3u'}
+            />
+          </Field>
+          {bulkResult ? (
+            <div className="caption">
+              已创建 {bulkResult.created} 个源，跳过 {bulkResult.skipped} 个（重复或格式错误）{bulkResult.taskId ? '；抓取任务已排队，完成后自动发布一次' : ''}。
+            </div>
+          ) : null}
+          <div className="caption">一次最多 100 个；同 URL 只保留第一个。</div>
+        </div>
+      </Sheet>
 
       <Sheet
         open={open}

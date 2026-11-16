@@ -626,8 +626,10 @@ async function syncSourceStats(
   lines: LineEntry[],
   collected: CollectedSource[],
   sourceId?: string,
+  sourceIds: string[] = [],
 ): Promise<void> {
-  const targets = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
+  const only = sourceIds.length ? new Set(sourceIds) : null;
+  const targets = only ? remote.sources.filter((source) => only.has(source.id)) : sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
   const stats = targets.flatMap((source) => {
     const sourceLines = lines.filter((line) => line.sourceId === source.id);
     const aliveLines = sourceLines.filter((line) => line.status === 'alive');
@@ -684,7 +686,17 @@ async function fetchPhase(
 ): Promise<{ lines: LineEntry[]; collected: CollectedSource[]; sourceId: string }> {
   const settings = remote.settings;
   const sourceId = (process.env.SOURCE_ID ?? '').trim();
-  const targetSources = sourceId ? remote.sources.filter((source) => source.id === sourceId) : remote.sources;
+  const sourceIds = (process.env.SOURCE_IDS ?? '').split(',').map((value) => value.trim()).filter(Boolean);
+  const sourceFilter = sourceIds.length ? new Set(sourceIds) : null;
+  const targetSources = sourceFilter
+    ? remote.sources.filter((source) => sourceFilter.has(source.id))
+    : sourceId
+      ? remote.sources.filter((source) => source.id === sourceId)
+      : remote.sources;
+  if (sourceFilter && targetSources.length !== sourceFilter.size) {
+    const missing = [...sourceFilter].filter((id) => !remote.sources.some((source) => source.id === id));
+    throw new Error(`采集站不存在或已停用：${missing.join('、')}`);
+  }
   if (sourceId && !targetSources.length) throw new Error(`采集站不存在或已停用：${sourceId}`);
   const startedMs = Date.now();
 
@@ -998,11 +1010,19 @@ async function runFetchPhase(): Promise<void> {
     const previousState = await loadLinesState(store);
     report.sources = remote.sources.length;
     const { lines, collected, sourceId } = await fetchPhase(api, remote, store, logger, previousState, tombstones);
+    const batchIds = (process.env.SOURCE_IDS ?? '').split(',').map((value) => value.trim()).filter(Boolean);
     await saveLinesState(store, lines, nowIso());
-    await syncSourceStats(api, remote, lines, collected, sourceId);
+    await syncSourceStats(api, remote, lines, collected, sourceId, batchIds);
 
     const alive = lines.filter((line) => line.status === 'alive').length;
-    if (sourceId) {
+    if (batchIds.length) {
+      const failed = collected.filter((item) => item.error);
+      const stored = lines.filter((line) => batchIds.includes(line.sourceId)).length;
+      const detail = failed.length
+        ? ` · 失败源：${failed.slice(0, 4).map((item) => `${item.source.name}(${item.error})`).join('、')}`
+        : '';
+      await reportTaskProgress(api, 1, 1, `批量抓取完成 · ${collected.length - failed.length}/${collected.length} 源 · 入库 ${stored} 条 · 可用 ${alive}${detail}`);
+    } else if (sourceId) {
       const source = remote.sources.find((item) => item.id === sourceId);
       const result = collected.find((item) => item.source.id === sourceId);
       const raw = result?.entries.length ?? 0;
@@ -1016,6 +1036,11 @@ async function runFetchPhase(): Promise<void> {
         ? ` · 失败源：${failed.slice(0, 4).map((item) => `${item.source.name}(${item.error})`).join('、')}`
         : '';
       await reportTaskProgress(api, 1, 1, `抓取完成 · 成功 ${collected.length - failed.length}/${collected.length} 源 · 入库 ${lines.length} 条 · 可用 ${alive}${detail}`);
+    }
+    const publishAfterFetch = (process.env.PUBLISH_AFTER_FETCH ?? '').trim() === 'true';
+    if (publishAfterFetch) {
+      await publishPhase(api, store, config, remote, lines, logger, runId, 'fetch');
+      await reportTaskProgress(api, 1, 1, `批量抓取完成 · 已发布 · 线路 ${lines.length} 条 · 可用 ${alive}`);
     }
     const logKey = await writeLog(store, runId, logger);
     report = {

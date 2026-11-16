@@ -623,6 +623,8 @@ async function dispatchNextCore(env: Env): Promise<{ task?: Task; message: strin
     force_fetch: next.payload.force_fetch ?? 'false',
     budget: next.payload.budget ?? '',
     source_id: next.payload.source_id ?? '',
+    source_ids: next.payload.source_ids ?? '',
+    publish: next.payload.publish ?? '',
     line_keys: next.payload.line_keys ?? '',
     phase: next.payload.phase ?? '',
     proxy_id: next.payload.proxy_id ?? '',
