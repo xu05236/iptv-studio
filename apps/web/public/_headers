@@ -1,0 +1,7 @@
+# Static assets are content-hashed by Vite, so they can be cached forever.
+# index.html must stay uncached so a deploy is picked up on refresh.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/index.html
+  Cache-Control: no-cache

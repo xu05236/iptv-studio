@@ -107,15 +107,9 @@ app.post('/api/telegram/webhook', async (c) => {
 
 app.route('/', artifactRoutes);
 
-app.notFound(async (c) => {
+app.notFound((c) => {
   if (c.req.path.startsWith('/api/')) return fail('接口不存在', 404);
-  const response = await c.env.ASSETS.fetch(c.req.raw);
-  if (c.req.path.startsWith('/assets/') && response.status === 200) {
-    const headers = new Headers(response.headers);
-    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
-    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-  }
-  return response;
+  return c.env.ASSETS.fetch(c.req.raw);
 });
 
 app.onError((error, c) => {
