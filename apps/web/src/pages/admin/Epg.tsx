@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CalendarClock, PieChart, RadioTower, Save, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { Badge, Button, EmptyState, Field, Pagination, QueryError, Switch, useToast } from '../../components/ui';
+import { Badge, Button, EmptyState, Field, Pagination, QueryError, Sheet, Switch, useToast } from '../../components/ui';
 import { AdminPageHeader } from '../../components/AdminPageHeader';
 import { timeAgo } from '../../lib/format';
 
@@ -51,9 +51,11 @@ interface EpgSettings {
 export function Epg() {
   const { show } = useToast();
   const queryClient = useQueryClient();
-  const [picked, setPicked] = useState<Record<string, string>>({});
   const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(1);
+  const [bindTarget, setBindTarget] = useState<UnmatchedItem | null>(null);
+  const [bindTerm, setBindTerm] = useState('');
+  const [bindQueryTerm, setBindQueryTerm] = useState('');
   const [epgText, setEpgText] = useState('');
   const [priority, setPriority] = useState('');
   const [epgEnabled, setEpgEnabled] = useState(true);
@@ -66,7 +68,7 @@ export function Epg() {
   });
   const unmatched = useQuery({
     queryKey: ['epg-unmatched'],
-    queryFn: () => api.get<{ generatedAt: string | null; items: UnmatchedItem[]; channels: ChannelLite[] }>('/api/admin/epg/unmatched'),
+    queryFn: () => api.get<{ generatedAt: string | null; items: UnmatchedItem[] }>('/api/admin/epg/unmatched'),
   });
   const sources = useQuery({
     queryKey: ['epg-sources'],
@@ -108,6 +110,8 @@ export function Epg() {
       api.post('/api/admin/epg/bind-bulk', { items: [{ channelId: input.channelId, alias: input.epgName }] }),
     onSuccess: (_data, input) => {
       show(`已绑定「${input.epgName}」`);
+      setBindTarget(null);
+      setBindTerm('');
       void queryClient.invalidateQueries({ queryKey: ['epg-unmatched'] });
       void queryClient.invalidateQueries({ queryKey: ['epg-coverage'] });
     },
@@ -123,10 +127,16 @@ export function Epg() {
     onError: (error: Error) => show(`清理失败：${error.message}`, 'error'),
   });
 
-  const channels = useMemo(
-    () => [...(unmatched.data?.channels ?? [])].sort((left, right) => left.name.localeCompare(right.name, 'zh-CN')),
-    [unmatched.data?.channels],
-  );
+  useEffect(() => {
+    const timer = setTimeout(() => setBindQueryTerm(bindTerm.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [bindTerm]);
+
+  const channelSearch = useQuery({
+    queryKey: ['epg-bind-search', bindQueryTerm],
+    queryFn: () => api.get<{ items: ChannelLite[] }>(`/api/admin/channels/search?q=${encodeURIComponent(bindQueryTerm)}&limit=20`),
+    enabled: Boolean(bindTarget) && bindQueryTerm.length > 0,
+  });
   const items = useMemo(() => {
     const base = unmatched.data?.items ?? [];
     const query = keyword.trim().toLowerCase();
@@ -281,30 +291,51 @@ export function Epg() {
                   <span className="caption" style={{ minWidth: 140 }}>{item.provider}</span>
                   <span className="caption">置信度 {Math.round(item.confidence * 100)}%</span>
                   <div className="grow" />
-                  <select
-                    className="select"
-                    style={{ maxWidth: 240 }}
-                    value={picked[item.epgName] ?? ''}
-                    onChange={(event) => setPicked({ ...picked, [item.epgName]: event.target.value })}
-                  >
-                    <option value="">选择要绑定的频道…</option>
-                    {channels.map((channel) => (
-                      <option key={channel.id} value={channel.id}>{channel.name}</option>
-                    ))}
-                  </select>
-                  <button
-                    className="btn btn--sm"
-                    disabled={!picked[item.epgName] || bind.isPending}
-                    onClick={() => bind.mutate({ epgName: item.epgName, channelId: picked[item.epgName]! })}
-                  >
-                    绑定
-                  </button>
+                  <Button size="sm" onClick={() => { setBindTerm(''); setBindQueryTerm(''); setBindTarget(item); }}>绑定…</Button>
                 </div>
               ))}
               <Pagination page={safePage} totalPages={pageCount} onChange={setPage} />
             </div>
           )}
         </div>
+
+        <Sheet
+          open={Boolean(bindTarget)}
+          onClose={() => { setBindTarget(null); setBindTerm(''); }}
+          title="绑定 EPG 频道名"
+          subtitle={bindTarget ? `把「${bindTarget.epgName}」绑定到哪个频道？` : undefined}
+        >
+          <div className="stack">
+            <input
+              className="input"
+              autoFocus
+              placeholder="搜索频道名"
+              value={bindTerm}
+              onChange={(event) => setBindTerm(event.target.value)}
+            />
+            {!bindQueryTerm ? (
+              <div className="caption">输入频道名开始搜索，最多显示 20 条结果。</div>
+            ) : channelSearch.isLoading ? (
+              <div className="caption">搜索中…</div>
+            ) : !channelSearch.data?.items.length ? (
+              <div className="caption">没有匹配的频道。</div>
+            ) : (
+              <div className="list">
+                {channelSearch.data.items.map((channel) => (
+                  <button
+                    key={channel.id}
+                    className="list__row"
+                    style={{ width: '100%', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}
+                    onClick={() => bind.mutate({ epgName: bindTarget!.epgName, channelId: channel.id })}
+                  >
+                    <strong>{channel.name}</strong>
+                    <span className="caption">{channel.group ?? '未分组'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </Sheet>
       </div>
     </div>
   );

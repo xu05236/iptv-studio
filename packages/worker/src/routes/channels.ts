@@ -177,6 +177,16 @@ channelRoutes.get('/meta/tree', async (c) => {
   });
 });
 
+channelRoutes.get('/search', async (c) => {
+  const q = (c.req.query('q') ?? '').trim();
+  const limit = Math.min(50, Math.max(1, Number(c.req.query('limit') ?? 20) || 20));
+  if (!q) return ok({ items: [] });
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, name, group_title FROM channels WHERE name LIKE ? ORDER BY name LIMIT ?',
+  ).bind(`%${q}%`, limit).all<{ id: string; name: string; group_title: string | null }>();
+  return ok({ items: results.map((row) => ({ id: row.id, name: row.name, group: row.group_title })) });
+});
+
 channelRoutes.get('/page', async (c) => {
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
   const group = (c.req.query('group') ?? '').trim();

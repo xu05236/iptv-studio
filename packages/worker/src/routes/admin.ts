@@ -135,17 +135,13 @@ adminRoutes.get('/epg/sources', async (c) => {
 });
 
 adminRoutes.get('/epg/unmatched', async (c) => {
-  const [report, channels] = await Promise.all([
-    getJson<{ generatedAt?: string; items?: Array<{ epgName: string; provider: string; channelId: string; confidence: number }> }>(
-      c.env,
-      'state/epg-unmatched.json',
-    ),
-    listChannels(c.env),
-  ]);
+  const report = await getJson<{ generatedAt?: string; items?: Array<{ epgName: string; provider: string; channelId: string; confidence: number }> }>(
+    c.env,
+    'state/epg-unmatched.json',
+  );
   return ok({
     generatedAt: report?.generatedAt ?? null,
     items: report?.items ?? [],
-    channels: channels.map((channel) => ({ id: channel.id, name: channel.name, group: channel.group_title })),
   });
 });
 
