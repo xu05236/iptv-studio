@@ -1168,7 +1168,7 @@ export async function listFeedback(
   env: Env,
   status: string | null,
   limit = 50,
-  options: { offset?: number; q?: string } = {},
+  options: { offset?: number; q?: string; kind?: string; excludeKind?: string } = {},
 ): Promise<FeedbackRow[]> {
   const offset = Math.max(0, Number(options.offset) || 0);
   const q = (options.q ?? '').trim();
@@ -1177,6 +1177,14 @@ export async function listFeedback(
   if (status && status !== 'all') {
     clauses.push('status = ?');
     binds.push(status);
+  }
+  if (options.kind) {
+    clauses.push('kind = ?');
+    binds.push(options.kind);
+  }
+  if (options.excludeKind) {
+    clauses.push('kind != ?');
+    binds.push(options.excludeKind);
   }
   if (q) {
     clauses.push('(message LIKE ? OR channel_id LIKE ? OR source_id LIKE ? OR entry_key LIKE ?)');
@@ -1346,7 +1354,7 @@ export async function audit(env: Env, actor: string, action: string, target: str
 }
 
 export async function countOpenFeedback(env: Env): Promise<number> {
-  const row = await env.DB.prepare("SELECT COUNT(*) AS total FROM feedback WHERE status = 'open'").first<{ total: number }>();
+  const row = await env.DB.prepare("SELECT COUNT(*) AS total FROM feedback WHERE status = 'open' AND kind != 'ci'").first<{ total: number }>();
   return row?.total ?? 0;
 }
 

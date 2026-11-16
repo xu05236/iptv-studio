@@ -56,7 +56,7 @@ const STATUS_TONE: Record<string, 'green' | 'orange' | 'default'> = { open: 'ora
 export function Events() {
   const { show } = useToast();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<'feedback' | 'audit' | 'failures'>('feedback');
+  const [tab, setTab] = useState<'feedback' | 'ci' | 'audit' | 'failures'>('feedback');
   const [status, setStatus] = useState('open');
   const [q, setQ] = useState('');
 
@@ -64,6 +64,12 @@ export function Events() {
     queryKey: ['admin', 'feedback', status, q],
     queryFn: () => api.get<{ items: FeedbackItem[] }>(`/api/admin/feedback?status=${status}&q=${encodeURIComponent(q)}&limit=100`),
     enabled: tab === 'feedback',
+  });
+
+  const ciFeedback = useQuery({
+    queryKey: ['admin', 'feedback', 'ci', q],
+    queryFn: () => api.get<{ items: FeedbackItem[] }>(`/api/admin/feedback?kind=ci&status=all&q=${encodeURIComponent(q)}&limit=100`),
+    enabled: tab === 'ci',
   });
 
   const audit = useQuery({
@@ -101,17 +107,19 @@ export function Events() {
     onError: (error: Error) => show(error.message, 'error'),
   });
 
+  const activeFeedback = tab === 'ci' ? ciFeedback : feedback;
+
   return (
     <div className="stack">
       <AdminPageHeader
         eyebrow="EVENTS"
         title="运营事件"
-        description="前台报障与后台审计的统一入口：报障可一键转探测，审计记录改名/删源/发布等操作。"
+        description="前台报障、部署 CI 与后台审计的统一入口：报障可一键转探测，CI 失败独立成标签，审计记录改名/删源/发布等操作。"
       />
       <Card>
         <div className="title-3" style={{ marginBottom: 4 }}>这页怎么用</div>
         <div className="caption">
-          这里汇总三类信息：前台用户点「报障」提交的线路问题；部署流水线失败时自动上报的 CI 日志；后台改名、删源、发布等操作审计。
+          这里汇总四类信息：前台用户点「报障」提交的线路问题；部署流水线失败自动记录的 CI 日志（单独「部署/CI」标签）；后台改名、删源、发布等操作审计；失败原因聚合。
           列表里的「待处理」是还没人处理的报障——点「转探测」会让采集端复测这条线路；点「已解决」或「忽略」只是标注状态，不会删除记录。
         </div>
       </Card>
@@ -120,9 +128,9 @@ export function Events() {
         <div className="probe-filters__head">
           <div>
             <div className="title-3">筛选与搜索</div>
-            <div className="caption">切换报障、审计与失败聚合；报障默认只看待处理</div>
+            <div className="caption">切换报障、部署/CI、审计与失败聚合；报障默认只看待处理，CI 显示全部状态</div>
           </div>
-          <Badge>{tab === 'feedback' ? `${feedback.data?.items.length ?? 0} 条报障` : tab === 'audit' ? `${audit.data?.items.length ?? 0} 条审计` : '近 7 天'}</Badge>
+          <Badge>{tab === 'feedback' ? `${feedback.data?.items.length ?? 0} 条报障` : tab === 'ci' ? `${ciFeedback.data?.items.length ?? 0} 条 CI` : tab === 'audit' ? `${audit.data?.items.length ?? 0} 条审计` : '近 7 天'}</Badge>
         </div>
         <div className="probe-filter-row">
           <div className="search grow" style={{ minWidth: 220 }}>
@@ -134,6 +142,7 @@ export function Events() {
             onChange={setTab}
             options={[
               { value: 'feedback', label: '报障' },
+              { value: 'ci', label: '部署/CI' },
               { value: 'audit', label: '审计' },
               { value: 'failures', label: '失败聚合' },
             ]}
@@ -155,16 +164,16 @@ export function Events() {
         ) : null}
       </Card>
 
-      {tab === 'feedback' ? (
+      {tab === 'feedback' || tab === 'ci' ? (
         <div className="stack" style={{ gap: 10 }}>
-          {feedback.isLoading ? (
+          {activeFeedback.isLoading ? (
             <Skeleton height={90} />
-          ) : (feedback.data?.items.length ?? 0) === 0 ? (
+          ) : (activeFeedback.data?.items.length ?? 0) === 0 ? (
             <Card>
-              <div className="caption">没有符合条件的报障。</div>
+              <div className="caption">{tab === 'ci' ? '没有 CI 记录。' : '没有符合条件的报障。'}</div>
             </Card>
           ) : (
-            feedback.data!.items.map((item) => (
+            activeFeedback.data!.items.map((item) => (
               <Card key={item.id}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                   <div style={{ flex: 1 }}>
@@ -195,7 +204,7 @@ export function Events() {
                     </div>
                   </div>
                   <div className="row" style={{ gap: 6 }}>
-                    {item.entry_key && item.status !== 'resolved' && (
+                    {item.kind !== 'ci' && item.entry_key && item.status !== 'resolved' && (
                       <Button variant="primary" onClick={() => probe.mutate(item.id)} disabled={probe.isPending}>
                         转探测
                       </Button>

@@ -1105,7 +1105,12 @@ adminRoutes.get('/feedback', async (c) => {
   const q = c.req.query('q') ?? '';
   const limit = Math.min(200, Math.max(1, Number(c.req.query('limit') ?? 100) || 100));
   const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0);
-  const feedback = await listFeedback(c.env, status, limit, { q, offset });
+  const kind = c.req.query('kind') ?? '';
+  const feedback = await listFeedback(c.env, status, limit, {
+    q,
+    offset,
+    ...(kind === 'ci' ? { kind: 'ci' } : { excludeKind: 'ci' }),
+  });
   return ok({ items: feedback });
 });
 
