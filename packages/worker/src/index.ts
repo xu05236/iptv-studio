@@ -18,6 +18,7 @@ import { refreshUsage } from './lib/usage.js';
 import { runScheduler } from './lib/schedule.js';
 import { runMonitor } from './lib/monitor.js';
 import { handleTelegramUpdate, runTelegramCommands, verifyTelegramSecret } from './lib/telegram.js';
+import { adminCache } from './lib/adminCache.js';
 
 const app = new Hono<AppEnv>();
 export { app };
@@ -66,6 +67,8 @@ app.use('/api/admin/*', requireAuth);
 
 app.get('/api/admin/me', (c) => ok({ actor: c.get('actor'), ok: true }));
 
+app.use('/api/admin/usage', adminCache());
+
 app.get('/api/admin/usage', async (c) => {
   const usage = await getRuntimeJson<Record<string, unknown>>(c.env, 'state/usage.json');
   return ok({ usage });
@@ -104,9 +107,15 @@ app.post('/api/telegram/webhook', async (c) => {
 
 app.route('/', artifactRoutes);
 
-app.notFound((c) => {
+app.notFound(async (c) => {
   if (c.req.path.startsWith('/api/')) return fail('接口不存在', 404);
-  return c.env.ASSETS.fetch(c.req.raw);
+  const response = await c.env.ASSETS.fetch(c.req.raw);
+  if (c.req.path.startsWith('/assets/') && response.status === 200) {
+    const headers = new Headers(response.headers);
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
+  return response;
 });
 
 app.onError((error, c) => {

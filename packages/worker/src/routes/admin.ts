@@ -41,8 +41,14 @@ import { describeAfterProbeGate, nextAutoCollectAt, nextAutoLivenessAt, nextAuto
 import { sourceMetaMap } from '../lib/source.js';
 import { filterExcludedGroups, summarizeCoverage, type GuideLike } from '../lib/epgCoverage.js';
 import { MIGRATION_FILES } from '../lib/migrations.generated.js';
+import { adminCache } from '../lib/adminCache.js';
 
 export const adminRoutes = new Hono<AppEnv>();
+
+// Read-only dashboard blocks: 10s edge cache, auth already applied upstream.
+adminRoutes.use('/stats', adminCache());
+adminRoutes.use('/storage/sizes', adminCache());
+adminRoutes.use('/epg/coverage', adminCache());
 
 adminRoutes.get('/storage/sizes', async (c) => {
   const keys = [
