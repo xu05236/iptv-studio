@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { isDueForProbe, mapPool, mergedChannelId, normalizeMirrorUrls, normalizeUrlForDedupe, PARSE_DROP_THRESHOLD, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters, type SourceOverlapReport, type SourceParseReport } from '@iptv/core';
 import type { AppEnv } from '../env.js';
-import { adminCache } from '../lib/adminCache.js';
 import { loadChannelMeta } from '../lib/channelMeta.js';
 import {
   deleteSource,
@@ -22,9 +21,6 @@ import { deltaOf, listSourceProgress, PROGRESS_VERSION, saveSourceProgress, type
 
 export const sourceRoutes = new Hono<AppEnv>();
 
-// Read-only list/health cards: 10s edge cache, auth runs upstream.
-sourceRoutes.use('/', adminCache());
-sourceRoutes.use('/health', adminCache());
 
 /** The merge channel must exist in D1 before a publish, otherwise its lines are hidden from the pool and never probed. */
 async function ensureMergedChannel(env: AppEnv['Bindings'], sourceId: string, name: string, group: string | null): Promise<void> {

@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { canonicalPoolUrl, channelLogo, compareLines, dedupePoolLines, lineSignature, pickDuplicateOwner, qualityOf, qualityRank, type LineEntry, type PoolSnapshot, type Quality } from '@iptv/core';
 import type { AppEnv, Env } from '../env.js';
-import { adminCache } from '../lib/adminCache.js';
 import { loadChannelMeta } from '../lib/channelMeta.js';
 import {
   addCustomPoolLines,
@@ -36,9 +35,6 @@ import { loadIndex } from '../lib/catalog.js';
 export const poolRoutes = new Hono<AppEnv>();
 
 // Pool reads are the heaviest admin queries; 10s cache keeps repeat opens fast.
-poolRoutes.use('/tree', adminCache());
-poolRoutes.use('/lines', adminCache());
-poolRoutes.use('/pools', adminCache());
 
 /**
  * Pre-rendered pool rows published by the runner. The worker returns the
@@ -49,7 +45,7 @@ poolRoutes.get('/rows', async (c) => {
   const bytes = await c.env.KV.get('state/pool-rows.json', 'arrayBuffer');
   if (!bytes) return ok({ version: 2, generatedAt: null, premiumTarget: 12, channels: [], sources: [], lines: [] });
   return new Response(bytes, {
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private, max-age=60' },
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   });
 });
 

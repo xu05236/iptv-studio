@@ -19,7 +19,6 @@ import { kvWriteBudget } from './lib/store.js';
 import { runScheduler } from './lib/schedule.js';
 import { runMonitor } from './lib/monitor.js';
 import { handleTelegramUpdate, runTelegramCommands, verifyTelegramSecret } from './lib/telegram.js';
-import { adminCache } from './lib/adminCache.js';
 
 const app = new Hono<AppEnv>();
 export { app };
@@ -110,9 +109,17 @@ app.post('/api/telegram/webhook', async (c) => {
 
 app.route('/', artifactRoutes);
 
-app.notFound((c) => {
+app.notFound(async (c) => {
   if (c.req.path.startsWith('/api/')) return fail('接口不存在', 404);
-  return c.env.ASSETS.fetch(c.req.raw);
+  const response = await c.env.ASSETS.fetch(c.req.raw);
+  // Never let a browser or an edge cache keep an old HTML shell: the shell
+  // points at hashed JS, so a stale copy pins the whole admin UI to an old build.
+  if ((response.headers.get('content-type') ?? '').includes('text/html')) {
+    const headers = new Headers(response.headers);
+    headers.set('Cache-Control', 'no-store');
+    return new Response(response.body, { status: response.status, headers });
+  }
+  return response;
 });
 
 app.onError((error, c) => {
