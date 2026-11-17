@@ -5,55 +5,44 @@ import type { LineEntry } from '../types.js';
 /** Pool buckets used by the admin line pool. */
 export type PoolRowPool = 'premium' | 'backup' | 'candidate' | 'pending' | 'quarantine' | 'rejected';
 
-export interface PoolRowSourceMeta {
-  id: string;
-  name: string;
-  reputation: number;
-  tier: 'high' | 'normal' | 'low';
-}
+export type PoolRowStatus = 'alive' | 'suspect' | 'dead' | 'unknown';
 
-export interface PoolRowChannelMeta {
-  id: string;
-  name: string;
-  group: string;
-  tvgId?: string | null;
-  logo?: string | null;
-}
-
-/** One flattened line, ready for the admin pool table. */
-export interface PoolRow {
-  key: string;
-  channelId: string;
-  channelName: string;
-  group: string;
-  country: string;
-  tvgId?: string | null;
-  logo?: string | null;
-  sourceId: string;
-  sourceName: string;
-  sourceReputation: number;
-  sourceTier: 'high' | 'normal' | 'low';
-  name: string;
-  url: string;
-  resolution?: string;
-  height?: number;
-  speedKbps?: number;
-  cnReachable?: boolean;
-  cnCheckedAt?: string | null;
-  cnLatencyMs?: number | null;
-  protocol: string;
-  transport: 'direct' | 'relay';
-  status: string;
-  score: number;
-  passCount?: number;
-  lastProbeAt?: string;
-  autoPool: PoolRowPool;
-}
+/**
+ * Compact row payload. Channels and sources are stored once, and each line is
+ * an array, so the artifact stays small enough to download on a slow link.
+ * URLs are deliberately omitted: they are unique, incompressible, and the pool
+ * page never displays them (search is by channel / source / line name).
+ *
+ * lines: [key, channelIndex, sourceIndex, name, resolution, height,
+ *         speedKbps, cnCheckedAt, cnLatencyMs, status, passCount,
+ *         lastProbeAt, autoPool, transport]
+ */
+export type SlimPoolLine = [
+  string,
+  number,
+  number,
+  string,
+  string,
+  number,
+  number,
+  string,
+  number,
+  PoolRowStatus,
+  number,
+  string,
+  PoolRowPool,
+  'direct' | 'relay',
+];
 
 export interface PoolRowsSnapshot {
+  version: 2;
   generatedAt: string;
   premiumTarget: number;
-  rows: PoolRow[];
+  /** [id, name, group, country] */
+  channels: Array<[string, string, string, string]>;
+  /** [id, name, reputation] */
+  sources: Array<[string, string, number]>;
+  lines: SlimPoolLine[];
 }
 
 export const PREMIUM_PER_CHANNEL = 12;
@@ -109,10 +98,25 @@ export function countryRank(country: string): number {
   return 4;
 }
 
+export interface PoolRowChannelMeta {
+  id: string;
+  name: string;
+  group: string;
+  tvgId?: string | null;
+  logo?: string | null;
+}
+
+export interface PoolRowSourceMeta {
+  id: string;
+  name: string;
+  reputation: number;
+  tier?: 'high' | 'normal' | 'low';
+}
+
 /**
- * Flatten channel-grouped lines into the rows rendered by the admin pool.
- * Overrides/favorites live in D1 and are merged by the worker/client; this
- * function only knows the automatic pool classification.
+ * Flatten channel-grouped lines into the compact artifact the admin pool reads.
+ * Overrides/favorites stay in D1 and are merged by the client; this function
+ * only knows the automatic pool classification.
  */
 export function buildPoolRows(input: {
   lines: LineEntry[];
@@ -134,12 +138,22 @@ export function buildPoolRows(input: {
     byChannel.set(line.channelId, list);
   }
 
-  const rows: PoolRow[] = [];
+  const channels: Array<[string, string, string, string]> = [];
+  const channelIndex = new Map<string, number>();
+  const sources: Array<[string, string, number]> = [];
+  const sourceIndex = new Map<string, number>();
+  const lines: SlimPoolLine[] = [];
+
   for (const [channelId, list] of byChannel) {
     const channel = channelMap.get(channelId);
     if (!channel) continue;
     const group = (channel.group ?? '').trim() || '其他';
-    const country = countryOfGroup(group);
+    let channelPos = channelIndex.get(channelId);
+    if (channelPos === undefined) {
+      channelPos = channels.length;
+      channels.push([channel.id, channel.name, group, countryOfGroup(group)]);
+      channelIndex.set(channelId, channelPos);
+    }
     let premium = 0;
     for (const line of [...list].sort(compareLines)) {
       let autoPool: PoolRowPool;
@@ -151,37 +165,35 @@ export function buildPoolRows(input: {
         autoPool = 'premium';
         premium++;
       } else autoPool = 'backup';
-      const source = sourceMap.get(line.sourceId);
-      rows.push({
-        key: line.key,
-        channelId,
-        channelName: channel.name,
-        group,
-        country,
-        tvgId: channel.tvgId ?? null,
-        logo: channel.logo ?? null,
-        sourceId: line.sourceId,
-        sourceName: source?.name ?? line.sourceId,
-        sourceReputation: source?.reputation ?? 50,
-        sourceTier: source?.tier ?? 'normal',
-        name: line.name,
-        url: line.url,
-        resolution: line.resolution,
-        height: line.height,
-        speedKbps: line.speedKbps,
-        cnReachable: line.cnReachable === true,
-        cnCheckedAt: line.cnCheckedAt ?? null,
-        cnLatencyMs: line.cnLatencyMs ?? null,
-        protocol: line.protocol ?? 'http',
-        transport: line.url.startsWith('https:') ? 'direct' : 'relay',
-        status: line.status,
-        score: line.score ?? 0,
-        passCount: line.passCount,
-        lastProbeAt: line.lastProbeAt,
+
+      let sourcePos = sourceIndex.get(line.sourceId);
+      if (sourcePos === undefined) {
+        const source = sourceMap.get(line.sourceId);
+        sourcePos = sources.length;
+        sources.push([line.sourceId, source?.name ?? line.sourceId, source?.reputation ?? 50]);
+        sourceIndex.set(line.sourceId, sourcePos);
+      }
+      const status: PoolRowStatus = line.status === 'alive' || line.status === 'suspect' || line.status === 'dead'
+        ? line.status
+        : 'unknown';
+      lines.push([
+        line.key,
+        channelPos,
+        sourcePos,
+        line.name,
+        line.resolution ?? '',
+        line.height ?? 0,
+        line.speedKbps ?? 0,
+        line.cnCheckedAt ?? '',
+        line.cnLatencyMs ?? 0,
+        status,
+        line.passCount ?? 0,
+        line.lastProbeAt ?? '',
         autoPool,
-      });
+        line.url.startsWith('https:') ? 'direct' : 'relay',
+      ]);
     }
   }
 
-  return { generatedAt: input.generatedAt, premiumTarget, rows };
+  return { version: 2, generatedAt: input.generatedAt, premiumTarget, channels, sources, lines };
 }

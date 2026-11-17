@@ -47,9 +47,9 @@ poolRoutes.use('/pools', adminCache());
  */
 poolRoutes.get('/rows', async (c) => {
   const bytes = await c.env.KV.get('state/pool-rows.json', 'arrayBuffer');
-  if (!bytes) return ok({ generatedAt: null, premiumTarget: 12, rows: [] });
+  if (!bytes) return ok({ version: 2, generatedAt: null, premiumTarget: 12, channels: [], sources: [], lines: [] });
   return new Response(bytes, {
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private, max-age=60' },
   });
 });
 

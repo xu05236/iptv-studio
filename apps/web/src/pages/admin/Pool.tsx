@@ -80,6 +80,23 @@ interface PoolLine {
   retained?: boolean;
 }
 
+type SlimPoolLineTuple = [
+  string,
+  number,
+  number,
+  string,
+  string,
+  number,
+  number,
+  string,
+  number,
+  string,
+  number,
+  string,
+  keyof PoolCounts,
+  'direct' | 'relay',
+];
+
 function poolTone(pool: string): 'green' | 'blue' | 'orange' | 'red' | undefined {
   if (pool === 'premium') return 'green';
   if (pool === 'backup') return 'blue';
@@ -127,9 +144,13 @@ export function Pool() {
     queryKey: ['admin', 'pool', 'rows'],
     queryFn: () =>
       api.get<{
+        version?: number;
         generatedAt: string | null;
         premiumTarget: number;
-        rows: Array<PoolLine & { autoPool: keyof PoolCounts; channelName: string; group: string; country: string }>;
+        channels?: Array<[string, string, string, string]>;
+        sources?: Array<[string, string, number]>;
+        lines?: SlimPoolLineTuple[];
+        rows?: Array<PoolLine & { autoPool: keyof PoolCounts; channelName: string; group: string; country: string }>;
       }>('/api/admin/pool/rows'),
     staleTime: 60_000,
   });
@@ -184,6 +205,65 @@ export function Pool() {
 
   const minSpeedKbps = minSpeed ? String(Math.max(0, Math.round(Number(minSpeed) * 1000))) : '';
 
+  const hydratedRows = useMemo<PoolLine[]>(() => {
+    const data = rowsQuery.data;
+    if (!data) return [];
+    if (data.version === 2 && data.channels && data.sources && data.lines) {
+      const { channels, sources, lines } = data;
+      return lines.map((entry) => {
+        const [
+          key,
+          channelPos,
+          sourcePos,
+          name,
+          resolution,
+          height,
+          speedKbps,
+          cnCheckedAt,
+          cnLatencyMs,
+          status,
+          passCount,
+          lastProbeAt,
+          autoPool,
+          transport,
+        ] = entry;
+        const [channelId, channelName, group, country] = channels[channelPos];
+        const [sourceId, sourceName, sourceReputation] = sources[sourcePos];
+        const https = transport === 'direct';
+        return {
+          key,
+          channelId,
+          channelName,
+          group,
+          country,
+          sourceId,
+          sourceName,
+          sourceReputation,
+          sourceTier: 'normal',
+          name,
+          url: '',
+          resolution: resolution || undefined,
+          height: height || undefined,
+          speedKbps: speedKbps || undefined,
+          cnReachable: Boolean(cnCheckedAt || cnLatencyMs),
+          cnCheckedAt: cnCheckedAt || null,
+          cnLatencyMs: cnLatencyMs || null,
+          protocol: https ? 'https' : 'http',
+          transport,
+          pool: autoPool,
+          autoPool,
+          favorite: false,
+          overridden: false,
+          status,
+          score: 0,
+          passCount,
+          lastProbeAt: lastProbeAt || undefined,
+        } as PoolLine;
+      });
+    }
+    return (data.rows ?? []) as unknown as PoolLine[];
+  }, [rowsQuery.data]);
+
   const mergedLines = useMemo<PoolLine[]>(() => {
     const favoriteKeys = new Set(favorites.data?.keys ?? []);
     const overrideMap = new Map((overrides.data?.items ?? []).map((item) => [item.line_key, item]));
@@ -192,7 +272,7 @@ export function Pool() {
     const customKeys = customPool ? new Set(customPoolKeys.data?.keys ?? []) : null;
     const poolRankOf = (value: string) => ['alive', 'suspect', 'dead'].indexOf(value);
     void poolRankOf;
-    return (rowsQuery.data?.rows ?? [])
+    return hydratedRows
       .map((row) => {
         const override = overrideMap.get(row.key);
         return {
@@ -222,12 +302,12 @@ export function Pool() {
         if (cnOnly && !line.cnReachable) return false;
         const query = search.trim().toLowerCase();
         if (query) {
-          const haystack = `${line.channelName} ${line.name} ${line.url} ${line.sourceName}`.toLowerCase();
+          const haystack = `${line.channelName} ${line.name} ${line.sourceName}`.toLowerCase();
           if (!haystack.includes(query)) return false;
         }
         return true;
       });
-  }, [rowsQuery.data, favorites.data, overrides.data, subscriptionScope.data, subscriptionId, customPool, customPoolKeys.data, country, group, channelId, sourceId, pool, transport, resolution, minSpeedKbps, cnOnly, search]);
+  }, [hydratedRows, favorites.data, overrides.data, subscriptionScope.data, subscriptionId, customPool, customPoolKeys.data, country, group, channelId, sourceId, pool, transport, resolution, minSpeedKbps, cnOnly, search]);
 
   const treeData = useMemo(() => {
     const countryMap = new Map<string, { country: string; total: number; groups: Map<string, { group: string; total: number; channels: Map<string, { id: string; name: string; total: number; counts: PoolCounts }> }> }>();
@@ -742,7 +822,7 @@ export function Pool() {
           </label>
           <label className="stack stack--tight grow">
             <span className="caption">搜索</span>
-            <input className="input" value={search} onChange={(event) => { setSearch(event.target.value); resetPage(); }} placeholder="频道 / 源 / URL" />
+            <input className="input" value={search} onChange={(event) => { setSearch(event.target.value); resetPage(); }} placeholder="频道 / 源 / 线路名" />
           </label>
         </div>
         </details>
