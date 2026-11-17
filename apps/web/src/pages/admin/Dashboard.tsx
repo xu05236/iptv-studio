@@ -362,10 +362,14 @@ export function Dashboard() {
   const kvWrites = kvToday?.writes ?? 0;
   const kvReads = kvToday?.reads ?? 0;
   const kvLists = kvToday?.lists ?? 0;
+  // Cloudflare 官方统计延迟 30–60 分钟；页头与告警统一用本地实时计数，
+  // 避免和下方「今日写入（本地计数）」卡片对不上。
+  const kvLocalToday = kvLocal?.day === today ? kvLocal.puts : null;
+  const kvEffective = kvLocalToday ?? kvWrites;
   const d1Writes = d1Today?.rowsWritten ?? 0;
   const d1Reads = d1Today?.rowsRead ?? 0;
-  const kvBlocked = kvWrites >= 920;
-  const kvWarn = kvWrites >= 850;
+  const kvBlocked = kvEffective >= 920;
+  const kvWarn = kvEffective >= 850;
   const kvListWarn = kvLists >= 850;
   const warnBytes = (storageQuery.data?.thresholds.warnMb ?? 15) * 1024 * 1024;
   const blockMb = storageQuery.data?.thresholds.blockMb ?? 22;
@@ -389,7 +393,7 @@ export function Dashboard() {
           ) : null}
           <div className="row row--wrap" style={{ marginTop: 12, gap: 6 }}>
             <Badge tone={ready ? 'green' : 'orange'}>{ready ? '数据已就绪' : '等待首次采集'}</Badge>
-            <Badge tone={kvBlocked ? 'red' : kvWarn ? 'orange' : 'blue'}>KV {formatNumber(kvWrites)}/1000</Badge>
+            <Badge tone={kvBlocked ? 'red' : kvWarn ? 'orange' : 'blue'}>KV {formatNumber(kvEffective)}/1000</Badge>
             <Badge>{stats.index.totals.channels} 频道 · {stats.index.totals.alive} 可用</Badge>
           </div>
         </div>
@@ -421,7 +425,7 @@ export function Dashboard() {
 
       {kvWarn ? (
         <div className="caption" style={{ color: kvBlocked ? 'var(--red)' : 'var(--orange)', padding: '0 2px' }}>
-          KV 今日已写入 {formatNumber(kvWrites)} / 1,000
+          KV 今日已写入 {formatNumber(kvEffective)} / 1,000
           {kvBlocked ? '，已暂停触发采集与导出，请等 UTC 00:00 重置。' : '，接近上限，请避免频繁采集。'}
         </div>
       ) : null}
