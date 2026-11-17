@@ -68,14 +68,13 @@ app.use('/api/admin/*', requireAuth);
 
 app.get('/api/admin/me', (c) => ok({ actor: c.get('actor'), ok: true }));
 
-app.use('/api/admin/usage', adminCache());
-
 app.get('/api/admin/usage', async (c) => {
+  c.header('Cache-Control', 'no-store');
   const [usage, kvLocal] = await Promise.all([
     getRuntimeJson<Record<string, unknown>>(c.env, 'state/usage.json'),
     kvWriteBudget(c.env).catch(() => null),
   ]);
-  return ok({ usage, kvLocal });
+  return ok({ usage, kvLocal, serverTime: new Date().toISOString() });
 });
 
 app.post('/api/admin/usage', async (c) => {

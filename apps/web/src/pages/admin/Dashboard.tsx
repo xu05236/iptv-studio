@@ -149,7 +149,7 @@ export function Dashboard() {
 
   const usageQuery = useQuery({
     queryKey: ['admin', 'usage'],
-    queryFn: () => api.get<{ usage: UsageSnapshot | null; kvLocal?: { day: string; puts: number; deletes: number; limit: number } | null }>('/api/admin/usage'),
+    queryFn: () => api.get<{ usage: UsageSnapshot | null; kvLocal?: { day: string; puts: number; deletes: number; limit: number } | null; serverTime?: string }>(`/api/admin/usage?t=${Date.now()}`, { cache: 'no-store' }),
   });
 
   const settingsQuery = useQuery({
@@ -248,7 +248,7 @@ export function Dashboard() {
       for (let attempt = 0; attempt < 30; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 10_000));
         try {
-          const next = await api.get<{ usage: UsageSnapshot | null; kvLocal?: unknown }>(`/api/admin/usage?t=${Date.now()}`);
+          const next = await api.get<{ usage: UsageSnapshot | null; kvLocal?: unknown; serverTime?: string }>(`/api/admin/usage?t=${Date.now()}`, { cache: 'no-store' });
           if (next.usage?.collectedAt !== before) {
             queryClient.setQueryData(['admin', 'usage'], next);
             show('用量快照已更新');
@@ -351,6 +351,9 @@ export function Dashboard() {
   const publishedRatio = stats.index.totals.lines ? Math.round((stats.index.totals.alive / stats.index.totals.lines) * 100) : 0;
   const usage = usageQuery.data?.usage;
   const kvLocal = usageQuery.data?.kvLocal ?? null;
+  const serverTimeText = usageQuery.data?.serverTime
+    ? new Date(usageQuery.data.serverTime).toLocaleTimeString('zh-CN', { hour12: false })
+    : '';
   const today = new Date().toISOString().slice(0, 10);
   // The snapshot is written up to 6 hours apart; right after UTC midnight it
   // still carries yesterday's totals. Only trust it when its day matches today.
@@ -822,7 +825,7 @@ export function Dashboard() {
                   <span className="usage-card__icon"><Cloud size={17} /></span>
                   <div className="grow">
                     <div className="title-3">Cloudflare KV</div>
-                    <div className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)} · 官方统计约延迟 30–60 分钟` : '等待快照'}</div>
+                    <div className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)} · 官方统计约延迟 30–60 分钟${serverTimeText ? ` · 服务端 ${serverTimeText}` : ''}` : '等待快照'}</div>
                   </div>
                 </div>
                 {snapshot ? (
@@ -861,7 +864,7 @@ export function Dashboard() {
                   <span className="usage-card__icon"><Database size={17} /></span>
                   <div className="grow">
                     <div className="title-3">Cloudflare D1</div>
-                    <div className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)} · 官方统计约延迟 30–60 分钟` : '等待快照'}</div>
+                    <div className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)} · 官方统计约延迟 30–60 分钟${serverTimeText ? ` · 服务端 ${serverTimeText}` : ''}` : '等待快照'}</div>
                   </div>
                 </div>
                 {snapshot ? (
