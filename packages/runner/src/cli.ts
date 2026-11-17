@@ -4,6 +4,7 @@ import {
   BUILTIN_CHANNELS,
   ChannelRegistry,
   buildPoolSnapshot,
+  buildPoolRows,
   canonicalPoolUrl,
   classifyGroup,
   compareLines,
@@ -598,6 +599,30 @@ async function writePoolStats(store: ArtifactStore, remote: RemoteConfig, lines:
   await store.put('state/pool-stats.json', JSON.stringify(poolStatsFor(remote, lines, generatedAt)), 'application/json');
 }
 
+/**
+ * Publish a flat row file for the admin pool page. The page filters/paginates
+ * client-side, so the worker never has to parse the sharded line state.
+ */
+async function writePoolRows(
+  store: ArtifactStore,
+  remote: RemoteConfig,
+  lines: LineEntry[],
+  channels: Array<{ id: string; name: string; group: string; tvgId?: string | null; logo?: string | null }>,
+  generatedAt: string,
+): Promise<void> {
+  const rows = buildPoolRows({
+    lines,
+    channels,
+    sources: remote.sources.map((source) => {
+      const meta = source as unknown as { reputation?: number; tier?: 'high' | 'normal' | 'low' };
+      return { id: source.id, name: source.name, reputation: meta.reputation ?? 50, tier: meta.tier ?? 'normal' };
+    }),
+    maxLinesPerChannel: remote.settings.maxLinesPerChannel,
+    generatedAt,
+  });
+  await store.put('state/pool-rows.json', JSON.stringify(rows), 'application/json');
+}
+
 /** Probe changes alive counts; refresh the source cards without touching reputation. */
 async function syncSourceCounts(api: ApiClient, remote: RemoteConfig, lines: LineEntry[]): Promise<void> {
   const counts = remote.sources.map((source) => {
@@ -922,10 +947,12 @@ async function publishPhase(
   const poolGeneratedAt = output.catalog.generatedAt;
   await store.put('state/pool.json', JSON.stringify(poolSnapshotFor(remote, lines, poolGeneratedAt)), 'application/json');
   await writePoolStats(store, remote, lines, poolGeneratedAt);
+  const poolChannels = registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: poolChannelGroup(seed.id, seed.group, mergedGroupMap(remote)), tvgId: seed.tvgId, logo: seed.logo }));
+  await writePoolRows(store, remote, lines, poolChannels, poolGeneratedAt);
   const logKey = await writeLog(store, runId, logger);
   const poolSnapshot = buildPoolSnapshot({
     lines,
-    channels: registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: poolChannelGroup(seed.id, seed.group, mergedGroupMap(remote)), tvgId: seed.tvgId, logo: seed.logo })),
+    channels: poolChannels,
     maxLinesPerChannel: settings.maxLinesPerChannel,
     generatedAt: output.catalog.generatedAt,
   });

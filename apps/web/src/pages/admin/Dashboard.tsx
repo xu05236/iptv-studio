@@ -141,6 +141,10 @@ export function Dashboard() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['admin', 'stats'],
     queryFn: () => api.get<AdminStats>('/api/admin/stats'),
+    // D1 rows read are the scarce resource on the free plan: do not refetch the
+    // dashboard on every window focus, and keep the numbers for a minute.
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const usageQuery = useQuery({

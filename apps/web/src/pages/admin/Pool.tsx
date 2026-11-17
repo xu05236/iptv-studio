@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, Download, Filter, Layers3, Plus, RefreshCw, RotateCcw, Star, Trash2, Undo2 } from 'lucide-react';
 import { api, getToken } from '../../lib/api';
 import { formatResolution, formatSpeed, statusLabel, statusTone } from '../../lib/format';
@@ -123,9 +123,27 @@ export function Pool() {
     setSelected(new Set());
   }, [page, pageSize, pool, customPool, country, group, channelId, sourceId, transport, resolution, minSpeed, cnOnly, search, sortField, sortOrder, subscriptionId]);
 
-  const tree = useQuery({
-    queryKey: ['admin', 'pool', 'tree'],
-    queryFn: () => api.get<{ countries: PoolTreeCountry[]; snapshot?: { generatedAt?: string | null; channels?: number } }>('/api/admin/pool/tree'),
+  const rowsQuery = useQuery({
+    queryKey: ['admin', 'pool', 'rows'],
+    queryFn: () =>
+      api.get<{
+        generatedAt: string | null;
+        premiumTarget: number;
+        rows: Array<PoolLine & { autoPool: keyof PoolCounts; channelName: string; group: string; country: string }>;
+      }>('/api/admin/pool/rows'),
+    staleTime: 60_000,
+  });
+
+  const favorites = useQuery({
+    queryKey: ['admin', 'pool', 'favorites'],
+    queryFn: () => api.get<{ keys: string[] }>('/api/admin/pool/favorites'),
+    staleTime: 60_000,
+  });
+
+  const overrides = useQuery({
+    queryKey: ['admin', 'pool', 'line-overrides'],
+    queryFn: () => api.get<{ items: Array<{ line_key: string; pool?: string | null; reason?: string | null }> }>('/api/admin/pool/line-overrides'),
+    staleTime: 60_000,
   });
 
   const subscriptions = useQuery({
@@ -149,66 +167,142 @@ export function Pool() {
     queryFn: () => api.get<{ items: Array<{ id: string; name: string; count: number }> }>('/api/admin/pool/pools'),
   });
 
-  const poolTotals = useMemo(() => {
-    const totals: PoolCounts = { premium: 0, backup: 0, candidate: 0, pending: 0, quarantine: 0, rejected: 0 };
-    const keys = Object.keys(totals) as Array<keyof PoolCounts>;
-    for (const countryItem of tree.data?.countries ?? []) {
-      for (const groupItem of countryItem.groups) {
-        for (const channel of groupItem.channels) {
-          for (const key of keys) totals[key] += channel.counts[key] ?? 0;
-        }
-      }
-    }
-    return totals;
-  }, [tree.data]);
+  const customPoolKeys = useQuery({
+    queryKey: ['admin', 'pool', 'custom-keys', customPool],
+    queryFn: () => api.get<{ keys: string[] }>(`/api/admin/pool/pools/${customPool}/keys`),
+    enabled: Boolean(customPool),
+  });
 
-  // The old channel picker only listed channels of the selected group, so it
-  // could not be used as a real filter. Search across every pool channel.
-  const allChannels = useMemo(
-    () =>
-      (tree.data?.countries ?? [])
-        .flatMap((countryItem) =>
-          countryItem.groups.flatMap((groupItem) =>
-            groupItem.channels.map((channel) => ({ id: channel.id, name: channel.name, group: groupItem.group })),
-          ),
-        )
-        .sort((a, b) => a.group.localeCompare(b.group, 'zh-CN') || a.name.localeCompare(b.name, 'zh-CN')),
-    [tree.data],
-  );
-
-  const countryItem = tree.data?.countries.find((item) => item.country === country);
-  const groups = countryItem?.groups ?? [];
+  const subscriptionScope = useQuery({
+    queryKey: ['admin', 'pool', 'subscription-scope', subscriptionId],
+    queryFn: () =>
+      api.get<{ lineKeys: string[]; channelIds: string[]; groups: string[]; excludeGroups: string[] }>(
+        `/api/admin/pool/subscriptions/${subscriptionId}/scope`,
+      ),
+    enabled: Boolean(subscriptionId),
+  });
 
   const minSpeedKbps = minSpeed ? String(Math.max(0, Math.round(Number(minSpeed) * 1000))) : '';
 
-  const params = useMemo(() => {
-    const value = new URLSearchParams({ page: String(page), limit: String(pageSize) });
-    if (country) value.set('country', country);
-    if (group) value.set('group', group);
-    if (channelId) value.set('channelId', channelId);
-    if (subscriptionId) value.set('subscriptionId', subscriptionId);
-    if (sourceId) value.set('sourceId', sourceId);
-    if (pool) value.set('pool', pool);
-    if (customPool) value.set('customPool', customPool);
-    if (transport) value.set('transport', transport);
-    if (resolution) value.set('resolution', resolution);
-    if (minSpeedKbps) value.set('minSpeed', minSpeedKbps);
-    if (cnOnly) value.set('cn', '1');
-    if (search.trim()) value.set('q', search.trim());
-    if (sortField) {
-      value.set('sort', sortField);
-      value.set('order', sortOrder);
+  const mergedLines = useMemo<PoolLine[]>(() => {
+    const favoriteKeys = new Set(favorites.data?.keys ?? []);
+    const overrideMap = new Map((overrides.data?.items ?? []).map((item) => [item.line_key, item]));
+    const scope = subscriptionScope.data;
+    const scopeKeys = subscriptionId && scope ? new Set(scope.lineKeys) : null;
+    const customKeys = customPool ? new Set(customPoolKeys.data?.keys ?? []) : null;
+    const poolRankOf = (value: string) => ['alive', 'suspect', 'dead'].indexOf(value);
+    void poolRankOf;
+    return (rowsQuery.data?.rows ?? [])
+      .map((row) => {
+        const override = overrideMap.get(row.key);
+        return {
+          ...row,
+          pool: (override?.pool as keyof PoolCounts | undefined) ?? row.autoPool,
+          favorite: favoriteKeys.has(row.key),
+          overridden: Boolean(override?.pool),
+          reason: override?.reason ?? undefined,
+        } as unknown as PoolLine;
+      })
+      .filter((line) => {
+        if (scopeKeys && !scopeKeys.has(line.key)) return false;
+        if (customKeys && !customKeys.has(line.key)) return false;
+        if (subscriptionId && scope) {
+          if (scope.groups.length && !scope.groups.includes(line.group)) return false;
+          if (scope.excludeGroups.includes(line.group)) return false;
+          if (scope.channelIds.length && !scope.channelIds.includes(line.channelId)) return false;
+        }
+        if (country && line.country !== country) return false;
+        if (group && line.group !== group) return false;
+        if (channelId && line.channelId !== channelId) return false;
+        if (sourceId && line.sourceId !== sourceId) return false;
+        if (pool && line.pool !== pool) return false;
+        if (transport && line.transport !== transport) return false;
+        if (resolution && line.resolution !== resolution) return false;
+        if (minSpeedKbps && !(line.speedKbps && line.speedKbps >= Number(minSpeedKbps))) return false;
+        if (cnOnly && !line.cnReachable) return false;
+        const query = search.trim().toLowerCase();
+        if (query) {
+          const haystack = `${line.channelName} ${line.name} ${line.url} ${line.sourceName}`.toLowerCase();
+          if (!haystack.includes(query)) return false;
+        }
+        return true;
+      });
+  }, [rowsQuery.data, favorites.data, overrides.data, subscriptionScope.data, subscriptionId, customPool, customPoolKeys.data, country, group, channelId, sourceId, pool, transport, resolution, minSpeedKbps, cnOnly, search]);
+
+  const treeData = useMemo(() => {
+    const countryMap = new Map<string, { country: string; total: number; groups: Map<string, { group: string; total: number; channels: Map<string, { id: string; name: string; total: number; counts: PoolCounts }> }> }>();
+    const emptyCounts = (): PoolCounts => ({ premium: 0, backup: 0, candidate: 0, pending: 0, quarantine: 0, rejected: 0 });
+    for (const line of mergedLines) {
+      const countryEntry = countryMap.get(line.country) ?? { country: line.country, total: 0, groups: new Map() };
+      const groupEntry = countryEntry.groups.get(line.group) ?? { group: line.group, total: 0, channels: new Map() };
+      const channelEntry = groupEntry.channels.get(line.channelId) ?? { id: line.channelId, name: line.channelName, total: 0, counts: emptyCounts() };
+      countryEntry.total++;
+      groupEntry.total++;
+      channelEntry.total++;
+      channelEntry.counts[line.pool]++;
+      groupEntry.channels.set(line.channelId, channelEntry);
+      countryEntry.groups.set(line.group, groupEntry);
+      countryMap.set(line.country, countryEntry);
     }
-    return value.toString();
-  }, [country, group, channelId, subscriptionId, sourceId, pool, customPool, transport, resolution, minSpeedKbps, cnOnly, search, page, pageSize, sortField, sortOrder]);
+    const order = ['中国', '国际', '自定义', '其他'];
+    return [...countryMap.values()]
+      .map((entry) => ({
+        country: entry.country,
+        total: entry.total,
+        groups: [...entry.groups.values()]
+          .map((groupEntry) => ({
+            group: groupEntry.group,
+            total: groupEntry.total,
+            channels: [...groupEntry.channels.values()].sort((left, right) => left.name.localeCompare(right.name, 'zh-CN')),
+          }))
+          .sort((left, right) => right.total - left.total || left.group.localeCompare(right.group, 'zh-CN')),
+      }))
+      .sort((left, right) => {
+        const rank = (value: string) => (order.includes(value) ? order.indexOf(value) : order.length);
+        return rank(left.country) - rank(right.country) || right.total - left.total;
+      });
+  }, [mergedLines]);
 
-  const lines = useQuery({
-    queryKey: ['admin', 'pool', 'lines', params],
-    queryFn: () => api.get<{ items: PoolLine[]; total: number; page: number; limit: number }>(`/api/admin/pool/lines?${params}`),
-    placeholderData: keepPreviousData,
-  });
+  const poolTotals = useMemo(() => {
+    const totals: PoolCounts = { premium: 0, backup: 0, candidate: 0, pending: 0, quarantine: 0, rejected: 0 };
+    for (const line of mergedLines) totals[line.pool] += 1;
+    return totals;
+  }, [mergedLines]);
 
-  const totalPages = Math.max(1, Math.ceil((lines.data?.total ?? 0) / pageSize));
+  const allChannels = useMemo(
+    () =>
+      treeData
+        .flatMap((countryItem) => countryItem.groups.flatMap((groupItem) => groupItem.channels.map((channel) => ({ id: channel.id, name: channel.name, group: groupItem.group }))))
+        .sort((a, b) => a.group.localeCompare(b.group, 'zh-CN') || a.name.localeCompare(b.name, 'zh-CN')),
+    [treeData],
+  );
+
+  const countryItem = treeData.find((item) => item.country === country);
+  const groups = countryItem?.groups ?? [];
+
+  const sortedLines = useMemo(() => {
+    if (!sortField) return mergedLines;
+    const poolOrder = ['premium', 'backup', 'candidate', 'pending', 'quarantine', 'rejected'];
+    const statusOrder = ['alive', 'suspect', 'dead', 'unknown'];
+    const collator = new Intl.Collator('zh-CN');
+    const compare = (left: PoolLine, right: PoolLine): number => {
+      switch (sortField) {
+        case 'channel': return collator.compare(left.channelName, right.channelName);
+        case 'source': return collator.compare(left.sourceName, right.sourceName);
+        case 'resolution': return (left.height ?? 0) - (right.height ?? 0);
+        case 'speed': return (left.speedKbps ?? 0) - (right.speedKbps ?? 0);
+        case 'transport': return left.transport.localeCompare(right.transport);
+        case 'pool': return poolOrder.indexOf(left.pool) - poolOrder.indexOf(right.pool);
+        case 'status': return statusOrder.indexOf(left.status) - statusOrder.indexOf(right.status);
+        case 'probe': return (Date.parse(left.lastProbeAt ?? '') || 0) - (Date.parse(right.lastProbeAt ?? '') || 0);
+        default: return 0;
+      }
+    };
+    return [...mergedLines].sort((left, right) => (sortOrder === 'asc' ? compare(left, right) : -compare(left, right)));
+  }, [mergedLines, sortField, sortOrder]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedLines.length / pageSize));
+  const pageLines = sortedLines.slice((page - 1) * pageSize, page * pageSize);
 
   const toggleSort = (field: string) => {
     if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -492,7 +586,7 @@ export function Pool() {
     resetPage();
   }
 
-  if (tree.isLoading) {
+  if (rowsQuery.isLoading) {
     return <div className="stack"><Skeleton height={34} width={220} /><Skeleton height={240} radius={16} /></div>;
   }
 
@@ -505,7 +599,7 @@ export function Pool() {
         actions={
           <>
             <Button onClick={() => setPoolsOpen(true)}><Plus size={15} /> 自定义池</Button>
-            <Button loading={tree.isFetching || lines.isFetching} onClick={() => { void tree.refetch(); void lines.refetch(); }}><RefreshCw size={15} /> 刷新</Button>
+            <Button loading={rowsQuery.isFetching || overrides.isFetching} onClick={() => { void rowsQuery.refetch(); void overrides.refetch(); void favorites.refetch(); }}><RefreshCw size={15} /> 刷新</Button>
             <Button loading={rebuildSnapshot.isPending} onClick={() => rebuildSnapshot.mutate()}><RefreshCw size={15} /> 重建快照</Button>
             <Button loading={exportPool.isPending} onClick={() => exportPool.mutate()}><Download size={15} /> 导出筛选</Button>
             <Button loading={saveSubscription.isPending} onClick={() => saveSubscription.mutate()}><Layers3 size={15} /> 保存为订阅</Button>
@@ -517,8 +611,8 @@ export function Pool() {
       />
 
       <div className="caption">
-        {tree.data?.snapshot?.generatedAt
-          ? `池快照：${timeAgo(tree.data.snapshot.generatedAt)} · ${tree.data.snapshot.channels ?? 0} 个频道 · 订阅导出按此快照的池分类`
+        {rowsQuery.data?.generatedAt
+          ? `池快照：${timeAgo(rowsQuery.data.generatedAt)} · ${new Set(mergedLines.map((line) => line.channelId)).size} 个频道 · 订阅导出按此快照的池分类`
           : '池快照尚未生成：发布一次或点「重建快照」后生成'}
       </div>
 
@@ -533,8 +627,8 @@ export function Pool() {
         <div className="pool-browse__row">
           <span className="pool-browse__label">国家 / 地区</span>
           <div className="pool-browse__chips">
-            <button className={!country ? 'chip chip--active' : 'chip'} onClick={() => selectCountry('')}>全部 <span>{(tree.data?.countries ?? []).reduce((sum, item) => sum + item.total, 0)}</span></button>
-            {(tree.data?.countries ?? []).map((item) => (
+            <button className={!country ? 'chip chip--active' : 'chip'} onClick={() => selectCountry('')}>全部 <span>{treeData.reduce((sum, item) => sum + item.total, 0)}</span></button>
+            {treeData.map((item) => (
               <button key={item.country} className={country === item.country ? 'chip chip--active' : 'chip'} onClick={() => selectCountry(item.country)}>
                 {item.country} <span>{item.total}</span>
               </button>
@@ -659,7 +753,7 @@ export function Pool() {
       </div>
 
       <div className="row row--between pool-result-bar">
-        <div className="caption"><Filter size={13} /> 共 {lines.data?.total ?? 0} 条线路</div>
+        <div className="caption"><Filter size={13} /> 共 {sortedLines.length} 条线路</div>
         <label className="row" style={{ gap: 6 }}>
           <span className="caption">每页</span>
           <select className="input" style={{ width: 88 }} value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>
@@ -728,15 +822,15 @@ export function Pool() {
         </Card>
       ) : null}
 
-      {lines.isError ? (
-        <Card><QueryError title="线路加载失败" error={lines.error} onRetry={() => void lines.refetch()} /></Card>
+      {rowsQuery.isError ? (
+        <Card><QueryError title="线路加载失败" error={rowsQuery.error} onRetry={() => void rowsQuery.refetch()} /></Card>
       ) : null}
 
-      {lines.isLoading ? (
+      {rowsQuery.isLoading ? (
         <div className="stack stack--tight">
           {Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} height={58} radius={14} />)}
         </div>
-      ) : lines.data?.items.length ? (
+      ) : pageLines.length ? (
         <Card>
           <div className="table-wrap" style={{ border: 0 }}>
             <table className="table table--cards pool-table">
@@ -745,9 +839,9 @@ export function Pool() {
                   <th>
                     <input
                       type="checkbox"
-                      checked={Boolean(lines.data?.items.length) && selected.size >= lines.data!.items.length}
+                      checked={Boolean(pageLines.length) && selected.size >= pageLines.length}
                       onChange={(event) => {
-                        if (event.target.checked) setSelected(new Set(lines.data?.items.map((line) => line.key) ?? []));
+                        if (event.target.checked) setSelected(new Set(pageLines.map((line) => line.key)));
                         else setSelected(new Set());
                       }}
                     />
@@ -763,7 +857,7 @@ export function Pool() {
                 </tr>
               </thead>
               <tbody>
-                {lines.data.items.map((line) => (
+                {pageLines.map((line) => (
                   <tr key={line.key} className={`pool-row pool-row--${statusTone(line.status)}`}>
                     <td data-label="选择">
                       <input

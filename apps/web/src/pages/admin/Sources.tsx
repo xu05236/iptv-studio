@@ -208,8 +208,10 @@ export function Sources() {
     queryKey: ['admin', 'sources'],
     queryFn: () => api.get<{ items: SourceItem[]; reportGeneratedAt?: string | null }>('/api/admin/sources'),
     // A fetch task finishes in the background; keep the cards' 「更新」 times
-    // from going stale while the page stays open.
-    refetchInterval: 30_000,
+    // from going stale while the page stays open. Two minutes is enough and
+    // avoids hammering the worker with the (heavy) source list.
+    staleTime: 60_000,
+    refetchInterval: 120_000,
   });
   const [overlapOpen, setOverlapOpen] = useState(false);
   const overlap = useQuery({

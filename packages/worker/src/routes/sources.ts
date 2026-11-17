@@ -2,11 +2,11 @@ import { Hono } from 'hono';
 import { isDueForProbe, mapPool, mergedChannelId, normalizeMirrorUrls, normalizeUrlForDedupe, PARSE_DROP_THRESHOLD, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters, type SourceOverlapReport, type SourceParseReport } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import { adminCache } from '../lib/adminCache.js';
+import { loadChannelMeta } from '../lib/channelMeta.js';
 import {
   deleteSource,
   getSource,
   insertSource,
-  listChannels,
   listSources,
   updateSource,
   upsertChannelSeeds,
@@ -159,7 +159,7 @@ sourceRoutes.get('/', async (c) => {
   const [sources, state, channels, fetchReport, feedbackRows] = await Promise.all([
     listSources(c.env),
     loadLines(c.env),
-    listChannels(c.env),
+    loadChannelMeta(c.env),
     getJson<{ generatedAt?: string; sources?: Array<{ sourceId: string } & Record<string, unknown>> }>(c.env, 'state/fetch-report.json'),
     c.env.DB.prepare("SELECT source_id, COUNT(*) AS total FROM feedback WHERE status = 'open' AND source_id IS NOT NULL GROUP BY source_id").all<{ source_id: string; total: number }>(),
   ]);

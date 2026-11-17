@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { canonicalPoolUrl, channelLogo, compareLines, dedupePoolLines, lineSignature, pickDuplicateOwner, qualityOf, qualityRank, type LineEntry, type PoolSnapshot, type Quality } from '@iptv/core';
 import type { AppEnv, Env } from '../env.js';
 import { adminCache } from '../lib/adminCache.js';
+import { loadChannelMeta } from '../lib/channelMeta.js';
 import {
   addCustomPoolLines,
   addLineTombstones,
@@ -10,7 +11,6 @@ import {
   createSubscription,
   deleteCustomPool,
   deleteLineOverrides,
-  listChannels,
   listCustomPoolLineKeys,
   listCustomPools,
   listLineFavorites,
@@ -39,6 +39,34 @@ export const poolRoutes = new Hono<AppEnv>();
 poolRoutes.use('/tree', adminCache());
 poolRoutes.use('/lines', adminCache());
 poolRoutes.use('/pools', adminCache());
+
+/**
+ * Pre-rendered pool rows published by the runner. The worker returns the
+ * artifact bytes untouched so browsing/filtering never parses the 17MB line
+ * state (which used to hit the 10ms CPU limit and return 503).
+ */
+poolRoutes.get('/rows', async (c) => {
+  const bytes = await c.env.KV.get('state/pool-rows.json', 'arrayBuffer');
+  if (!bytes) return ok({ generatedAt: null, premiumTarget: 12, rows: [] });
+  return new Response(bytes, {
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  });
+});
+
+poolRoutes.get('/line-overrides', async (c) => ok({ items: await listLineOverrides(c.env) }));
+
+poolRoutes.get('/pools/:id/keys', async (c) => ok({ keys: await listCustomPoolLineKeys(c.env, c.req.param('id')) }));
+
+poolRoutes.get('/subscriptions/:id/scope', async (c) => {
+  const row = (await listSubscriptions(c.env)).find((item) => item.id === c.req.param('id'));
+  if (!row) return fail('订阅不存在', 404);
+  return ok({
+    lineKeys: parseJsonField<string[]>(row.line_keys, []),
+    channelIds: parseJsonField<string[]>(row.channel_ids, []),
+    groups: parseJsonField<string[]>(row.groups, []),
+    excludeGroups: parseJsonField<string[]>(row.exclude_groups, []),
+  });
+});
 
 /**
  * Remove lines from both the persisted state and the compact pool snapshot so
@@ -108,7 +136,7 @@ interface PoolLine extends LineEntry {
 async function loadPool(env: Env) {
   const [state, channels, sources, settings, overrides, favorites] = await Promise.all([
     loadLines(env),
-    listChannels(env),
+    loadChannelMeta(env),
     listSources(env),
     loadSettings(env),
     listLineOverrides(env),

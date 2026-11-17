@@ -26,6 +26,7 @@ import {
   type RuleRow,
 } from '../db.js';
 import { fail, ok, parseJsonField, readJson, randomId } from '../lib/http.js';
+import { CHANNEL_META_KEY, loadChannelMeta, saveChannelMeta } from '../lib/channelMeta.js';
 import { getText, getJson, listArtifacts, putArtifact } from '../lib/store.js';
 import { loadLines, saveLines } from '../lib/linesState.js';
 import { LINES_SHARD_COUNT, lineShardKey } from '@iptv/core';
@@ -298,7 +299,7 @@ adminRoutes.get('/stats', async (c) => {
   const [index, sources, channels, subscriptions, feedbackOpen, runs, pool, tasks] = await Promise.all([
     loadIndex(c.env),
     listSources(c.env),
-    listChannels(c.env),
+    loadChannelMeta(c.env),
     listSubscriptions(c.env),
     countOpenFeedback(c.env),
     listRuns(c.env, 5),
@@ -1330,8 +1331,15 @@ adminRoutes.post('/sync/channels', async (c) => {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
   const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
   const previous = await getRuntimeJson<{ hash?: string }>(c.env, 'state/channel-sync.json');
-  if (previous?.hash === hash) return ok({ synced: 0, skipped: true });
+  if (previous?.hash === hash) {
+    // The channel list did not change, but a deploy may have introduced the
+    // metadata snapshot. Create it once so admin pages stop reading the table.
+    const meta = await getJson<{ channels?: unknown[] }>(c.env, CHANNEL_META_KEY);
+    if (!meta?.channels?.length) await saveChannelMeta(c.env, await listChannels(c.env));
+    return ok({ synced: 0, skipped: true });
+  }
   const count = await upsertChannelSeeds(c.env, seeds);
+  await saveChannelMeta(c.env, await listChannels(c.env));
   await putRuntimeJson(c.env, 'state/channel-sync.json', { hash, at: new Date().toISOString(), channels: seeds.length, written: count });
   return ok({ synced: count, skipped: false });
 });
