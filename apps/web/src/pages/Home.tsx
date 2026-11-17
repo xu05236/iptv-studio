@@ -99,7 +99,7 @@ export function Home() {
           </div>
           <div className="dash-stat">
             <span className="dash-stat__icon dash-stat__icon--teal"><Layers3 size={16} /></span>
-            <div><div className="dash-stat__value">{formatNumber(poolAlive)}</div><div className="dash-stat__label">线路池可用 · {poolRatio}% / 共 {formatNumber(poolTotal)}</div></div>
+            <div><div className="dash-stat__value">{formatNumber(poolAlive)}</div><div className="dash-stat__label" title="线路池总数已按 URL 去重">线路池可用 · {poolRatio}% / 共 {formatNumber(poolTotal)}</div></div>
           </div>
           <div className="dash-stat">
             <span className="dash-stat__icon dash-stat__icon--orange"><RadioTower size={16} /></span>

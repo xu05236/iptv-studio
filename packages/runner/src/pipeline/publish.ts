@@ -361,6 +361,40 @@ export async function publish(
   step('state/index.json');
   await saveLinesState(store, linesToSave, options.generatedAt);
   step('state/lines.json（8 分片）');
+  // Precompute the diagnostics the admin line-stats endpoint used to compute on
+  // every request (it parsed all 29k lines, which was close to the free CPU cap).
+  const lineCutoff = Date.now() - 30 * 86_400_000;
+  const statsByStatus: Record<string, number> = {};
+  const statsByProtocol: Record<string, number> = {};
+  let statsDeadOld = 0;
+  let statsDeadNoStamp = 0;
+  let statsSuspectOld = 0;
+  for (const line of linesToSave) {
+    const status = line.status ?? 'unknown';
+    statsByStatus[status] = (statsByStatus[status] ?? 0) + 1;
+    const protocol = line.protocol ?? 'unknown';
+    statsByProtocol[protocol] = (statsByProtocol[protocol] ?? 0) + 1;
+    if (line.status === 'dead') {
+      const stamp = Date.parse(line.lastProbeAt ?? line.rejectedAt ?? '');
+      if (!Number.isFinite(stamp)) statsDeadNoStamp++;
+      else if (stamp < lineCutoff) statsDeadOld++;
+    } else if (line.status === 'suspect') {
+      const stamp = Date.parse(line.lastProbeAt ?? '');
+      if (Number.isFinite(stamp) && stamp < lineCutoff) statsSuspectOld++;
+    }
+  }
+  await store.put('state/line-stats.json', JSON.stringify({
+    total: linesToSave.length,
+    bytes: encoder.encode(linesBody).byteLength,
+    generatedAt: options.generatedAt,
+    byStatus: statsByStatus,
+    byProtocol: statsByProtocol,
+    deadOld: statsDeadOld,
+    deadNoStamp: statsDeadNoStamp,
+    suspectOld: statsSuspectOld,
+  }), json);
+  step('state/line-stats.json');
+  objects++;
   // Never replace a populated guide with an empty one: one bad EPG fetch used
   // to wipe coverage for every player until the next good run.
   const guideChannelCount = Object.keys(output.guide.channels ?? {}).length;

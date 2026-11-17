@@ -938,6 +938,19 @@ poolRoutes.post('/orphans/cleanup', async (c) => {
  * are old enough to archive.
  */
 poolRoutes.get('/line-stats', async (c) => {
+  const snapshot = await getJson<{
+    total?: number;
+    bytes?: number;
+    generatedAt?: string | null;
+    byStatus?: Record<string, number>;
+    byProtocol?: Record<string, number>;
+    deadOld?: number;
+    deadNoStamp?: number;
+    suspectOld?: number;
+  }>(c.env, 'state/line-stats.json');
+  if (snapshot && typeof snapshot.total === 'number') {
+    return ok(snapshot);
+  }
   const state = await loadLines(c.env);
   const lines = state?.lines ?? [];
   const now = Date.now();

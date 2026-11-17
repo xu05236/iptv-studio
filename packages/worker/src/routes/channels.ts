@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { classifyGroup, displayName, normalizeChannelName, planChannelMerges } from '@iptv/core';
 import type { AppEnv } from '../env.js';
+import { loadChannelMeta } from '../lib/channelMeta.js';
 import { loadTasks } from '../lib/tasks.js';
 import {
   addAlias,
@@ -45,7 +46,7 @@ channelRoutes.post('/merges/:id/undo', async (c) => {
 channelRoutes.get('/alias-conflicts', async (c) => {
   const [{ results: aliasRows }, channels] = await Promise.all([
     c.env.DB.prepare('SELECT alias, channel_id FROM aliases').all<{ alias: string; channel_id: string }>(),
-    listChannels(c.env),
+    loadChannelMeta(c.env),
   ]);
   const names = new Map(channels.map((channel) => [channel.id, channel.name]));
   const canonical = new Map<string, string[]>();

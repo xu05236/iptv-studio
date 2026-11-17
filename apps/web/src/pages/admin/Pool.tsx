@@ -833,7 +833,7 @@ export function Pool() {
       </div>
 
       <div className="row row--between pool-result-bar">
-        <div className="caption"><Filter size={13} /> 共 {sortedLines.length} 条线路</div>
+        <div className="caption" title="行文件已按 URL 去重；与线路状态页的总数可能相差几条"><Filter size={13} /> 共 {sortedLines.length} 条线路</div>
         <label className="row" style={{ gap: 6 }}>
           <span className="caption">每页</span>
           <select className="input" style={{ width: 88 }} value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>

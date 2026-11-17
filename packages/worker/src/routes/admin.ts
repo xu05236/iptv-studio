@@ -153,7 +153,7 @@ adminRoutes.get('/epg/unmatched', async (c) => {
 adminRoutes.post('/epg/clean-noise', async (c) => {
   const [state, channels] = await Promise.all([
     loadLines(c.env),
-    listChannels(c.env),
+    loadChannelMeta(c.env),
   ]);
   const live = new Set((state?.lines ?? []).map((line) => line.channelId));
   const noise = channels.filter((channel) => channel.id.startsWith('x-') && !live.has(channel.id));
@@ -269,7 +269,7 @@ adminRoutes.post('/epg/bind-bulk', async (c) => {
 adminRoutes.get('/backup', async (c) => {
   const [sources, channels, subscriptions, settings] = await Promise.all([
     listSources(c.env),
-    listChannels(c.env),
+    loadChannelMeta(c.env),
     listSubscriptions(c.env),
     loadSettings(c.env),
   ]);
