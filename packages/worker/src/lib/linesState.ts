@@ -16,6 +16,14 @@ export interface LinesState {
   lines: LineEntry[];
 }
 
+/**
+ * Parsed lines are immutable between manifest generations. Repeated admin
+ * requests (sources/pool/exports) used to fetch and parse all 8 shards every
+ * time; a per-isolate cache keyed by the manifest generation skips that while
+ * still reading the (small) manifest so a new publish is picked up at once.
+ */
+const cacheByEnv = new WeakMap<Env, { generatedAt: string; total: number; lines: LineEntry[] }>();
+
 async function gzipBytes(text: string): Promise<Uint8Array> {
   const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
@@ -37,6 +45,10 @@ async function readShard(env: Env, key: string): Promise<LineEntry[]> {
 export async function loadLines(env: Env): Promise<LinesState> {
   const manifest = await env.KV.get<LinesManifest>(LINES_MANIFEST_KEY, 'json');
   if (manifest?.version === LINES_FORMAT_VERSION && manifest.shards?.length) {
+    const cached = cacheByEnv.get(env);
+    if (cached && cached.generatedAt === manifest.generatedAt && cached.total === manifest.total) {
+      return { generatedAt: manifest.generatedAt, lines: cached.lines };
+    }
     const lines: LineEntry[] = [];
     for (const shard of manifest.shards) {
       const parsed = await readShard(env, shard.key);
@@ -50,6 +62,7 @@ export async function loadLines(env: Env): Promise<LinesState> {
     if (lines.length < manifest.total) {
       throw new Error(`线路分片读取不完整（${lines.length}/${manifest.total}），已中止以保护现有线路状态`);
     }
+    cacheByEnv.set(env, { generatedAt: manifest.generatedAt, total: lines.length, lines });
     return { generatedAt: manifest.generatedAt, lines };
   }
   return (await env.KV.get<LinesState>(LINES_LEGACY_KEY, 'json')) ?? { lines: [] };
@@ -75,6 +88,7 @@ export async function saveLines(env: Env, lines: LineEntry[], generatedAt: strin
     manifest.legacyRemoved = true;
   }
   await putArtifact(env, LINES_MANIFEST_KEY, JSON.stringify(manifest), 'application/json; charset=utf-8');
+  cacheByEnv.delete(env);
   // Commit happened: old shard keys (including fixed legacy keys) can now be
   // removed. Doing this before the manifest write would have made a crash
   // destructive.
@@ -114,5 +128,6 @@ export async function repairLinesManifest(env: Env, options: { dryRun?: boolean 
   const after = { total, shards: shards.map(({ key, count }) => ({ key, count })) };
   if (!changed || options.dryRun) return { changed, written: false, before, after };
   await putArtifact(env, LINES_MANIFEST_KEY, JSON.stringify({ ...manifest, generatedAt: new Date().toISOString(), total, shards }), 'application/json; charset=utf-8');
+  cacheByEnv.delete(env);
   return { changed, written: true, before, after };
 }

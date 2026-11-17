@@ -919,7 +919,7 @@ function describeTask(task: Task, sourceNames: Map<string, string>): string {
 adminRoutes.get('/tasks', async (c) => {
   const settings = await loadSettings(c.env);
   const taskItems = await loadTasks(c.env);
-  const [stats, probeState, fetchState, publishState, epgState, proxyTestState, sourceRows, recentRuns] = await Promise.all([
+  const [stats, probeState, fetchState, publishState, epgState, proxyTestState, sourceRows] = await Promise.all([
     getJson<{ generatedAt?: string; pending?: number; quarantine?: number; rejected?: number }>(c.env, 'state/pool-stats.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/probe-schedule.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/fetch-schedule.json'),
@@ -927,10 +927,8 @@ adminRoutes.get('/tasks', async (c) => {
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/epg-schedule.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/proxy-test-schedule.json'),
     listSources(c.env),
-    listRuns(c.env, 100),
   ]);
   const sourceNames = new Map(sourceRows.map((row) => [row.id, row.name]));
-  const runByTask = new Map(recentRuns.filter((row) => row.task_id).map((row) => [row.task_id, row]));
   const order = String(settings.probePhaseOrder ?? '')
     .split(/[\s,，]+/)
     .map((item) => item.trim())
@@ -966,11 +964,10 @@ adminRoutes.get('/tasks', async (c) => {
   const nextEpg = nextScheduledAt(parseCollectTimes(settings.epgRefreshTimes), Date.now());
   const scheduledAt = new Date().toISOString();
   const detailedTasks = taskItems.map((task) => {
-    const run = runByTask.get(task.id);
     return {
       ...task,
       label: describeTask(task, sourceNames),
-      failureReason: task.status === 'failed' ? run?.error ?? task.message ?? null : null,
+      failureReason: task.status === 'failed' ? task.message ?? null : null,
     };
   });
   const scheduledItems: Array<Record<string, unknown>> = [];
