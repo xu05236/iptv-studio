@@ -149,7 +149,7 @@ export function Dashboard() {
 
   const usageQuery = useQuery({
     queryKey: ['admin', 'usage'],
-    queryFn: () => api.get<{ usage: UsageSnapshot | null }>('/api/admin/usage'),
+    queryFn: () => api.get<{ usage: UsageSnapshot | null; kvLocal?: { day: string; puts: number; deletes: number; limit: number } | null }>('/api/admin/usage'),
   });
 
   const settingsQuery = useQuery({
@@ -248,7 +248,7 @@ export function Dashboard() {
       for (let attempt = 0; attempt < 30; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 10_000));
         try {
-          const next = await api.get<{ usage: UsageSnapshot | null }>('/api/admin/usage');
+          const next = await api.get<{ usage: UsageSnapshot | null; kvLocal?: unknown }>(`/api/admin/usage?t=${Date.now()}`);
           if (next.usage?.collectedAt !== before) {
             queryClient.setQueryData(['admin', 'usage'], next);
             show('用量快照已更新');
@@ -258,7 +258,7 @@ export function Dashboard() {
           // Network hiccup or the workflow is still queued — keep polling.
         }
       }
-      show('用量快照尚未更新，请稍后再试', 'error');
+      show('官方统计尚未更新（Cloudflare 通常延迟 30–60 分钟），稍后再试');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'usage'] });
     },
     onError: (error: Error) => show(error.message, 'error'),
@@ -350,6 +350,7 @@ export function Dashboard() {
   const poolRatio = poolTotal ? Math.round((poolAlive / poolTotal) * 100) : 0;
   const publishedRatio = stats.index.totals.lines ? Math.round((stats.index.totals.alive / stats.index.totals.lines) * 100) : 0;
   const usage = usageQuery.data?.usage;
+  const kvLocal = usageQuery.data?.kvLocal ?? null;
   const today = new Date().toISOString().slice(0, 10);
   // The snapshot is written up to 6 hours apart; right after UTC midnight it
   // still carries yesterday's totals. Only trust it when its day matches today.
@@ -821,12 +822,12 @@ export function Dashboard() {
                   <span className="usage-card__icon"><Cloud size={17} /></span>
                   <div className="grow">
                     <div className="title-3">Cloudflare KV</div>
-                    <div className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)}` : '等待快照'}</div>
+                    <div className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)} · 官方统计约延迟 30–60 分钟` : '等待快照'}</div>
                   </div>
                 </div>
                 {snapshot ? (
                   <>
-                    <UsageBar label="今日写入" used={kvWrites} limit={1000} />
+                    <UsageBar label="今日写入（本地计数）" used={kvLocal && kvLocal.day === today ? kvLocal.puts : kvWrites} limit={1000} />
                     <UsageBar label="今日读取" used={kvReads} limit={100000} />
                     <UsageBar label="今日列表" used={kvLists} limit={1000} />
                     <UsageBar
@@ -835,6 +836,9 @@ export function Dashboard() {
                       limit={1024 ** 3}
                       format={formatBytes}
                     />
+                    <div className="caption" style={{ marginTop: 8 }}>
+                      本地计数 {formatNumber(kvLocal && kvLocal.day === today ? kvLocal.puts : kvWrites)} · 官方统计 {formatNumber(kvWrites)}（通常延迟 30–60 分钟）
+                    </div>
                     <div className="caption" style={{ marginTop: 8 }}>
                       {kvToday
                         ? '免费额度每日 UTC 00:00（北京时间 08:00）重置'
@@ -857,7 +861,7 @@ export function Dashboard() {
                   <span className="usage-card__icon"><Database size={17} /></span>
                   <div className="grow">
                     <div className="title-3">Cloudflare D1</div>
-                    <div className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)}` : '等待快照'}</div>
+                    <div className="caption">{snapshot ? `快照 ${formatSnapshot(snapshot.collectedAt)} · 官方统计约延迟 30–60 分钟` : '等待快照'}</div>
                   </div>
                 </div>
                 {snapshot ? (
@@ -866,7 +870,7 @@ export function Dashboard() {
                     <UsageBar label="今日读取行数" used={d1Reads} limit={5000000} />
                     <div className="caption" style={{ marginTop: 8 }}>
                       {d1Today
-                        ? `写入已用 ${Math.round((d1Writes / 100000) * 100)}%`
+                        ? `写入已用 ${Math.round((d1Writes / 100000) * 100)}% · 官方统计通常延迟 30–60 分钟`
                         : `额度已重置，快照仍是 ${snapshot.d1.day} 的数据，等下一轮刷新`} · 免费额度每日 UTC 00:00 重置
                       {yesterday ? ` · 昨日（${yesterday.date}）写 ${formatNumber(yesterday.d1Writes)}` : ''}
                     </div>

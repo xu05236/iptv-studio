@@ -15,6 +15,7 @@ import { proxyRoutes } from './routes/proxies.js';
 import { relayRoutes } from './routes/relay.js';
 import { runCron } from './cron.js';
 import { refreshUsage } from './lib/usage.js';
+import { kvWriteBudget } from './lib/store.js';
 import { runScheduler } from './lib/schedule.js';
 import { runMonitor } from './lib/monitor.js';
 import { handleTelegramUpdate, runTelegramCommands, verifyTelegramSecret } from './lib/telegram.js';
@@ -70,8 +71,11 @@ app.get('/api/admin/me', (c) => ok({ actor: c.get('actor'), ok: true }));
 app.use('/api/admin/usage', adminCache());
 
 app.get('/api/admin/usage', async (c) => {
-  const usage = await getRuntimeJson<Record<string, unknown>>(c.env, 'state/usage.json');
-  return ok({ usage });
+  const [usage, kvLocal] = await Promise.all([
+    getRuntimeJson<Record<string, unknown>>(c.env, 'state/usage.json'),
+    kvWriteBudget(c.env).catch(() => null),
+  ]);
+  return ok({ usage, kvLocal });
 });
 
 app.post('/api/admin/usage', async (c) => {
@@ -121,7 +125,7 @@ app.onError((error, c) => {
 export default {
   fetch: app.fetch,  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (controller.cron === '17 */6 * * *') ctx.waitUntil(runCron(env));
-    else if (controller.cron === '8 * * * *') ctx.waitUntil(refreshUsage(env).then(() => undefined));
+    else if (controller.cron === '*/15 * * * *') ctx.waitUntil(refreshUsage(env).then(() => undefined));
     else ctx.waitUntil(Promise.all([runScheduler(env), runTelegramCommands(env), runMonitor(env)]).then(() => undefined));
   },
 } satisfies ExportedHandler<Env>;
