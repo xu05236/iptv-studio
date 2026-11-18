@@ -269,7 +269,9 @@ adminRoutes.post('/epg/bind-bulk', async (c) => {
 adminRoutes.get('/backup', async (c) => {
   const [sources, channels, subscriptions, settings] = await Promise.all([
     listSources(c.env),
-    loadChannelMeta(c.env),
+    // Backups must stay faithful (sort/epg_source are not carried by the KV
+    // snapshot), and this endpoint is manual/rare, so read the table here.
+    listChannels(c.env),
     listSubscriptions(c.env),
     loadSettings(c.env),
   ]);
@@ -1308,28 +1310,35 @@ adminRoutes.post('/probe', async (c) => {
 
 /** Runner -> D1: discovered channels and aliases. */
 adminRoutes.post('/sync/channels', async (c) => {
-  const body = await readJson<{ channels?: Array<{ id: string; name: string; group: string; tvgId?: string; logo?: string; aliases?: string[] }> }>(c);
+  const body = await readJson<{ channels?: Array<{ id: string; name: string; group: string; tvgId?: string; logo?: string; aliases?: string[] }>; hash?: string }>(c);
   if (!Array.isArray(body?.channels)) return fail('缺少 channels');
-  const seeds = body.channels.slice(0, 5000);
-  // Publishing sends the same channel list every run. Hash it first so an
-  // unchanged payload costs one small runtime_state read instead of thousands
-  // of D1 reads/writes.
-  const canonical = [...seeds]
-    .sort((left, right) => left.id.localeCompare(right.id))
-    .map((seed) => [seed.id, seed.name, seed.group, seed.tvgId ?? '', seed.logo ?? '', (seed.aliases ?? []).join('|')].join('\u0001'))
-    .join('\n');
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
-  const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  const seeds = body.channels.slice(0, 20000);
+  // New runners hash the payload themselves and send it along: hashing a few
+  // hundred KB here counted against the Worker's 10ms CPU budget and sometimes
+  // returned 503 "Worker exceeded resource limits". Old runners still fall back
+  // to computing it locally.
+  let hash = typeof body.hash === 'string' && /^[a-f0-9]{64}$/.test(body.hash) ? body.hash : null;
+  if (!hash) {
+    const canonical = [...seeds]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((seed) => [seed.id, seed.name, seed.group, seed.tvgId ?? '', seed.logo ?? '', (seed.aliases ?? []).join('|')].join('\u0001'))
+      .join('\n');
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+    hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
   const previous = await getRuntimeJson<{ hash?: string }>(c.env, 'state/channel-sync.json');
   if (previous?.hash === hash) {
-    // The channel list did not change, but a deploy may have introduced the
-    // metadata snapshot. Create it once so admin pages stop reading the table.
-    const meta = await getJson<{ channels?: unknown[] }>(c.env, CHANNEL_META_KEY);
-    if (!meta?.channels?.length) await saveChannelMeta(c.env, await listChannels(c.env));
+    // Old runners do not write the metadata snapshot; keep the fallback for them.
+    if (!body.hash) {
+      const meta = await getJson<{ channels?: unknown[] }>(c.env, CHANNEL_META_KEY);
+      if (!meta?.channels?.length) await saveChannelMeta(c.env, await listChannels(c.env));
+    }
     return ok({ synced: 0, skipped: true });
   }
   const count = await upsertChannelSeeds(c.env, seeds);
-  await saveChannelMeta(c.env, await listChannels(c.env));
+  // New runners write the metadata snapshot themselves after this call, so the
+  // Worker stops reading the whole channel table and serializing ~2MB here.
+  if (!body.hash) await saveChannelMeta(c.env, await listChannels(c.env));
   await putRuntimeJson(c.env, 'state/channel-sync.json', { hash, at: new Date().toISOString(), channels: seeds.length, written: count });
   return ok({ synced: count, skipped: false });
 });

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   applyRules,
   compileRules,
@@ -849,6 +850,45 @@ async function probePhase(
 }
 
 /** Build artifacts/EPG and publish. Caller supplies the persisted pool lines. */
+/**
+ * Snapshot of channel metadata for admin pages. The runner already holds the
+ * full channel list, so writing it here keeps the Worker from reading the whole
+ * D1 table and stringifying ~2MB inside the publish sync request.
+ */
+function channelMetaSnapshot(
+  remote: RemoteConfig,
+  updated: Array<{ id: string; name: string; group?: string | null; tvgId?: string | null; logo?: string | null }>,
+): { generatedAt: string; channels: Array<Record<string, unknown>> } {
+  const generatedAt = new Date().toISOString();
+  const map = new Map<string, Record<string, unknown>>();
+  for (const row of remote.channels) {
+    map.set(row.id, {
+      id: row.id,
+      name: row.name,
+      tvg_id: row.tvg_id ?? null,
+      group_title: row.group_title ?? row.group ?? null,
+      logo: row.logo ?? null,
+      number: row.number ?? null,
+      enabled: row.enabled ?? 1,
+      sort: 0,
+      aliases: row.aliases ?? '[]',
+      epg_source: null,
+      updated_at: generatedAt,
+    });
+  }
+  for (const channel of updated) {
+    const previous = map.get(channel.id) ?? {};
+    map.set(channel.id, {
+      ...previous,
+      id: channel.id,
+      name: channel.name,
+      group_title: channel.group ?? previous.group_title ?? null,
+      logo: channel.logo ?? previous.logo ?? null,
+    });
+  }
+  return { generatedAt, channels: [...map.values()] };
+}
+
 async function publishPhase(
   api: ApiClient,
   store: ArtifactStore,
@@ -977,7 +1017,18 @@ async function publishPhase(
   await reportTaskProgress(api, 4, 5, '订阅生成完成');
   const lineChannelIds = new Set(lines.map((line) => line.channelId));
   const syncChannels = output.channels.filter((channel) => !channel.id.startsWith('x-') || lineChannelIds.has(channel.id));
-  await api.post('/api/admin/sync/channels', { channels: syncChannels.map((channel) => ({ ...channel, aliases: [] })) });
+  const syncSeeds = syncChannels.map((channel) => ({ ...channel, aliases: [] as string[] }));
+  // Hash on the runner: hashing a few hundred KB inside the Worker counts against
+  // its 10ms CPU budget and occasionally trips the resource limit.
+  const canonical = [...syncSeeds]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((seed) => [seed.id, seed.name, seed.group, seed.tvgId ?? '', seed.logo ?? '', (seed.aliases ?? []).join('|')].join('\u0001'))
+    .join('\n');
+  const channelSyncHash = createHash('sha256').update(canonical).digest('hex');
+  await api.post('/api/admin/sync/channels', { channels: syncSeeds, hash: channelSyncHash });
+  // The Worker no longer builds this snapshot (it used to read the whole table
+  // and stringify ~2MB per sync); the runner writes what it already has.
+  await store.put('state/channel-meta.json', JSON.stringify(channelMetaSnapshot(remote, syncChannels)), 'application/json; charset=utf-8');
   await reportTaskProgress(api, 5, 5, '频道元数据同步完成');
 
   const previousCatalog = await store.getJson<ExportCatalog>('state/prev.json');
