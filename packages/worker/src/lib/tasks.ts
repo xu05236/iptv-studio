@@ -501,7 +501,7 @@ export async function finishTask(...args: Parameters<typeof finishTaskCore>): Pr
   const finished = await withTaskLock(args[0], () => finishTaskCore(...args));
   // Run the follow-up outside the task lock: creating the publish task and
   // dispatching it both acquire the same lock.
-  if (finished && args[2] === 'done' && finished.type === 'probe-batch' && probeFinishedHook) {
+  if (finished && args[2] === 'done' && (finished.type === 'probe-batch' || finished.type === 'cn-probe') && probeFinishedHook) {
     try {
       await probeFinishedHook(args[0], finished);
     } catch {

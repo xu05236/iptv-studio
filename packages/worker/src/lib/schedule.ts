@@ -14,6 +14,14 @@ setProbeFinishedHook(async (env, task) => {
   if (task.type !== 'probe-batch' && task.type !== 'cn-probe') return;
   const settings = await loadSettings(env);
   const now = Date.now();
+  // A cn-probe that found nothing backs off for a while; otherwise the idle
+  // trigger would start a useless run every interval while lines cool down.
+  if (task.type === 'cn-probe' && (task.message ?? '').includes('没有需要补测')) {
+    const cnState = await getRuntimeJson<{ lastEmptyAt?: string }>(env, 'state/auto-cn-probe.json');
+    await putRuntimeJson(env, 'state/auto-cn-probe.json', { ...cnState, lastEmptyAt: new Date(now).toISOString() });
+    // Nothing was revived: do not publish just because the probe finished.
+    return;
+  }
   const createdCnProbe = task.type === 'probe-batch' ? await runAutoCnProbe(env, settings, now) : false;
   // A cn-probe only updates line state; the pool snapshot still needs a publish
   // even though pool-stats did not change, so bypass that one gate here.
@@ -341,15 +349,58 @@ export async function describeAfterProbeGate(env: Env, settings: AppSettings, op
  * eligible: pool-stats only refreshes on publish, so a fresh probe failure is
  * not in it yet. The runner exits quickly when there is nothing to retry.
  */
-async function runAutoCnProbe(env: Env, settings: AppSettings, now: number): Promise<boolean> {
+const CN_PROBE_EMPTY_BACKOFF_MS = 6 * 3_600_000;
+
+export interface CnProbeIdleInput {
+  enabled: boolean;
+  candidates: number;
+  lastAt: number | null;
+  lastEmptyAt: number | null;
+  intervalMs: number;
+  now: number;
+}
+
+/**
+ * Idle-mode domestic retry: when the batch probe has nothing to test, keep
+ * retrying dead/suspect lines through the domestic proxy. Throttled to the
+ * probe interval so a 5-minute scheduler tick cannot flood Actions.
+ */
+export function cnProbeIdleAllowed(input: CnProbeIdleInput): boolean {
+  if (!input.enabled) return false;
+  if (input.candidates <= 0) return false;
+  if (input.lastAt !== null && input.now - input.lastAt < input.intervalMs) return false;
+  if (input.lastEmptyAt !== null && input.now - input.lastEmptyAt < CN_PROBE_EMPTY_BACKOFF_MS) return false;
+  return true;
+}
+
+async function runAutoCnProbe(
+  env: Env,
+  settings: AppSettings,
+  now: number,
+  options: { requireCandidates?: boolean; candidates?: number } = {},
+): Promise<boolean> {
   if (!settings.cnProbeEnabled) return false;
+  if (options.requireCandidates) {
+    const profile = activeProbeProfile(settings);
+    const state = await getRuntimeJson<{ at?: string; lastEmptyAt?: string }>(env, 'state/auto-cn-probe.json');
+    const allowed = cnProbeIdleAllowed({
+      enabled: true,
+      candidates: options.candidates ?? 0,
+      lastAt: state?.at ? Date.parse(state.at) : null,
+      lastEmptyAt: state?.lastEmptyAt ? Date.parse(state.lastEmptyAt) : null,
+      intervalMs: Math.max(1, profile.intervalHours) * 3_600_000,
+      now,
+    });
+    if (!allowed) return false;
+  }
   if ((await loadActionsAllowance(env, settings)).blocked) return false;
   const tasks = await loadTasks(env);
   if (tasks.some((task: Task) => task.type === 'cn-probe' && (task.status === 'queued' || task.status === 'running'))) {
     return false;
   }
-  const task = await createTask(env, { type: 'cn-probe', source: 'schedule', priority: 45, payload: { auto: 'after-probe' } });
-  await putRuntimeJson(env, 'state/auto-cn-probe.json', { at: new Date(now).toISOString(), taskId: task.id });
+  const task = await createTask(env, { type: 'cn-probe', source: 'schedule', priority: 45, payload: { auto: options.requireCandidates ? 'idle' : 'after-probe' } });
+  const previous = await getRuntimeJson<{ lastEmptyAt?: string }>(env, 'state/auto-cn-probe.json');
+  await putRuntimeJson(env, 'state/auto-cn-probe.json', { at: new Date(now).toISOString(), taskId: task.id, lastEmptyAt: previous?.lastEmptyAt });
   await audit(env, 'scheduler', 'schedule.auto-cn-probe', task.id);
   return true;
 }
@@ -652,7 +703,12 @@ async function runProbeWatch(env: Env, settings: AppSettings, now: number): Prom
   const hasWork = !stats || PHASES.some((phase) => !paused.has(phase) && Number(stats[phase] ?? 0) > 0);
   if (!hasWork) {
     await recordInterval(env, 'state/probe-schedule.json', now, now + intervalMs, 'idle: 暂无到期线路');
-    return false;
+    // The batch probe only looks at probeable lines; dead/suspect lines that
+    // are not probeable (missing channel, rtsp) can still be revived through
+    // the domestic proxy, so count them from the full line stats.
+    const lineStats = await getJson<{ byStatus?: Record<string, number> }>(env, 'state/line-stats.json');
+    const candidates = Number(lineStats?.byStatus?.dead ?? 0) + Number(lineStats?.byStatus?.suspect ?? 0);
+    return runAutoCnProbe(env, settings, now, { requireCandidates: true, candidates });
   }
 
   const guard = await intervalGuard(env, settings);

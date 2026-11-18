@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '@iptv/core';
-import { actionsAllowance, intervalDue, isStuckTask, mostRecentScheduledAt, nextAutoLivenessAt, nextDueFetchSlot, nextScheduledAt, parseCollectTimes, probeWakeAllowed } from '../src/lib/schedule.js';
+import { actionsAllowance, cnProbeIdleAllowed, intervalDue, isStuckTask, mostRecentScheduledAt, nextAutoLivenessAt, nextDueFetchSlot, nextScheduledAt, parseCollectTimes, probeWakeAllowed } from '../src/lib/schedule.js';
 
 describe('global fetch cadence', () => {
   const now = Date.parse('2026-11-09T00:00:00Z');
@@ -165,5 +165,24 @@ describe('cross-midnight fetch slots', () => {
 
   it('respects a two-day cadence across midnight', () => {
     expect(nextDueFetchSlot(times, '2026-11-07T15:30:00Z', 2, now)).toBe(Date.parse('2026-11-09T15:30:00Z'));
+  });
+});
+
+describe('idle domestic retry', () => {
+  const now = Date.parse('2026-11-18T12:00:00Z');
+
+  it('stays off when disabled or nothing is left to revive', () => {
+    expect(cnProbeIdleAllowed({ enabled: false, candidates: 10, lastAt: null, lastEmptyAt: null, intervalMs: 7_200_000, now })).toBe(false);
+    expect(cnProbeIdleAllowed({ enabled: true, candidates: 0, lastAt: null, lastEmptyAt: null, intervalMs: 7_200_000, now })).toBe(false);
+  });
+
+  it('follows the probe interval', () => {
+    expect(cnProbeIdleAllowed({ enabled: true, candidates: 10, lastAt: now - 3_600_000, lastEmptyAt: null, intervalMs: 7_200_000, now })).toBe(false);
+    expect(cnProbeIdleAllowed({ enabled: true, candidates: 10, lastAt: now - 7_200_000, lastEmptyAt: null, intervalMs: 7_200_000, now })).toBe(true);
+  });
+
+  it('backs off after an empty run', () => {
+    expect(cnProbeIdleAllowed({ enabled: true, candidates: 10, lastAt: now - 8_000_000, lastEmptyAt: now - 3_600_000, intervalMs: 7_200_000, now })).toBe(false);
+    expect(cnProbeIdleAllowed({ enabled: true, candidates: 10, lastAt: now - 8_000_000, lastEmptyAt: now - 6 * 3_600_000, intervalMs: 7_200_000, now })).toBe(true);
   });
 });

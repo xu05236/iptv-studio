@@ -246,6 +246,7 @@ export function SettingsPage() {
           <div className="list">
             <div className="list__row"><span className="grow">启用自动分批探测（pending → 待复测 → 已淘汰）</span><Switch checked={form.autoProbeEnabled ?? true} onChange={(value) => set('autoProbeEnabled', value)} /></div>
           </div>
+          <div className="caption">分批探测没有线路可测时，国内补测会按同一间隔（当前模板的“批次间隔”）继续尝试捞回已淘汰/待复测线路；两边都没有线路时才完全停下。补测空跑后 6 小时内不再重试。</div>
           <div className="title-3" style={{ fontSize: 14, marginTop: 8 }}>Actions 仓库模式与探测模板</div>
           <Field label="仓库模式" hint="私有仓库有 2,000 分钟额度，按保守模板调度；公开仓库标准运行不计费，可用更高的频率和批量。切换后立即按新模板生效。">
             <Segmented
