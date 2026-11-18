@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { isDueForProbe, mapPool, mergedChannelId, normalizeMirrorUrls, normalizeUrlForDedupe, PARSE_DROP_THRESHOLD, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, type LineEntry, type ParsedSource, type SourceFilters, type SourceOverlapReport, type SourceParseReport } from '@iptv/core';
+import { computeSourceProgress, isDueForProbe, mapPool, mergedChannelId, normalizeMirrorUrls, normalizeUrlForDedupe, PARSE_DROP_THRESHOLD, parseSource, probeStream, sanitizeSourceHeaders, splitUrlHeaders, validateRemoteUrl, ZERO_SOURCE_PROGRESS, type LineEntry, type ParsedSource, type SourceFilters, type SourceOverlapReport, type SourceParseReport, type SourceProgress } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import { loadChannelMeta } from '../lib/channelMeta.js';
 import {
@@ -151,48 +151,49 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
   return Math.min(max, Math.max(min, Math.round(parsed)));
 }
 
+/** Minimal source list for runner commands: no line parsing, no statistics. */
+sourceRoutes.get('/brief', async (c) => {
+  const sources = await listSources(c.env);
+  return ok({
+    items: sources.map((source) => ({
+      ...source,
+      tags: parseJsonField<string[]>(source.tags, []),
+      filters: parseJsonField<SourceFilters>(source.filters, {}),
+      requestHeaders: parseJsonField<Record<string, string>>(source.request_headers, {}),
+      mirrorUrls: parseJsonField<string[]>(source.mirror_urls, []),
+      fetchMode: source.fetch_mode ?? 'direct',
+      allowInsecureTls: source.allow_insecure_tls === 1,
+      fetchTimeoutMs: source.fetch_timeout_ms ?? 45_000,
+      fetchConcurrency: source.fetch_concurrency ?? 1,
+      fetchDelayMs: source.fetch_delay_ms ?? 0,
+      lastErrorKind: source.last_error_kind ?? null,
+      mergeChannelName: source.merge_channel_name ?? null,
+      mergeChannelGroup: source.merge_channel_group ?? null,
+      enabled: source.enabled === 1,
+    })),
+  });
+});
+
 sourceRoutes.get('/', async (c) => {
-  const [sources, state, channels, fetchReport, feedbackRows] = await Promise.all([
+  const [sources, channels, fetchReport, feedbackRows] = await Promise.all([
     listSources(c.env),
-    loadLines(c.env),
     loadChannelMeta(c.env),
     getJson<{ generatedAt?: string; sources?: Array<{ sourceId: string } & Record<string, unknown>> }>(c.env, 'state/fetch-report.json'),
     c.env.DB.prepare("SELECT source_id, COUNT(*) AS total FROM feedback WHERE status = 'open' AND source_id IS NOT NULL GROUP BY source_id").all<{ source_id: string; total: number }>(),
   ]);
   const feedbackOpen = new Map((feedbackRows.results ?? []).map((row) => [row.source_id, Number(row.total) || 0]));
   const reportBySource = new Map((fetchReport?.sources ?? []).map((item) => [item.sourceId, item]));
-  const validChannels = new Set(channels.map((channel) => channel.id));
-  const unprobeable = /^(rtsp|rtmp|rtmps|udp|rtp):\/\//i;
   const now = new Date();
-  const progress = new Map<string, { total: number; tested: number; alive: number; pending: number; pendingTotal: number; quarantine: number; quarantineTotal: number; rejected: number; rejectedTotal: number; usableTotal: number; unmatched: number }>();
-  const channelSets = new Map<string, Set<string>>();
-  for (const line of state?.lines ?? []) {
-    const item = progress.get(line.sourceId) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0, usableTotal: 0, unmatched: 0 };
-    item.total++;
-    if (line.lastProbeAt || line.lastLivenessAt) item.tested++;
-    const usable = validChannels.has(line.channelId) && !unprobeable.test(line.url);
-    const livenessReady = !line.lastLivenessAt || now.getTime() - Date.parse(line.lastLivenessAt) >= 6 * 3_600_000;
-    if (usable && !line.lastProbeAt && line.status === 'unknown') {
-      item.pending++;
-      item.pendingTotal++;
-    }
-    if (usable && line.status === 'alive') {
-      item.alive++;
-      const set = channelSets.get(line.sourceId) ?? new Set<string>();
-      set.add(line.channelId);
-      channelSets.set(line.sourceId, set);
-    } else if (usable && line.status === 'suspect') {
-      item.quarantineTotal++;
-      if (livenessReady && isDueForProbe(line, 'normal', now)) item.quarantine++;
-    } else if (usable && line.status === 'dead') {
-      item.rejectedTotal++;
-      if (isDueForProbe(line, 'normal', now)) item.rejected++;
-    }
-    progress.set(line.sourceId, item);
-  }
-  for (const item of progress.values()) {
-    item.usableTotal = item.alive + item.pendingTotal + item.quarantineTotal + item.rejectedTotal;
-    item.unmatched = Math.max(0, item.total - item.usableTotal);
+  // Publish writes this artifact; reading it keeps this route off the ~29k-line
+  // parse that intermittently exceeded the free Worker CPU limit. The fallback
+  // keeps the page working between the first deploy and the next publish.
+  const progressArtifact = await getJson<{ generatedAt?: string; sources?: Record<string, SourceProgress> }>(c.env, 'state/source-progress.json');
+  const progress = new Map<string, SourceProgress>();
+  if (progressArtifact?.sources) {
+    for (const [id, item] of Object.entries(progressArtifact.sources)) progress.set(id, item);
+  } else {
+    const state = await loadLines(c.env);
+    for (const [id, item] of computeSourceProgress(state?.lines ?? [], channels, now)) progress.set(id, item);
   }
 
   // Real deltas: compare this report with the probeable counts captured after
@@ -246,7 +247,7 @@ sourceRoutes.get('/', async (c) => {
       mergeChannelGroup: source.merge_channel_group ?? null,
       ...parseReportOf(source),
       enabled: source.enabled === 1,
-      progress: { ...(progress.get(source.id) ?? { total: 0, tested: 0, alive: 0, pending: 0, pendingTotal: 0, quarantine: 0, quarantineTotal: 0, rejected: 0, rejectedTotal: 0, usableTotal: 0, unmatched: 0 }), channels: channelSets.get(source.id)?.size ?? 0 },
+      progress: progress.get(source.id) ?? ZERO_SOURCE_PROGRESS,
       report: reportBySource.get(source.id) ?? null,
       delta: deltas.get(source.id) ?? null,
       feedbackOpen: feedbackOpen.get(source.id) ?? 0,

@@ -234,7 +234,7 @@ export async function loadRemoteConfig(api: ApiClient): Promise<RemoteConfig> {
   // Sequential on purpose: some networks drop concurrent TLS handshakes to the
   // same Cloudflare host, and these are only five small requests.
   const settingsResponse = await api.get<{ settings: AppSettings }>('/api/admin/settings');
-  const sourcesResponse = await api.get<{ items: SourceRecord[] }>('/api/admin/sources');
+  const sourcesResponse = await api.get<{ items: SourceRecord[] }>('/api/admin/sources/brief');
   const channelsResponse = await api.get<{ items: ChannelRecord[] }>('/api/admin/channels');
   const aliasesResponse = await api.get<{ aliases: Record<string, string> }>('/api/admin/channels/meta/aliases');
   const rulesResponse = await api.get<{ items: Array<Rule & { enabled: boolean }> }>('/api/admin/rules');

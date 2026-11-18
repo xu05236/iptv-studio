@@ -5,7 +5,7 @@ import { loadRemoteConfig, type ApiClient } from '../src/store.js';
 function fakeApi(overrides: Record<string, unknown> = {}): ApiClient {
   const responses: Record<string, unknown> = {
     '/api/admin/settings': { settings: {} as AppSettings },
-    '/api/admin/sources': { items: [] },
+    '/api/admin/sources/brief': { items: [] },
     '/api/admin/channels': { items: [] },
     '/api/admin/channels/meta/aliases': { aliases: {} },
     '/api/admin/rules': { items: [] },
@@ -36,7 +36,7 @@ const base = {
 describe('loadRemoteConfig', () => {
   it('drops disabled sources and sources auto-paused after repeated failures', async () => {
     const api = fakeApi({
-      '/api/admin/sources': {
+      '/api/admin/sources/brief': {
         items: [
           { ...base, id: 'enabled', name: 'ok', enabled: true },
           { ...base, id: 'disabled', name: 'off', enabled: false },

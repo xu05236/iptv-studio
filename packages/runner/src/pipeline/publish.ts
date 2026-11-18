@@ -6,6 +6,7 @@ import {
   channelLogo,
   channelStats,
   compileRules,
+  computeSourceProgress,
   mapPool,
   selectLines,
   type AppSettings,
@@ -395,6 +396,14 @@ export async function publish(
   }), json);
   step('state/line-stats.json');
   objects++;
+  // Per-source counters for the admin sources page. Computing them here keeps
+  // the page's route from parsing ~29k lines on every request.
+  const sourceProgress = computeSourceProgress(linesToSave, output.channels, new Date());
+  await store.put('state/source-progress.json', JSON.stringify({
+    generatedAt: options.generatedAt,
+    sources: Object.fromEntries(sourceProgress),
+  }), json);
+  step('state/source-progress.json');
   // Never replace a populated guide with an empty one: one bad EPG fetch used
   // to wipe coverage for every player until the next good run.
   const guideChannelCount = Object.keys(output.guide.channels ?? {}).length;
