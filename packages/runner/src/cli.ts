@@ -1025,7 +1025,17 @@ async function publishPhase(
     .map((seed) => [seed.id, seed.name, seed.group, seed.tvgId ?? '', seed.logo ?? '', (seed.aliases ?? []).join('|')].join('\u0001'))
     .join('\n');
   const channelSyncHash = createHash('sha256').update(canonical).digest('hex');
-  await api.post('/api/admin/sync/channels', { channels: syncSeeds, hash: channelSyncHash });
+  // A single request with ~6k channels can exceed the API timeout while the
+  // Worker upserts them. Probe the hash first, then sync in bounded chunks so
+  // each request stays small; record the hash only after every chunk succeeded.
+  const precheck = await api.post<{ skipped?: boolean }>('/api/admin/sync/channels', { channels: [], hash: channelSyncHash });
+  if (!precheck?.skipped) {
+    for (let offset = 0; offset < syncSeeds.length; offset += 400) {
+      await api.post('/api/admin/sync/channels', { channels: syncSeeds.slice(offset, offset + 400), partial: true });
+    }
+    await api.post('/api/admin/sync/channels', { channels: [], hash: channelSyncHash, record: true });
+    logger.info('频道元数据已分批同步', { channels: syncSeeds.length });
+  }
   // The Worker no longer builds this snapshot (it used to read the whole table
   // and stringify ~2MB per sync); the runner writes what it already has.
   await store.put('state/channel-meta.json', JSON.stringify(channelMetaSnapshot(remote, syncChannels)), 'application/json; charset=utf-8');

@@ -1310,7 +1310,7 @@ adminRoutes.post('/probe', async (c) => {
 
 /** Runner -> D1: discovered channels and aliases. */
 adminRoutes.post('/sync/channels', async (c) => {
-  const body = await readJson<{ channels?: Array<{ id: string; name: string; group: string; tvgId?: string; logo?: string; aliases?: string[] }>; hash?: string }>(c);
+  const body = await readJson<{ channels?: Array<{ id: string; name: string; group: string; tvgId?: string; logo?: string; aliases?: string[] }>; hash?: string; partial?: boolean; record?: boolean }>(c);
   if (!Array.isArray(body?.channels)) return fail('缺少 channels');
   const seeds = body.channels.slice(0, 20000);
   // New runners hash the payload themselves and send it along: hashing a few
@@ -1335,11 +1335,19 @@ adminRoutes.post('/sync/channels', async (c) => {
     }
     return ok({ synced: 0, skipped: true });
   }
+  if (!seeds.length) {
+    // New runners use an empty call as a hash probe: bail out before sending
+    // thousands of rows, then record the hash only after the chunks succeeded.
+    if (body.record && hash) {
+      await putRuntimeJson(c.env, 'state/channel-sync.json', { hash, at: new Date().toISOString(), channels: 0, written: 0 });
+    }
+    return ok({ synced: 0, skipped: false, recorded: Boolean(body.record) });
+  }
   const count = await upsertChannelSeeds(c.env, seeds);
   // New runners write the metadata snapshot themselves after this call, so the
   // Worker stops reading the whole channel table and serializing ~2MB here.
-  if (!body.hash) await saveChannelMeta(c.env, await listChannels(c.env));
-  await putRuntimeJson(c.env, 'state/channel-sync.json', { hash, at: new Date().toISOString(), channels: seeds.length, written: count });
+  if (!body.hash && !body.partial) await saveChannelMeta(c.env, await listChannels(c.env));
+  if (!body.partial) await putRuntimeJson(c.env, 'state/channel-sync.json', { hash, at: new Date().toISOString(), channels: seeds.length, written: count });
   return ok({ synced: count, skipped: false });
 });
 
