@@ -420,6 +420,11 @@ adminRoutes.post('/runs/dispatch', async (c) => {
       ? body.lineKeys.split(/[\s,]+/).filter(Boolean).slice(0, 50)
       : [];
   const source = ['manual', 'detection', 'source', 'cli'].includes(body.source ?? '') ? body.source! : 'manual';
+  // A probe-lines task without keys can never succeed; reject it here instead of
+  // creating a task that fails in the runner after spending an Actions run.
+  if (command === 'probe-lines' && !lineKeys.length) {
+    return fail('线路复测需要至少 1 条线路（lineKeys 不能为空）', 400);
+  }
   // A manual collect/fetch means "refresh now": ignore the per-source refresh
   // interval. Scheduled runs stay incremental. Probing keeps its own TTL.
   const forceFetch = (command === 'collect' || command === 'fetch') && source === 'manual';
