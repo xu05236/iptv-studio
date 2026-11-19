@@ -117,14 +117,46 @@ jobs:
             --data-binary @/tmp/fb.json || true
           exit $code
 
-      - name: Ensure ffmpeg/ffprobe
+      - name: Ensure ffprobe
+        id: ffprobe
         if: ${{ contains(fromJSON('["collect","probe","probe-batch","probe-lines"]'), github.event.inputs.command || 'collect') }}
         run: |
-          if ! command -v ffprobe >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
+          if command -v ffprobe >/dev/null 2>&1; then
+            ffprobe -version | head -1
+            echo "source=system" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          ffprobe -version | head -1
+          # Pinned binary shipped by npm: no network at step time, no apt.
+          plain_path="$(node -e "try{process.stdout.write(require('@ffprobe-installer/ffprobe').path)}catch(e){}" 2>/dev/null || true)"
+          if [ -n "$plain_path" ]; then
+            chmod +x "$plain_path" 2>/dev/null || true
+          fi
+          if [ -n "$plain_path" ] && [ -x "$plain_path" ]; then
+            echo "$(dirname "$plain_path")" >> "$GITHUB_PATH"
+            "$plain_path" -version | head -1
+            echo "source=npm" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::warning::ffprobe unavailable, resolution probing will be skipped"
+          echo "FFPROBE_LIMIT=0" >> "$GITHUB_ENV"
+
+      - name: Ensure ffmpeg (screenshots, optional)
+        id: ffmpeg
+        if: ${{ (github.event.inputs.command || 'collect') == 'collect' || github.event_name == 'schedule' }}
+        continue-on-error: true
+        run: |
+          if command -v ffmpeg >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          timeout 120 sudo apt-get update -qq || true
+          if timeout 240 sudo apt-get install -y -qq ffmpeg; then
+            ffmpeg -version | head -1
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ffmpeg install failed or timed out, screenshots will be skipped"
+          fi
 
       - name: Run pipeline
         env:
@@ -202,7 +234,7 @@ jobs:
         run: npm run usage -w @iptv/runner
 
       - name: Capture screenshots (optional)
-        if: github.event.inputs.command == 'collect' || github.event_name == 'schedule'
+        if: ${{ (github.event.inputs.command == 'collect' || github.event_name == 'schedule') && steps.ffmpeg.outputs.available == 'true' }}
         continue-on-error: true
         env:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}

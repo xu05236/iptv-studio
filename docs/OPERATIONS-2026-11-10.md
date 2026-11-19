@@ -16,6 +16,7 @@
 - **线路状态代际写入**：分片 key 改为内容寻址 `state/lines-<i>-<hash>.json`；保存顺序为「写新分片 → 最后原子写 manifest → 删被替换的旧分片」，中途中断不会出现清单与分片对不上。新增 `POST /api/admin/pool/repair-lines-manifest`（默认 dryRun，审计 `pool.repair_lines_manifest`）按分片实际条数重写 manifest，只修清单、不动线路数据。
 - **Worker 清理阈值**：`/pool/orphans/cleanup` >500、`/cleanup/empty-channels` >1000、`/cleanup/adult-lines` >500、`/channels/merge-duplicates` >200 时返回 409，提示改走 Actions 或分批；重活不再交给 Worker 硬扛（免费版 10ms CPU）。
 - **批量添加采集站**：采集站页头「批量添加」→ 多行 `URL` 或 `名称,URL`；一次最多 100 个，同 URL（批内或已有）跳过；`POST /api/admin/sources/batch` 创建后只建 **一个** `fetch` 任务（payload `source_ids` + `publish=true`），在同一个 Actions 运行里抓取并发布一次，发布后照常生成一次快照。任务名「抓源 · N 个新增源」，完成消息「批量抓取完成 · N 个源 · 成功 X · 失败 Y · 解析 0 条 Z · 入库 … · 可用 …」；解析 0 条不算失败，网络/HTTP 错误才计入失败并附前 4 个源。
+- **CI 的 ffprobe/ffmpeg**：探测/抓取等任务优先使用 npm 包自带的 `@ffprobe-installer/ffprobe` 二进制（版本随 lock 固定，`npm ci` 时安装，不再每次 `apt-get update && install`）；取不到时自动 `FFPROBE_LIMIT=0` 跳过分辨率探测，抓取/探测/发布照常继续。截图用的 `ffmpeg` 只在 collect/定时任务里安装，带 120 秒更新与 240 秒安装超时；安装失败就跳过截图（截图步骤本身带 `continue-on-error`）。
 - **频道清理接口**：`POST /api/admin/cleanup/empty-channels`（默认 dryRun）只清「没有任何线路引用、非成人分组、无 `tvgId`、别名表 ≤1」的频道，按 100 条分批删除；`POST /api/admin/cleanup/adult-lines`（默认 dryRun）清掉挂在「成人且禁用」频道下的线路；两者都写审计。判断空频道必须看全量线路状态，不能只看发布索引里的可用线路，否则会把有线路的频道误判为空。
 
 ## 任务中心

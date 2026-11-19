@@ -25,6 +25,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "@iptv/core": "*",
     "https-proxy-agent": "^9.1.0",
     "socks-proxy-agent": "^10.1.0"
