@@ -50,6 +50,7 @@ import { buildArtifacts, publish, type ExportCatalog } from './pipeline/publish.
 import { buildGuide, collectEpg, guideIsFresh, mergeGuideFallback, type StoredGuide } from './pipeline/epg.js';
 import { loadLogoPacks } from './pipeline/logoFiles.js';
 import { loadLinesState, saveLinesState } from './lib/linesState.js';
+import { writeCnProbeStats } from './lib/cnProbeStats.js';
 import { fetchViaProxy, probeProxy } from './lib/proxyFetch.js';
 import { activateRuntimeProxy, isKernelProxy, isUdpOnlyProxy, probeRuntimeProxy } from './lib/proxyRuntime.js';
 import { buildProxyAgent, probeCnUrl } from './pipeline/cnProbe.js';
@@ -1009,6 +1010,7 @@ async function publishPhase(
       void reportTaskProgress(api, done, total, message);
     },
   }, logger);
+  await writeCnProbeStats(store, lines, settings.cnProbeBatchSize ?? 200);
   await reportTaskProgress(api, 3, 5, '产物写入完成');
   // A guide-based export keeps the existing per-subscription XMLTV untouched:
   // rebuilding from the compact guide would truncate schedules.
@@ -1552,6 +1554,7 @@ async function runCnProbe(): Promise<void> {
       true,
     );
     await saveLinesState(store, lines, nowIso());
+    await writeCnProbeStats(store, lines, settings.cnProbeBatchSize ?? 200);
     await finishRun(api, {
       id: runId, trigger: 'manual', status: 'success', startedAt, finishedAt: nowIso(),
       sources: bySource.size, channels: 0, lines: selected.length, alive: ok, dead: 0, probed: selected.length, bytes: 0,

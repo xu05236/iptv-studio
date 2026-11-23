@@ -103,6 +103,7 @@ interface TaskBoard {
   intervalHours: number;
   phases: TaskPhase[];
   statsGeneratedAt?: string | null;
+  cnProbe?: { enabled: boolean; eligible: number | null; outstanding: number | null; batchSize: number; generatedAt: string | null };
   items?: TaskItem[];
   schedules: {
     probe: { enabled: boolean; nextAt: string | null; lastRunAt: string | null; result: string | null };
@@ -677,6 +678,11 @@ export function Dashboard() {
               <div className="row row--wrap" style={{ gap: 8 }}>
                 <Badge>{`待测 ${tasks.data.phases.find((phase) => phase.id === 'pending')?.count ?? 0}`}</Badge>
                 <Badge>{`待复测 ${tasks.data.phases.find((phase) => phase.id === 'quarantine')?.count ?? 0}`}</Badge>
+                {tasks.data.cnProbe?.enabled ? (
+                  <span title="可测=24 小时冷却外、下一批能选中的；待补=所有淘汰/疑似里还没补成功的（含刚测失败的）；均按地址去重">
+                    <Badge>{`国内补测 可测 ${tasks.data.cnProbe.eligible === null ? '—' : formatNumber(tasks.data.cnProbe.eligible)} · 待补 ${tasks.data.cnProbe.outstanding === null ? '—' : formatNumber(tasks.data.cnProbe.outstanding)}`}</Badge>
+                  </span>
+                ) : null}
                 <span className="caption">抓源 {tasks.data.schedules.fetch.enabled ? `每 ${tasks.data.schedules.fetch.intervalDays} 天` : '关闭'}</span>
                 <span className="caption">发布 {tasks.data.schedules.publish.enabled ? tasks.data.schedules.publish.times : '关闭'}</span>
               </div>
@@ -689,7 +695,7 @@ export function Dashboard() {
             <details className="task-phases">
               <summary className="caption">分批阶段设置（到期可测 / 顺序 / 暂停）</summary>
               <div className="caption" style={{ marginBottom: 8 }}>
-                这里的数量只统计已到期可测的线路；可用线路未到复测时间时不会出现在待测/待复测里。
+                这里的数量只统计已到期可测的线路；可用线路未到复测时间时不会出现在待测/待复测里。国内补测单独统计淘汰/疑似里 24 小时内没补测过的线路（按地址去重）。
                 {tasks.data.statsGeneratedAt ? ` 统计更新于 ${formatSnapshot(tasks.data.statsGeneratedAt)}。` : ' 暂无到期统计。'}
               </div>
               <div className="task-phase-list">

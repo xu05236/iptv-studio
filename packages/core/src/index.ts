@@ -36,5 +36,6 @@ export * from './state/orphans.js';
 export * from './state/poolRows.js';
 export * from './state/exportLines.js';
 export * from './state/sourceProgress.js';
+export * from './state/cnProbeStats.js';
 export * from './taskLabels.js';
 export * from './proxy/import.js';

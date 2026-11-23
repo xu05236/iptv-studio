@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { classifyGroup, compileRules, displayName, mapPool, probeLiveness, probeStream, activeProbeProfile, type AppSettings, type LineEntry, type Rule } from '@iptv/core';
+import { classifyGroup, compileRules, displayName, mapPool, probeLiveness, probeStream, activeProbeProfile, CN_PROBE_STATS_KEY, type AppSettings, type CnProbeStats, type LineEntry, type Rule } from '@iptv/core';
 import type { AppEnv } from '../env.js';
 import {
   applySourceStats,
@@ -926,8 +926,9 @@ function describeTask(task: Task, sourceNames: Map<string, string>): string {
 adminRoutes.get('/tasks', async (c) => {
   const settings = await loadSettings(c.env);
   const taskItems = await loadTasks(c.env);
-  const [stats, probeState, fetchState, publishState, epgState, proxyTestState, sourceRows] = await Promise.all([
+  const [stats, cnStats, probeState, fetchState, publishState, epgState, proxyTestState, sourceRows] = await Promise.all([
     getJson<{ generatedAt?: string; pending?: number; quarantine?: number; rejected?: number }>(c.env, 'state/pool-stats.json'),
+    getJson<CnProbeStats>(c.env, CN_PROBE_STATS_KEY),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/probe-schedule.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/fetch-schedule.json'),
     getRuntimeJson<{ lastRunAt?: string; nextRunAt?: string; result?: string }>(c.env, 'state/publish-schedule.json'),
@@ -1041,6 +1042,13 @@ adminRoutes.get('/tasks', async (c) => {
     phases,
     stats: stats ?? null,
     statsGeneratedAt: stats?.generatedAt ?? null,
+    cnProbe: {
+      enabled: Boolean(settings.cnProbeEnabled),
+      eligible: cnStats?.eligible ?? null,
+      outstanding: cnStats?.outstanding ?? null,
+      batchSize: cnStats?.batchSize ?? settings.cnProbeBatchSize ?? 200,
+      generatedAt: cnStats?.generatedAt ?? null,
+    },
     items: [...detailedTasks, ...scheduledItems],
     schedules: {
       probe: {
