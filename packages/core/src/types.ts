@@ -546,7 +546,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ffprobeLimit: 150,
   probePrefilterEnabled: true,
   probePrefilterBudget: 1200,
-  lineRetentionDays: 30,
+  lineRetentionDays: 14,
   autoCollectEnabled: false,
   autoCollectTimes: '08:30',
   autoLivenessEnabled: true,

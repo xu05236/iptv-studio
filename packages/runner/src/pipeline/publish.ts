@@ -9,6 +9,7 @@ import {
   computeSourceProgress,
   mapPool,
   selectLines,
+  slimExportLine,
   type AppSettings,
   type ChannelConfig,
   type ChannelIndex,
@@ -158,7 +159,7 @@ export function buildArtifacts(input: BuildInput): BuildOutput {
       compensate: input.settings.compensate,
       keepSuspect: input.settings.keepSuspect,
       relativeFloor: input.settings.maxLinesPerChannel > 0,
-    });
+    }).map(slimExportLine);
     if (!exportLines.length) continue;
 
     totalLines += aggregated.lines.length;

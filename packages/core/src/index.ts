@@ -34,6 +34,7 @@ export * from './state/overlap.js';
 export * from './state/channelDedupe.js';
 export * from './state/orphans.js';
 export * from './state/poolRows.js';
+export * from './state/exportLines.js';
 export * from './state/sourceProgress.js';
 export * from './taskLabels.js';
 export * from './proxy/import.js';

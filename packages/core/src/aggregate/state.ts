@@ -86,14 +86,14 @@ export function isDueForProbe(
   return new Date(line.lastProbeAt).getTime() + ttl <= now.getTime();
 }
 
-/** 已淘汰且超过保留天数，可以清理（默认 30 天）。 */
+/** 已淘汰且超过保留天数，可以清理（默认 14 天）。 */
 export function isPurgeable(
   line: Pick<LineEntry, 'status' | 'rejectedAt'>,
-  retentionDays = 30,
+  retentionDays = 14,
   now: Date = new Date(),
 ): boolean {
   if (line.status !== 'dead' || !line.rejectedAt) return false;
-  const days = Math.max(1, Number(retentionDays) || 30);
+  const days = Math.max(1, Number(retentionDays) || 14);
   return new Date(line.rejectedAt).getTime() + days * 86_400_000 <= now.getTime();
 }
 

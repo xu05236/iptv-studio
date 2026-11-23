@@ -9,11 +9,11 @@ import type { LineEntry } from '@iptv/core';
  */
 export const LINES_ARCHIVE_TRIGGER_BYTES = 12 * 1024 * 1024;
 /**
- * 30 days = the line retention window. A dead line that has not recovered for
+ * 14 days = the line retention window. A dead line that has not recovered for
  * a full retention period is unlikely to come back; fold it into the archive
  * instead of letting lines.json climb toward the 22MB publish block.
  */
-export const LINES_ARCHIVE_MIN_AGE_DAYS = 30;
+export const LINES_ARCHIVE_MIN_AGE_DAYS = 14;
 export const LINES_ARCHIVE_MAX_LINES = 20_000;
 
 export interface LinesArchive {

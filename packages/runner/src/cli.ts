@@ -5,6 +5,7 @@ import {
   BUILTIN_CHANNELS,
   ChannelRegistry,
   buildPoolSnapshot,
+  slimPoolSnapshot,
   buildPoolRows,
   canonicalPoolUrl,
   classifyGroup,
@@ -184,7 +185,7 @@ function normalize(
   sources: Map<string, SourceRecord>,
   timestamp: string,
   tombstoned: Set<string> = new Set(),
-  retentionDays = 30,
+  retentionDays = 14,
 ): { lines: LineEntry[]; authoritative: Set<string>; report: SourceDiff[] } {
   const previousByKey = new Map(previousLines.map((line) => [`${line.sourceId}|${line.urlKey}`, line]));
   const beforeBySource = countLineStatuses(previousLines);
@@ -535,12 +536,13 @@ async function runExport(): Promise<void> {
 function poolSnapshotFor(remote: RemoteConfig, lines: LineEntry[], generatedAt: string) {
   const registry = buildRegistry(remote);
   const mergedGroups = mergedGroupMap(remote);
-  return buildPoolSnapshot({
+  const snapshot = buildPoolSnapshot({
     lines,
     channels: registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: poolChannelGroup(seed.id, seed.group, mergedGroups), tvgId: seed.tvgId, logo: seed.logo })),
     maxLinesPerChannel: remote.settings.maxLinesPerChannel,
     generatedAt,
   });
+  return slimPoolSnapshot(snapshot);
 }
 
 /** Merged channels (`x-mc-…`) must use the user-configured group, not the line group. */
@@ -741,7 +743,7 @@ async function fetchPhase(
   );
   const registry = buildRegistry(remote);
   const sources = new Map(remote.sources.map((source) => [source.id, source]));
-  const retentionDays = Math.max(0, envNumber('LINE_RETENTION_DAYS') ?? settings.lineRetentionDays ?? 30);
+  const retentionDays = Math.max(0, envNumber('LINE_RETENTION_DAYS') ?? settings.lineRetentionDays ?? 14);
   const normalized = normalize(collected, registry, previousState?.lines ?? [], sources, nowIso(), tombstones, retentionDays);
   await store.put(
     'state/fetch-report.json',
