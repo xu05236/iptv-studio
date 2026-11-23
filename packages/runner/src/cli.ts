@@ -992,12 +992,12 @@ async function publishPhase(
   const poolChannels = registry.list().map((seed) => ({ id: seed.id, name: seed.name, group: poolChannelGroup(seed.id, seed.group, mergedGroupMap(remote)), tvgId: seed.tvgId, logo: seed.logo }));
   await writePoolRows(store, remote, lines, poolChannels, poolGeneratedAt);
   const logKey = await writeLog(store, runId, logger);
-  const poolSnapshot = buildPoolSnapshot({
+  const poolSnapshot = slimPoolSnapshot(buildPoolSnapshot({
     lines,
     channels: poolChannels,
     maxLinesPerChannel: settings.maxLinesPerChannel,
     generatedAt: output.catalog.generatedAt,
-  });
+  }));
   await publish(store, output, {
     lines,
     epgXml: epgMode === 'fetch' ? epg.xml || undefined : undefined,
