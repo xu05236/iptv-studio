@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Signal, Tv, LayoutGrid, List, ChevronRight } from 'lucide-react';
@@ -6,7 +6,7 @@ import clsx from 'clsx';
 import { api } from '../lib/api';
 import type { ChannelsResponse } from '../lib/types';
 import { formatResolution, formatSpeed } from '../lib/format';
-import { Badge, Button, Card, EmptyState, Pagination, Skeleton } from '../components/ui';
+import { Badge, Button, Card, EmptyState, Pagination, Sheet, Skeleton } from '../components/ui';
 import { ChannelLogo } from '../components/ChannelLogo';
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -21,6 +21,9 @@ export function Channels() {
   const [search, setSearch] = useState(params.get('q') ?? '');
   const [debounced, setDebounced] = useState(search);
   const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [groupQuery, setGroupQuery] = useState('');
+  const catScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(search.trim()), 280);
@@ -53,6 +56,12 @@ export function Channels() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   useEffect(() => {
+    if (!group) return;
+    const node = catScrollRef.current?.querySelector<HTMLElement>(`[data-group="${CSS.escape(group)}"]`);
+    node?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }, [group, groups.length]);
+
+  useEffect(() => {
     if (query.data && page > totalPages) {
       const next = new URLSearchParams(params);
       next.delete('page');
@@ -67,13 +76,8 @@ export function Channels() {
         <div>
           <h1 className="large-title">频道</h1>
           <p className="subhead" style={{ marginTop: 4 }}>
-            {query.data ? `${total} 个频道 · ${items.reduce((sum, item) => sum + item.alive, 0)} 条可用线路` : '正在读取频道索引'}
+            {query.data ? `${total} 个频道 · ${groups.length} 个分类` : '正在读取频道索引'}
           </p>
-        </div>
-        <div className="portal-channels__stats">
-          <div><strong>{total}</strong><span>频道</span></div>
-          <div><strong>{items.reduce((sum, item) => sum + item.alive, 0)}</strong><span>当前页可用</span></div>
-          <div><strong>{groups.length}</strong><span>分类</span></div>
         </div>
       </div>
 
@@ -89,22 +93,29 @@ export function Channels() {
           />
         </div>
 
-        <div className="portal-filter__row">
+        <div className="portal-filter__bar">
+          <div className="portal-filter__row portal-filter__row--cats">
           <span className="portal-filter__label">分类</span>
-          <div className="portal-filter__chips">
-            <button className={clsx('chip', !group && 'chip--active')} onClick={() => updateGroup('')}>
-              全部
-            </button>
-            {groups.map((item) => (
-              <button
-                key={item.group}
-                className={clsx('chip', group === item.group && 'chip--active')}
-                onClick={() => updateGroup(item.group)}
-              >
-                {item.group}
-                <span style={{ opacity: 0.7 }}>{item.channels}</span>
+          <div className="portal-filter__cats">
+            <div className="portal-cats__scroll" ref={catScrollRef}>
+              <button className={clsx('chip', !group && 'chip--active')} onClick={() => updateGroup('')}>
+                全部<span className="chip__count">{groups.length}</span>
               </button>
-            ))}
+              {groups.map((item) => (
+                <button
+                  key={item.group}
+                  data-group={item.group}
+                  className={clsx('chip', group === item.group && 'chip--active')}
+                  onClick={() => updateGroup(item.group)}
+                >
+                  {item.group}
+                  <span className="chip__count">{item.channels}</span>
+                </button>
+              ))}
+            </div>
+            <button className="portal-cats__more" onClick={() => { setGroupQuery(''); setGroupOpen(true); }}>
+              更多分类
+            </button>
           </div>
         </div>
 
@@ -122,6 +133,7 @@ export function Channels() {
             <button className={view === 'grid' ? 'is-active' : ''} onClick={() => setView('grid')}><LayoutGrid size={15} /> 网格</button>
             <button className={view === 'list' ? 'is-active' : ''} onClick={() => setView('list')}><List size={15} /> 列表</button>
           </div>
+        </div>
         </div>
       </div>
 
@@ -194,6 +206,35 @@ export function Channels() {
       </div>
 
       <Pagination page={page} totalPages={totalPages} onChange={updatePage} />
+
+      <Sheet open={groupOpen} onClose={() => setGroupOpen(false)} title="选择分类" subtitle={`共 ${groups.length} 个分类`}>
+        <div className="stack" style={{ gap: 10 }}>
+          <input
+            className="input"
+            placeholder="搜索分类"
+            value={groupQuery}
+            onChange={(event) => setGroupQuery(event.target.value)}
+            autoFocus
+          />
+          <div className="portal-group-picker">
+            <button className={clsx('chip', !group && 'chip--active')} onClick={() => { setGroupOpen(false); updateGroup(''); }}>
+              全部<span className="chip__count">{groups.length}</span>
+            </button>
+            {groups
+              .filter((item) => !groupQuery.trim() || item.group.toLowerCase().includes(groupQuery.trim().toLowerCase()))
+              .map((item) => (
+                <button
+                  key={item.group}
+                  className={clsx('chip', group === item.group && 'chip--active')}
+                  onClick={() => { setGroupOpen(false); updateGroup(item.group); }}
+                >
+                  {item.group}
+                  <span className="chip__count">{item.channels}</span>
+                </button>
+              ))}
+          </div>
+        </div>
+      </Sheet>
     </div>
   );
 
