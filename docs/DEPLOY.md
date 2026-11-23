@@ -18,6 +18,8 @@ cd iptv-studio
 npm install
 ```
 
+`npm install` 会安装 `@ffprobe-installer/ffprobe`（探测分辨率用，版本由 lock 固定）；截图功能另需系统 `ffmpeg`，没有时只跳过截图。
+
 ## 1. 创建 Cloudflare 资源
 
 ```bash
@@ -61,16 +63,25 @@ npx wrangler secret put SESSION_SECRET     # 会话签名密钥，随机 32+ 字
 npx wrangler secret put GITHUB_TOKEN       # fine-grained PAT: Actions: write
 ```
 
+可选（用量面板显示 KV/D1 官方数字）：
+
+```bash
+npx wrangler secret put CLOUDFLARE_API_TOKEN   # 权限：Account → Account Analytics → Read
+```
+
 在 `wrangler.jsonc` 的 `vars` 里补：
 
 ```jsonc
 "PUBLIC_BASE_URL": "https://iptv.example.com",
 "GITHUB_REPO": "your-name/iptv-studio",
 "GITHUB_WORKFLOW": "collect.yml",
-"GITHUB_REF": "main"
+"GITHUB_REF": "main",
+"CLOUDFLARE_ACCOUNT_ID": "<Account ID>",
+"D1_ID": "<D1_ID>"
 ```
 
 `PUBLIC_BASE_URL` 会写进 M3U 头部的 EPG 地址，必须是播放器可访问的公网地址。
+`CLOUDFLARE_ACCOUNT_ID` / `D1_ID` 用于 Worker 内部刷新 KV/D1 用量（没配也能跑，只是用量数字缺 D1/KV 部分）。
 
 ## 3. 初始化数据库
 
@@ -78,24 +89,31 @@ npx wrangler secret put GITHUB_TOKEN       # fine-grained PAT: Actions: write
 npm run db:migrate -w @iptv/worker
 ```
 
-执行 `migrations/0001_init.sql`（表结构）与 `0002_seed.sql`（两条示例源 + 默认设置）。
+会按顺序应用 `migrations/` 下的全部迁移（当前 40+ 个，含建表、种子与后续增量）。
+部署流水线在 `wrangler deploy` 前也会自动执行一次迁移，所以正常推 `main` 不需要手动跑。
+迁移状态可在后台「设置 → 数据库」或 `GET /api/admin/db/migrations` 查看（应显示全部已应用）。
 
 ## 4. 构建并部署
 
+推荐：**推送到 `main` 即自动部署**。
+
+`.github/workflows/deploy.yml` 的顺序是：
+
+1. `npm test` 与 `npm run typecheck`（两者都跑，任一失败就不部署）；
+2. 构建前端；
+3. `wrangler d1 migrations apply`；
+4. `wrangler deploy`；
+5. 部署后跑 `scripts/smoke.mjs`，失败会把摘要写进后台「运营事件 → 部署/CI」。
+
+手动部署（首次或紧急回滚时）：
+
 ```bash
-cd ../..
-npm run deploy
+npm run deploy          # 构建前端 + wrangler deploy
+npm run db:migrate      # 需要时单独应用迁移
 ```
 
-等价于：
-
-```bash
-npm run build
-cd packages/worker && npx wrangler deploy
-```
-
-部署后访问 `https://<worker>.workers.dev`。建议在 Cloudflare 控制台
-**Workers → 你的 Worker → Settings → Domains & Routes** 绑定自定义域名，例如 `iptv.example.com`。
+部署后访问 `https://<worker>.workers.dev`，并用 `GET /api/version` 核对 commit 与 `deployedAt`。
+建议在 Cloudflare 控制台 **Workers → 你的 Worker → Settings → Domains & Routes** 绑定自定义域名。
 
 ## 5. 配置 GitHub Actions
 
@@ -111,9 +129,11 @@ cd packages/worker && npx wrangler deploy
 | Secret | `TELEGRAM_BOT_TOKEN` | 可选，日报 |
 | Secret | `TELEGRAM_CHAT_ID` | 可选 |
 | Variable | `PUBLIC_BASE_URL` | 同 API_BASE_URL |
-| Variable | `PROBE_BUDGET` | 每日测速条数，建议 6000 |
-| Variable | `PROBE_CONCURRENCY` | 建议 48–64 |
+| Variable | `PROBE_BUDGET` | 每日测速条数，建议 6000；留空时用后台设置 |
+| Variable | `PROBE_CONCURRENCY` | 建议 48–64；留空时用后台设置 |
 | Variable | `SHOT_LIMIT` | 截图上限，默认 60；关闭截图请在后台上关掉开关 |
+| Secret | `D1_ID` / `KV_ID` | 可选；不配时工作流回退到仓库默认值，换账号后建议显式配置 |
+| Secret | `CLOUDFLARE_API_TOKEN` | 可选；配了之后工作流能读取 KV/D1 用量（Analytics Read） |
 
 部署 Worker 的 workflow 需要：
 
@@ -129,8 +149,8 @@ cd packages/worker && npx wrangler deploy
 3. 回到概览，应看到频道与可用线路数量；前台 `/channels` 出现频道。
 4. 后台 → 订阅与导出 → 新建订阅，复制 M3U 地址到播放器。
 
-采集器会依次写入 `out/catalog.json`、`state/index.json`、64 个分桶、EPG、快照与日志，
-并预渲染所有订阅；整个流程约 70–100 次 KV 写，远低于免费额度。
+采集器会按顺序写线路状态分片、发布目录、频道索引、池快照、池行文件、统计产物、EPG、快照与日志，并预渲染所有订阅；
+一次发布约 **30–50 次 KV 写**（线路分片有变化时会多一些），远低于免费额度。线路默认保留 14 天。
 
 ## 7. 可选：Cloudflare Access
 
@@ -167,10 +187,10 @@ node --env-file=.env node_modules/.bin/tsx packages/runner/src/cli.ts collect
 | --- | --- | --- |
 | Workers | 10 万请求/天 | 订阅轮询 + 页面，个人使用 < 1 万 |
 | KV 读 | 10 万次/天 | 每次页面/订阅 1–3 次 |
-| KV 写 | **1000 次/天** | 每轮采集约 70–100 次 |
-| KV 存储 | 1 GB | 目录 + 分桶 + EPG + 7 天快照，约 100–200 MB |
-| D1 | 5GB、500 万行读/天 | 配置 + 运行记录 |
-| Actions | 公开仓库免费；私有 2000 分钟/月 | 每次 10–25 分钟 |
+| KV 写 | **1000 次/天** | 一次发布约 30–50 次，另有抓取/探测/快照 |
+| KV 存储 | 1 GB | 线路分片 + 目录 + EPG + 快照，约 100–200 MB |
+| D1 | 5GB、500 万行读/天 | 频道/源/任务；常用页面已改读 KV 产物或频道快照 |
+| Actions | 公开仓库免费；私有 2000 分钟/月 | 每次 5–25 分钟，公开仓库不扣分钟 |
 
 关键限制：
 
@@ -192,7 +212,10 @@ node --env-file=.env node_modules/.bin/tsx packages/runner/src/cli.ts collect
 | 「立即采集」失败 | 未配 `GITHUB_TOKEN`/`GITHUB_REPO`，或 token 缺少 Actions 权限 |
 | EPG 为空 | 设置里没配 XMLTV 地址；或频道 id 无法匹配（补别名） |
 | 页面 404 | 前端未构建就部署；`npm run build` 后重新 deploy |
-| KV 写超限 | 一天内重复手动采集太多次；免费额度 1000 写/天 |
+| 页面数字/分类不更新 | 先确认最新发布已成功；前端已取消 HTTP 缓存，仍不更新就硬刷新（Ctrl/Cmd+Shift+R） |
+| 任务报 503 `Worker exceeded resource limits` | 某个管理接口在冷实例上解析量太大；等自动重试，或把重活改走 Actions。采集站/统计已改为读发布产物 |
+| 国内补测显示「可测 — · 待补 —」 | 统计文件还没生成；等下一次发布或补测（最多 2 小时） |
+| KV 写超限 | 一天内重复手动采集太多次；免费额度 1000 写/天，一次发布 30–50 次 |
 
 ## 11. 回滚
 
@@ -246,3 +269,29 @@ node --env-file=.env node_modules/.bin/tsx packages/runner/src/cli.ts collect
   npx wrangler d1 execute iptv-studio --remote --file=d1-export.sql
   ```
 - 不想导 D1 也可以在后台重新添加源、重新配置设置，产物靠一次采集重建。
+
+## 13. 部署流水线、本地校验与回滚
+
+**本地改完先自己过一遍**（部署流水线也会做同样的事）：
+
+```bash
+npm run typecheck        # 四个 workspace
+npm test                 # 单元测试（当前 330+）
+npm run build
+```
+
+**推送到 `main`** 触发 `.github/workflows/deploy.yml`：测试 → 类型检查 → 构建 → D1 迁移 → `wrangler deploy` → smoke。任一失败会停在原地，并把摘要写入后台「运营事件 → 部署/CI」。
+
+**部署后确认**：
+
+```bash
+curl -s https://<域名>/api/version        # commit 与 deployedAt
+```
+
+**回滚**：
+
+- 代码：`wrangler rollback`（或 Cloudflare 控制台 Deployments 选择上一个版本）；
+- 数据：D1 Time Travel（控制台 → D1 → Backups）；
+- 产物：`snapshots/<日期>/` 保留最近几份，可手动回写 `out/catalog.json`。
+
+**注意**：仓库公开时 Actions 运行日志默认公开；令牌只放 GitHub Secrets / Worker Secrets，不要写进仓库。

@@ -19,6 +19,18 @@
 - **CI 的 ffprobe/ffmpeg**：探测/抓取等任务优先使用 npm 包自带的 `@ffprobe-installer/ffprobe` 二进制（版本随 lock 固定，`npm ci` 时安装，不再每次 `apt-get update && install`）；取不到时自动 `FFPROBE_LIMIT=0` 跳过分辨率探测，抓取/探测/发布照常继续。截图用的 `ffmpeg` 只在 collect/定时任务里安装，带 120 秒更新与 240 秒安装超时；安装失败就跳过截图（截图步骤本身带 `continue-on-error`）。
 - **频道清理接口**：`POST /api/admin/cleanup/empty-channels`（默认 dryRun）只清「没有任何线路引用、非成人分组、无 `tvgId`、别名表 ≤1」的频道，按 100 条分批删除；`POST /api/admin/cleanup/adult-lines`（默认 dryRun）清掉挂在「成人且禁用」频道下的线路；两者都写审计。判断空频道必须看全量线路状态，不能只看发布索引里的可用线路，否则会把有线路的频道误判为空。
 
+## 2026-11-23 增量
+
+- **前台频道页改版**：顶部三块统计压成一行 `频道 · N 个 · M 个分类`；分类改成单行横滑 `[全部 32] [央视 31] … [更多分类]`，选中项自动滚到可见；「更多分类」打开弹层（搜索、两列、带频道数），选完自动收起。
+- **筛选吸顶**：桌面端整个筛选卡吸在顶部导航下；手机端搜索框随页面滚走，只把「分类 + 排序/视图」这一条吸顶；两者都用不透明背景 + 细阴影。
+- **导出产物瘦身**：`state/pool.json` 与 `out/catalog.json` 只保留播放/导出需要的字段（url/name/协议/请求头/分辨率/速率/延迟/编码/地区/回看/国内可达等），去掉探测诊断与生命周期字段，实测体积约 −26%。发布器里有两处写 `pool.json`，两处都必须用 `slimPoolSnapshot`，否则后写会覆盖瘦身结果。
+- **保留期默认 14 天**：`lineRetentionDays` 默认 14；归档判断与 `LINE_RETENTION_DAYS` 回退同步为 14。已淘汰线路 14 天内仍可用于抓取去重，过期后进入归档或清理。
+- **容量结果**：瘦身后 `pool.json` 16.39MB → 11.51MB、`catalog.json` 16.19MB → 11.32MB，均低于 15MB 告警线；22MB 拒发阈值不变。
+- **国内补测计数**：发布与国内补测结束时写 `state/cn-probe-stats.json`（仅数量变化才写），`/api/admin/tasks` 返回 `cnProbe`，任务中心显示「国内补测 可测 X · 待补 Y」。
+  - **可测**：`dead|suspect`、未标记 `cnReachable`、已过 24 小时冷却、按「URL + 请求头」去重后的数量，即下一批最多能选多少（批大小默认 200）。
+  - **待补**：同一口径但**不扣** 24 小时冷却，包含刚补测失败的，用来看总量。
+  - 两个数都来自同一个小文件，页面不解析线路、不加 KV/D1 读取。
+
 ## 任务中心
 
 - 任务状态：`scheduled → queued → running → done / failed / cancelled`，同一时间只跑一个 GitHub Actions run。
