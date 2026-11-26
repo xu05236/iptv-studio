@@ -51,6 +51,7 @@ import { buildGuide, collectEpg, guideIsFresh, mergeGuideFallback, type StoredGu
 import { loadLogoPacks } from './pipeline/logoFiles.js';
 import { loadLinesState, saveLinesState } from './lib/linesState.js';
 import { writeCnProbeStats } from './lib/cnProbeStats.js';
+import { selectCnProbeLines } from './pipeline/cnProbeSelection.js';
 import { fetchViaProxy, probeProxy } from './lib/proxyFetch.js';
 import { activateRuntimeProxy, isKernelProxy, isUdpOnlyProxy, probeRuntimeProxy } from './lib/proxyRuntime.js';
 import { buildProxyAgent, probeCnUrl } from './pipeline/cnProbe.js';
@@ -1475,30 +1476,8 @@ async function runCnProbe(): Promise<void> {
     const previous = await loadLinesState(store);
     const lines = previous?.lines ?? [];
     const now = Date.now();
-    const seen = new Set<string>();
-    const candidates = lines
-      .filter(
-        (line) =>
-          (line.status === 'dead' || line.status === 'suspect') &&
-          line.cnReachable !== true &&
-          (!line.cnCheckedAt || now - Date.parse(line.cnCheckedAt) > 24 * 3_600_000),
-      )
-      // Fresh breakage first: a dead line that just failed is likelier to be a
-      // domestic-only stream than one that has been stale for weeks.
-      .sort((left, right) => {
-        if (left.status !== right.status) return left.status === 'dead' ? -1 : 1;
-        return (Date.parse(right.lastProbeAt ?? '2020-01-01') || 0) - (Date.parse(left.lastProbeAt ?? '2020-01-01') || 0);
-      })
-      // The same URL + headers is one playback target; retrying every source copy
-      // only burns the domestic proxy without extra information.
-      .filter((line) => {
-        const signature = lineSignature(line);
-        if (seen.has(signature)) return false;
-        seen.add(signature);
-        return true;
-      });
     const limit = Math.max(1, Math.min(1000, Number(settings.cnProbeBatchSize) || 200));
-    const selected = candidates.slice(0, limit);
+    const selected = selectCnProbeLines(lines, { limit, now });
     if (!selected.length) {
       await reportTaskProgress(api, 0, 0, '国内补测完成 · 没有需要补测的线路', true);
       await finishRun(api, {
