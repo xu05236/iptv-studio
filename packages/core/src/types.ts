@@ -525,6 +525,10 @@ export const DEFAULT_EPG_EXCLUDED_GROUPS = [
   '外语频道',
   '音乐',
   '其他频道',
+  '赛事直播',
+  '👶🏻少儿直播',
+  '⚽️体育直播',
+  '国际频道',
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {

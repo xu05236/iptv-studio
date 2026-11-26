@@ -2,12 +2,14 @@ import { gunzipSync } from 'node:zlib';
 import {
   buildXmltv,
   cntvApiCode,
+  DEFAULT_EPG_EXCLUDED_GROUPS,
   EPGPW_ID_MAP,
   mapPool,
   matchEpg,
   mergeEpg,
   parseCctvEpg,
   parseXmltv,
+  trimEpgData,
   type ChannelRegistry,
   type EpgChannel,
   type EpgData,
@@ -76,8 +78,117 @@ async function collectCntvEpg(
   return { channels, programmes };
 }
 
+const DIYP_ENDPOINT = 'https://diyp.112114.xyz/?ch=';
+
+/** Parse `2026-11-26 12:30:00` (UTC+8), epoch seconds or epoch ms. */
+function parseDiypTime(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw > 1e12 ? raw : raw * 1000;
+  const text = String(raw ?? '').trim();
+  if (!text) return null;
+  if (/^\d+$/.test(text)) {
+    const value = Number(text);
+    return value > 1e12 ? value : value * 1000;
+  }
+  const match = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(text);
+  if (!match) return null;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]) - 8, Number(match[5]), Number(match[6] ?? 0));
+}
+
+/**
+ * DIYP-style per-channel payloads come in a few shapes; accept the common ones
+ * and never throw — a miss only costs one request.
+ */
+export function parseDiypProgrammes(payload: unknown, channelId: string): EpgProgramme[] {
+  const root = (payload ?? {}) as Record<string, unknown>;
+  const data = (root.data ?? {}) as Record<string, unknown>;
+  const candidates = [payload, root.data, root.epg_data, root.epg, root.programs, data.programs, data.epg, data.list];
+  let list: unknown[] = [];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      list = candidate;
+      break;
+    }
+  }
+  const programmes: EpgProgramme[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    const title = String(record.title ?? record.name ?? record.programName ?? record.program ?? '').trim();
+    if (!title) continue;
+    const start = parseDiypTime(record.start ?? record.start_time ?? record.startTime ?? record.st ?? record.begin ?? record.time);
+    if (start === null) continue;
+    const stop = parseDiypTime(record.end ?? record.end_time ?? record.endTime ?? record.et ?? record.finish) ?? undefined;
+    programmes.push({ channelId, start, stop, title });
+  }
+  return programmes.sort((left, right) => left.start - right.start);
+}
+
+const GENERIC_CHANNEL_NAMES = new Set(['综合', '新闻', '影视', '体育', '少儿', '电影', '电视剧', '娱乐', '音乐', '财经', '纪录', '国际', '港澳', '台湾', '本地', '地方', '测试', '公告', '直播', '频道']);
+
+function looksLikeChannelName(name: string): boolean {
+  const text = name.trim();
+  if (text.length < 2 || text.length > 30) return false;
+  if (/^\d+$/.test(text)) return false;
+  if (GENERIC_CHANNEL_NAMES.has(text)) return false;
+  return /[\u4e00-\u9fff]/.test(text);
+}
+
+/** Speed/quality decorations are duplicates of a clean channel; query clean names first. */
+function hasDecoration(name: string): boolean {
+  return /\(\s*\d+(?:\.\d+)?\s*(?:MB|KB)\s*\/\s*s\s*\)/i.test(name) || /(?:^|[\s_-])(?:HD|4K|8K|高清|超清)$/i.test(name);
+}
+
+async function collectDiypEpg(
+  registry: ChannelRegistry,
+  coveredIds: Set<string>,
+  excludedGroups: string[],
+  logger: RunLogger,
+): Promise<{ channels: EpgChannel[]; programmes: EpgProgramme[]; attempted: number; ok: number }> {
+  const candidates = registry
+    .list()
+    .filter((seed) => !coveredIds.has(seed.id)
+      && !hasDecoration(seed.name)
+      && looksLikeChannelName(seed.name)
+      && !excludedGroups.includes(seed.group ?? ''))
+    .slice(0, 400);
+  const channels: EpgChannel[] = [];
+  const programmes: EpgProgramme[] = [];
+  let ok = 0;
+  if (!candidates.length) return { channels, programmes, attempted: 0, ok };
+  const deadline = Date.now() + 60_000;
+  await mapPool(candidates, 6, async (seed) => {
+    if (Date.now() > deadline) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error('timeout')), 4_000);
+    try {
+      const response = await fetch(DIYP_ENDPOINT + encodeURIComponent(seed.name), {
+        headers: { 'User-Agent': 'IPTV-Studio-Runner/0.1', Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      if (!response.ok) return;
+      const parsed = parseDiypProgrammes(await response.json(), seed.id);
+      if (!parsed.length) return;
+      ok += 1;
+      channels.push({ id: seed.id, names: [seed.name] });
+      programmes.push(...parsed);
+    } catch {
+      // Enhancement only: a timeout or bad payload must never fail the EPG run.
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+  logger.info('112114 单频道补全完成', { candidates: candidates.length, channels: channels.length, programmes: programmes.length });
+  return { channels, programmes, attempted: candidates.length, ok };
+}
+
 /** Fetch, normalise and merge every configured XMLTV source plus CCTV. */
-export async function collectEpg(urls: string[], registry: ChannelRegistry, logger: RunLogger, priority: string[] = []): Promise<EpgResult> {
+export async function collectEpg(
+  urls: string[],
+  registry: ChannelRegistry,
+  logger: RunLogger,
+  priority: string[] = [],
+  options: { excludedGroups?: string[] } = {},
+): Promise<EpgResult> {
   const ordered = sortUrlsByPriority(urls, priority);
   const sources: EpgData[] = [];
   const metas: EpgSourceMeta[] = [];
@@ -179,10 +290,51 @@ export async function collectEpg(urls: string[], registry: ChannelRegistry, logg
     });
   }
 
-  const xml = buildXmltv(data, {
-    generator: 'iptv-studio',
-    channelNames: new Map(data.channels.map((channel) => [channel.id, channel.names[0] ?? channel.id])),
+  // Last resort 2: query 112114 per channel name for the long tail (county and
+  // city stations) that no public XMLTV feed carries. Soft-fails per channel.
+  const coveredAfterFallback = new Set(data.programmes.map((programme) => programme.channelId));
+  const diyp = await collectDiypEpg(
+    registry,
+    coveredAfterFallback,
+    options.excludedGroups ?? DEFAULT_EPG_EXCLUDED_GROUPS,
+    logger,
+  );
+  if (diyp.channels.length) {
+    const diypKnown = new Set(data.channels.map((channel) => channel.id));
+    for (const channel of diyp.channels) {
+      if (diypKnown.has(channel.id)) continue;
+      data.channels.push(channel);
+      diypKnown.add(channel.id);
+    }
+    const diypSlots = new Map(data.programmes.map((programme) => [`${programme.channelId}|${programme.start}`, programme]));
+    for (const programme of diyp.programmes) diypSlots.set(`${programme.channelId}|${programme.start}`, programme);
+    data.programmes = [...diypSlots.values()].sort((left, right) => left.start - right.start);
+  }
+  metas.push({
+    provider: 'diyp.112114.xyz',
+    url: 'diyp://112114',
+    ok: diyp.ok > 0 || diyp.attempted === 0,
+    bytes: 0,
+    channels: diyp.channels.length,
+    programmes: diyp.programmes.length,
+    error: diyp.attempted && diyp.ok === 0 ? '全部频道无节目单' : undefined,
   });
+
+  // The shared out/epg.xml is a fallback file; keep it comfortably below the
+  // 15MB warning line by trimming the window when needed. Per-subscription
+  // guides still use the full 24h data.
+  const channelNames = new Map(data.channels.map((channel) => [channel.id, channel.names[0] ?? channel.id]));
+  const encoder = new TextEncoder();
+  let xml = buildXmltv(data, { generator: 'iptv-studio', channelNames });
+  if (encoder.encode(xml).byteLength > 15 * 1024 * 1024) {
+    const trimmed = trimEpgData(data, { hours: 12, lookbackHours: 1, maxProgrammesPerChannel: 48 });
+    xml = buildXmltv(trimmed, { generator: 'iptv-studio', channelNames });
+    logger.warn('EPG XML 超过 15MB，已按 12 小时窗口裁剪', {
+      channels: trimmed.channels.length,
+      programmes: trimmed.programmes.length,
+      mb: Math.round(encoder.encode(xml).byteLength / 1048576),
+    });
+  }
   const uniqueUnmatched = [...new Map(unmatched.map((item) => [`${item.provider}|${item.epgName}`, item])).values()];
   logger.info('EPG 合并完成', { sources: sources.length, channels: data.channels.length, programmes: data.programmes.length, unmatched: uniqueUnmatched.length });
   return { data, sources: sources.length, programmes: data.programmes.length, xml, unmatched: uniqueUnmatched, sourcesReport: metas };

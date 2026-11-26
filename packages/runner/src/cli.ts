@@ -909,7 +909,7 @@ async function publishPhase(
   await reportTaskProgress(api, 0, 5, '准备发布');
   const storedGuide = await store.getJson<StoredGuide>('state/guide.json');
   const epg = epgMode === 'fetch'
-    ? await collectEpg(settings.epgUrls, registry, logger, parseEpgPriority(settings.epgSourcePriority))
+    ? await collectEpg(settings.epgUrls, registry, logger, parseEpgPriority(settings.epgSourcePriority), { excludedGroups: settings.epgExcludedGroups })
     : { xml: null, programmes: 0, data: epgFromGuide(storedGuide) };
   await reportTaskProgress(api, 1, 5, 'EPG 已准备');
   if ('unmatched' in epg && epg.unmatched.length) {
@@ -2485,7 +2485,7 @@ async function main(): Promise<void> {
       const registry = buildRegistry(remote);
       const previousGuide = await store.getJson<StoredGuide>('state/guide.json');
       const previousIds = new Set(Object.keys(previousGuide?.channels ?? {}));
-      const epg = await collectEpg(remote.settings.epgUrls, registry, logger, parseEpgPriority(remote.settings.epgSourcePriority));
+      const epg = await collectEpg(remote.settings.epgUrls, registry, logger, parseEpgPriority(remote.settings.epgSourcePriority), { excludedGroups: remote.settings.epgExcludedGroups });
       if (epg.unmatched.length) {
         await store.put('state/epg-unmatched.json', JSON.stringify({ generatedAt: nowIso(), items: epg.unmatched }), 'application/json; charset=utf-8');
       }
