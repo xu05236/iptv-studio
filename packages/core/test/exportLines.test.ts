@@ -20,6 +20,7 @@ function line(partial: Partial<LineEntry> = {}): LineEntry {
     height: 1080,
     speedKbps: 5000,
     latencyMs: 120,
+    bandwidthKbps: 1800,
     firstSeenAt: '2026-01-01T00:00:00Z',
     lastSeenAt: '2026-01-02T00:00:00Z',
     lastProbeAt: '2026-01-03T00:00:00Z',
@@ -57,7 +58,12 @@ describe('slimExportLine', () => {
     });
     expect(slim.passCount).toBeUndefined();
     expect(slim.latencyMs).toBe(120);
+    // Only the build path reads these values; artifacts keep empty placeholders.
+    expect(slim.urlKey).toBe('');
+    expect(slim.firstSeenAt).toBe('');
+    expect(slim.lastSeenAt).toBe('');
     expect(slim.tags).toEqual([]);
+    expect(slim.bandwidthKbps).toBeUndefined();
   });
 
   it('omits empty optional fields', () => {

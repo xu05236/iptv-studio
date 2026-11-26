@@ -6,9 +6,13 @@ import type { PoolSnapshot } from '../linePool.js';
  *
  * `pool.json` and `out/catalog.json` used to carry the full line record,
  * including probe diagnostics and lifecycle timestamps nobody on the read path
- * needs. Those fields roughly double the artifact size. Workers re-run
- * `selectLines` on catalog lines, so status/failCount/score/lastProbeAt must
- * stay; everything else can be rebuilt from the authoritative line state.
+ * needs. Those fields roughly double the artifact size. `urlKey`/`firstSeenAt`/
+ * `lastSeenAt`/`tags`/`bandwidthKbps` are only used while building the artifacts
+ * (dedupe, rules, probe), never by the subscription renderer. Those fields are
+ * kept as empty placeholders because `LineEntry` requires them; the bytes that
+ * matter (timestamps, normalized URLs) are gone. `bandwidthKbps` is optional
+ * and dropped outright. Workers do re-run `selectLines` on catalog lines, so
+ * status/failCount/score/speedKbps/resolution and lastProbeAt must stay.
  */
 export function slimExportLine(line: LineEntry): LineEntry {
   const slim: LineEntry = {
@@ -17,13 +21,13 @@ export function slimExportLine(line: LineEntry): LineEntry {
     channelId: line.channelId,
     name: line.name,
     url: line.url,
-    urlKey: line.urlKey,
+    urlKey: '',
     protocol: line.protocol,
     status: line.status,
     failCount: line.failCount,
     score: line.score,
-    firstSeenAt: line.firstSeenAt,
-    lastSeenAt: line.lastSeenAt,
+    firstSeenAt: '',
+    lastSeenAt: '',
     tags: [],
   };
   if (line.headers && Object.keys(line.headers).length) slim.headers = line.headers;
@@ -31,7 +35,6 @@ export function slimExportLine(line: LineEntry): LineEntry {
   if (line.height) slim.height = line.height;
   if (line.speedKbps) slim.speedKbps = line.speedKbps;
   if (line.latencyMs) slim.latencyMs = line.latencyMs;
-  if (line.bandwidthKbps) slim.bandwidthKbps = line.bandwidthKbps;
   if (line.codecs) slim.codecs = line.codecs;
   if (line.lastProbeAt) slim.lastProbeAt = line.lastProbeAt;
   if (line.official) slim.official = true;
