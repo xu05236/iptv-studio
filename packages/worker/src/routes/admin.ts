@@ -901,7 +901,7 @@ function describeTask(task: Task, sourceNames: Map<string, string>): string {
     ? (task.payload?.auto ? '线路发布 · 探测后自动' : '线路发布 · 定时')
     : '线路发布 · 手动';
   if (task.type === 'epg') return 'EPG 节目单刷新';
-  if (task.type === 'collect') return '完整采集 · 全部源';
+  if (task.type === 'collect') return sourceName ? `完整采集 · ${sourceName}` : '完整采集 · 全部源';
   if (task.type === 'liveness') return '存活检测';
   if (task.type === 'proxy-test') {
     const subName = String(task.payload?.proxy_sub_name ?? '').trim();

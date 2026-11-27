@@ -115,7 +115,7 @@ export function Probe() {
   });
 
   const dispatch = useMutation({
-    mutationFn: (input: { command: 'collect' | 'export' | 'epg' | 'probe-lines'; force?: boolean; sourceId?: string; lineKeys?: string[] }) =>
+    mutationFn: (input: { command: 'collect' | 'export' | 'epg' | 'probe' | 'probe-lines'; force?: boolean; sourceId?: string; lineKeys?: string[] }) =>
       api.post<{ ok: boolean; message: string }>('/api/admin/runs/dispatch', { ...input, source: 'detection' }),
     onSuccess: (res) => show(res.message),
     onError: (error: Error) => show(error.message, 'error'),
@@ -231,7 +231,7 @@ export function Probe() {
             ))}
           </select>
           {sourceId ? (
-            <Button loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'collect', force: true, sourceId })}>
+            <Button loading={dispatch.isPending} onClick={() => dispatch.mutate({ command: 'probe', force: true, sourceId })}>
               检测此源
             </Button>
           ) : null}
